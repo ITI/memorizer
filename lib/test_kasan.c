@@ -16,6 +16,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/module.h>
+#include <linux/kasan.h>
 
 static noinline void __init kmalloc_oob_right(void)
 {
@@ -254,6 +255,12 @@ static noinline void __init kasan_stack_oob(void)
 	*(volatile char *)p;
 }
 
+static noinline void __init memorizer_test(void)
+{
+    pr_info("\n\n***OPS Num Writes: %llu\n", 
+            (unsigned long long) __asan_get_opsx());
+}
+
 static int __init kmalloc_tests_init(void)
 {
 	kmalloc_oob_right();
@@ -270,6 +277,7 @@ static int __init kmalloc_tests_init(void)
 	kmem_cache_oob();
 	kasan_stack_oob();
 	kasan_global_oob();
+    memorizer_test();
 	return -EAGAIN;
 }
 

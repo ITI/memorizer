@@ -232,6 +232,9 @@ static __always_inline bool memory_is_poisoned(unsigned long addr, size_t size)
 }
 
 
+static uint64_t ops_x = 5;
+EXPORT_SYMBOL(ops_x);
+
 static __always_inline void check_memory_region(unsigned long addr,
 						size_t size, bool write)
 {
@@ -239,6 +242,9 @@ static __always_inline void check_memory_region(unsigned long addr,
 
 	if (unlikely(size == 0))
 		return;
+
+    //pr_err("Hello! writing to: %p\n",(void*)addr);
+    ++ops_x;
 
 	if (unlikely((void *)addr <
 		kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
@@ -255,6 +261,13 @@ static __always_inline void check_memory_region(unsigned long addr,
 
 	kasan_report(addr, size, write, _RET_IP_);
 }
+
+uint64_t __asan_get_opsx(void);
+uint64_t __asan_get_opsx(void)
+{
+    return ops_x;
+}
+EXPORT_SYMBOL(__asan_get_opsx);
 
 void __asan_loadN(unsigned long addr, size_t size);
 void __asan_storeN(unsigned long addr, size_t size);

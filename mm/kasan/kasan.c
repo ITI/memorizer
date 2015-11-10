@@ -31,6 +31,7 @@
 #include <linux/types.h>
 #include <linux/vmalloc.h>
 #include <linux/kasan.h>
+#include <linux/memorizer.h>
 
 #include "kasan.h"
 #include "../slab.h"
@@ -232,9 +233,6 @@ static __always_inline bool memory_is_poisoned(unsigned long addr, size_t size)
 }
 
 
-static uint64_t ops_x = 5;
-EXPORT_SYMBOL(ops_x);
-
 static __always_inline void check_memory_region(unsigned long addr,
 						size_t size, bool write)
 {
@@ -242,9 +240,6 @@ static __always_inline void check_memory_region(unsigned long addr,
 
 	if (unlikely(size == 0))
 		return;
-
-    //pr_err("Hello! writing to: %p\n",(void*)addr);
-    ++ops_x;
 
 	if (unlikely((void *)addr <
 		kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
@@ -261,13 +256,6 @@ static __always_inline void check_memory_region(unsigned long addr,
 
 	kasan_report(addr, size, write, _RET_IP_);
 }
-
-uint64_t __asan_get_opsx(void);
-uint64_t __asan_get_opsx(void)
-{
-    return ops_x;
-}
-EXPORT_SYMBOL(__asan_get_opsx);
 
 void __asan_loadN(unsigned long addr, size_t size);
 void __asan_storeN(unsigned long addr, size_t size);
@@ -484,6 +472,7 @@ EXPORT_SYMBOL(__asan_unregister_globals);
 	void __asan_load##size(unsigned long addr)		\
 	{							\
 		check_memory_region(addr, size, false);		\
+		memorize_mem_access(addr, size, false);		\
 	}							\
 	EXPORT_SYMBOL(__asan_load##size);			\
 	__alias(__asan_load##size)				\
@@ -492,6 +481,7 @@ EXPORT_SYMBOL(__asan_unregister_globals);
 	void __asan_store##size(unsigned long addr)		\
 	{							\
 		check_memory_region(addr, size, true);		\
+		memorize_mem_access(addr, size, true);		\
 	}							\
 	EXPORT_SYMBOL(__asan_store##size);			\
 	__alias(__asan_store##size)				\
@@ -507,6 +497,7 @@ DEFINE_ASAN_LOAD_STORE(16);
 void __asan_loadN(unsigned long addr, size_t size)
 {
 	check_memory_region(addr, size, false);
+	memorize_mem_access(addr, size, false);
 }
 EXPORT_SYMBOL(__asan_loadN);
 
@@ -517,6 +508,7 @@ EXPORT_SYMBOL(__asan_loadN_noabort);
 void __asan_storeN(unsigned long addr, size_t size)
 {
 	check_memory_region(addr, size, true);
+	memorize_mem_access(addr, size, true);
 }
 EXPORT_SYMBOL(__asan_storeN);
 

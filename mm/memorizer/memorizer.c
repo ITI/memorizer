@@ -49,3 +49,26 @@
  *===-----------------------------------------------------------------------===
  */
 
+#include <linux/memorizer.h>
+
+//==-- Temporary test code --==//
+static unsigned long long ops_x = 0;
+uint64_t __memorizer_get_opsx(void)
+{
+    return ops_x;
+}
+//EXPORT_SYMBOL(__memorizer_get_opsx);
+
+/**
+ * memorize_mem_access() - record associated data with the load or store
+ * @addr:	The virtual address being accessed
+ * @size:	The number of bits for the load/store
+ * @write:	True if the memory access is a write (store)
+ *
+ * This function will memorize, ie. log, the particular data access.
+ */
+void memorize_mem_access(unsigned long addr, size_t size,
+					       bool write)
+{
+	++ops_x;
+}

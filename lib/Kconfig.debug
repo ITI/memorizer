@@ -665,6 +665,15 @@ source "lib/Kconfig.kmemcheck"
 
 source "lib/Kconfig.kasan"
 
+config MEMORIZER
+	bool "Memorizer: kernel object lifetime access tracing"
+	depends on KASAN 
+        help 
+          Enables memory allocation and tracing tool that combines compiler
+          instrumentation on all loads/stores with embedded hooks for
+          allocations to track lifetime access patterns for kernel memory
+          objects. 
+
 endmenu # "Memory Debugging"
 
 config DEBUG_SHIRQ

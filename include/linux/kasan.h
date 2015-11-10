@@ -61,7 +61,6 @@ void kasan_slab_free(struct kmem_cache *s, void *object);
 
 int kasan_module_alloc(void *addr, size_t size);
 void kasan_free_shadow(const struct vm_struct *vm);
-uint64_t __asan_get_opsx(void);
 
 #else /* CONFIG_KASAN */
 

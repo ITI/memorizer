@@ -61,6 +61,7 @@ uint64_t __memorizer_get_opsx(void);
 #else /* !CONFIG_MEMORIZER */
 static __always_inline void memorize_mem_access(unsigned long addr, size_t size,
 					       bool write) {}
+uint64_t __memorizer_get_opsx(void) {}
 #endif /* CONFIG_MEMORIZER */
 
 #endif /* __MEMORIZER_H_ */

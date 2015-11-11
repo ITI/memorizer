@@ -17,6 +17,7 @@
 #include <linux/string.h>
 #include <linux/module.h>
 #include <linux/kasan.h>
+#include <linux/memorizer.h>
 
 static noinline void __init kmalloc_oob_right(void)
 {
@@ -258,7 +259,7 @@ static noinline void __init kasan_stack_oob(void)
 static noinline void __init memorizer_test(void)
 {
     pr_info("\n\n***OPS Num Writes: %llu\n", 
-            (unsigned long long) __asan_get_opsx());
+            (unsigned long long) __memorizer_get_opsx());
 }
 
 static int __init kmalloc_tests_init(void)

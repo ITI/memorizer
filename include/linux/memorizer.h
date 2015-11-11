@@ -54,14 +54,15 @@
 
 #ifdef CONFIG_MEMORIZER
 
-void memorize_mem_access(unsigned long addr, size_t size,
-					       bool write);
+void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
 uint64_t __memorizer_get_opsx(void);
+void __memorizer_print_events(unsigned int num_events);
 
 #else /* !CONFIG_MEMORIZER */
-static __always_inline void memorize_mem_access(unsigned long addr, size_t size,
-					       bool write) {}
+void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
+	{}
 uint64_t __memorizer_get_opsx(void) {}
+void __memorizer_print_events(unsigned int num_events){}
 #endif /* CONFIG_MEMORIZER */
 
 #endif /* __MEMORIZER_H_ */

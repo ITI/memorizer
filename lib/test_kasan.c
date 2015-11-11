@@ -259,7 +259,7 @@ static noinline void __init kasan_stack_oob(void)
 static noinline void __init memorizer_test(void)
 {
     pr_info("\n\n***OPS Num Writes: %llu\n", 
-            (unsigned long long) __memorizer_get_opsx());
+            (uint64_t) __memorizer_get_opsx());
 }
 
 static int __init kmalloc_tests_init(void)
@@ -281,6 +281,7 @@ static int __init kmalloc_tests_init(void)
 	kasan_global_oob();
 #endif
 	memorizer_test();
+	__memorizer_print_events(10);
 	return -EAGAIN;
 }
 

@@ -49,6 +49,7 @@
  *===-----------------------------------------------------------------------===
  */
 
+#include <linux/export.h>
 #include <linux/memorizer.h>
 
 //==-- Temporary test code --==//
@@ -57,7 +58,7 @@ uint64_t __memorizer_get_opsx(void)
 {
     return ops_x;
 }
-//EXPORT_SYMBOL(__memorizer_get_opsx);
+EXPORT_SYMBOL(__memorizer_get_opsx);
 
 /**
  * memorize_mem_access() - record associated data with the load or store

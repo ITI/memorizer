@@ -264,6 +264,7 @@ static noinline void __init memorizer_test(void)
 
 static int __init kmalloc_tests_init(void)
 {
+#if 0
 	kmalloc_oob_right();
 	kmalloc_oob_left();
 	kmalloc_node_oob_right();
@@ -278,7 +279,8 @@ static int __init kmalloc_tests_init(void)
 	kmem_cache_oob();
 	kasan_stack_oob();
 	kasan_global_oob();
-    memorizer_test();
+#endif
+	memorizer_test();
 	return -EAGAIN;
 }
 

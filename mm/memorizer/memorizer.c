@@ -87,6 +87,8 @@ uint64_t __memorizer_get_opsx(void)
 }
 EXPORT_SYMBOL(__memorizer_get_opsx);
 
+//==-- Memory related event hooks for mapping -----------------------------==//
+
 /**
  * __memorizer_print_events - print the last num events
  * @num_events:		The total number of events to print
@@ -107,14 +109,27 @@ void __memorizer_print_events(unsigned int num_events)
 
 	for(e = 0; e < num_events; e++)
 	{
+		char *type_str[10];
 		pr_info("Memorizer: access from IP 0x%p at addr 0x%p\n",
 			(void *)mem_events->src_ip, mem_events->access_addr);
-		pr_info("%s of size %zu by task %s/%d\n",
-			mem_events->event_type ? "Write" : "Read", /* TODO will
-								      fail for
-								      non-write
-								      allocation
-								      events */
+		switch(mem_events->event_type){
+		case READ:
+			*type_str = "Read\0";
+			break;
+		case WRITE:
+			*type_str = "Write\0";
+			break;
+		case ALLOC:
+			*type_str = "Alloc\0";
+			break;
+		case FREE:
+			*type_str = "Free\0";
+			break;
+		default:
+			pr_info("Unmatched event type\n");
+			*type_str = "Unknown\0";
+		}
+		pr_info("%s of size %zu by task %s/%d\n", *type_str,
 			mem_events->access_size, mem_events->comm,
 			task_pid_nr(current));
 		i++;

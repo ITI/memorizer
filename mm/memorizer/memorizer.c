@@ -99,6 +99,13 @@ uint64_t __memorizer_get_opsx(void)
 }
 EXPORT_SYMBOL(__memorizer_get_opsx);
 
+static uint64_t memorizer_num_allocs = 0;
+uint64_t __memorizer_get_allocs(void)
+{
+    return memorizer_num_allocs;
+}
+EXPORT_SYMBOL(__memorizer_get_allocs);
+
 /**
  * __memorizer_print_events - print the last num events
  * @num_events:		The total number of events to print

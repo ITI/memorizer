@@ -63,6 +63,18 @@
 enum AllocType {KALLAC};
 enum EventType {READ,WRITE,ALLOC,FREE};
 
+/**
+ * struct memorizer_event - structure to capture all memory related events
+ * @alloc_type:	 if allocation then set the type of alloca
+ * @event_type:	 type of event
+ * @obj_id:	 for allocations track object identifier
+ * @src_ip:	 virtual address of the invoking instruction
+ * @access_addr: starting address of the operation
+ * @access_size: size of the access: for wr/rd size, allocation length
+ * @jiffies:	 timestamp
+ * @pid:	 PID of invoking task
+ * @comm:	 String of executable
+ */
 struct memorizer_event {
 	enum AllocType alloc_type;
 	enum EventType event_type;

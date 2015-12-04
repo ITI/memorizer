@@ -228,13 +228,15 @@ void log_event(uintptr_t addr, size_t size, enum EventType event_type,
  */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 {
-	++ops_x; 
+	++ops_x;
 	enum EventType event_type = write ? WRITE : READ;
 	log_event(addr, size, event_type, ip);
 }
 
 /**
  * memorize_alloc() - record allocation event
+ * @object:	Pointer to the beginning of hte object
+ * @size:	Size of the object
  *
  * Track the allocation and add the object to the set of active object tree.
  */

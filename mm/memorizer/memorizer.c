@@ -59,37 +59,7 @@
 
 #include <linux/memorizer.h>
 
-//==-- Data types and structs for building maps ---------------------------==//
-enum AllocType {KALLAC};
-enum EventType {READ,WRITE,ALLOC,FREE};
-
-/**
- * struct memorizer_event - structure to capture all memory related events
- * @alloc_type:	 if allocation then set the type of alloca
- * @event_type:	 type of event
- * @obj_id:	 for allocations track object identifier
- * @src_ip:	 virtual address of the invoking instruction
- * @access_addr: starting address of the operation
- * @access_size: size of the access: for wr/rd size, allocation length
- * @jiffies:	 timestamp
- * @pid:	 PID of invoking task
- * @comm:	 String of executable
- */
-struct memorizer_event {
-	enum AllocType alloc_type;
-	enum EventType event_type;
-	uint64_t obj_id;
-	uintptr_t src_ip;
-	uintptr_t access_addr;		/* The location being accessed */
-	uint64_t access_size;		/* events can be allocs or memcpy */
-	unsigned long jiffies;		/* creation timestamp */
-	pid_t pid;			/* pid of the current task */
-	char comm[TASK_COMM_LEN];	/* executable name */
-};
-
-/* TODO make this dynamically allocated based upon free memory */
-struct memorizer_event mem_events[1000000];
-uint64_t log_index = 0;
+//==-- Debugging and print information ------------------------------------==//
 
 //==-- Temporary test code --==//
 static uint64_t ops_x = 0;
@@ -155,6 +125,38 @@ void __memorizer_print_events(unsigned int num_events)
 	}
 }
 EXPORT_SYMBOL(__memorizer_print_events);
+
+//==-- Data types and structs for building maps ---------------------------==//
+enum AllocType {KALLAC};
+enum EventType {READ,WRITE,ALLOC,FREE};
+
+/**
+ * struct memorizer_event - structure to capture all memory related events
+ * @alloc_type:	 if allocation then set the type of alloca
+ * @event_type:	 type of event
+ * @obj_id:	 for allocations track object identifier
+ * @src_ip:	 virtual address of the invoking instruction
+ * @access_addr: starting address of the operation
+ * @access_size: size of the access: for wr/rd size, allocation length
+ * @jiffies:	 timestamp
+ * @pid:	 PID of invoking task
+ * @comm:	 String of executable
+ */
+struct memorizer_event {
+	enum AllocType alloc_type;
+	enum EventType event_type;
+	uint64_t obj_id;
+	uintptr_t src_ip;
+	uintptr_t access_addr;		/* The location being accessed */
+	uint64_t access_size;		/* events can be allocs or memcpy */
+	unsigned long jiffies;		/* creation timestamp */
+	pid_t pid;			/* pid of the current task */
+	char comm[TASK_COMM_LEN];	/* executable name */
+};
+
+/* TODO make this dynamically allocated based upon free memory */
+struct memorizer_event mem_events[1000000];
+uint64_t log_index = 0;
 
 //==-- Memorizer internal implementation ----------------------------------==//
 

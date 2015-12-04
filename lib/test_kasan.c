@@ -260,6 +260,8 @@ static noinline void __init memorizer_test(void)
 {
     pr_info("\n\n***OPS Num Writes: %llu\n", 
             (uint64_t) __memorizer_get_opsx());
+    pr_info("\n\n***OPS Num Allocs: %llu\n", 
+            (uint64_t) __memorizer_get_allocs());
 }
 
 static int __init kmalloc_tests_init(void)

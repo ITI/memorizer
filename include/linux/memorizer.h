@@ -55,7 +55,14 @@
 #ifdef CONFIG_MEMORIZER
 
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
+void memorize_alloc_pages(struct page *page, unsigned int order);
+void memorize_free_pages(struct page *page, unsigned int order);
+
+void memorize_kmalloc(const void *object, size_t size); 
+static void memorize_kfree(const void *address, size_t size);
+
 uint64_t __memorizer_get_opsx(void);
+uint64_t __memorizer_get_allocs(void);
 void __memorizer_print_events(unsigned int num_events);
 
 #else /* !CONFIG_MEMORIZER */

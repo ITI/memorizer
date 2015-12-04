@@ -136,29 +136,24 @@ void __memorizer_print_events(unsigned int num_events)
 }
 EXPORT_SYMBOL(__memorizer_print_events);
 
-//==-- Memorizer external API for event recording -------------------------==//
+//==-- Memorizer internal implementation ----------------------------------==//
 
 /**
- * memorize_mem_access() - record associated data with the load or store
- * @addr:	The virtual address being accessed
- * @size:	The number of bits for the load/store
- * @write:	True if the memory access is a write (store)
+ * log_event() - log the memory event
+ * @addr:	The virtual address for the event start location
+ * @size:	The number of bits associated with the event
+ * @event_type:	The type of event to record
+ * @ip:		IP of the invoking instruction
  *
- * This function will memorize, ie. log, the particular data access.
- *
- * Currently emulates a circular buffer for logging the most recent set of
- * events. TODO extend this to be dynamically determined.
+ * This function records the memory event to the event log. Currently emulates a
+ * circular buffer for logging the most recent set of events. TODO extend this
+ * to be dynamically determined.
  */
-void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
+void log_event(uintptr_t addr, size_t size, enum EventType event_type, 
+	       uintptr_t ip)
 {
-	++ops_x;
 	mem_events[log_index].access_addr = addr;
-	if(write){
-		mem_events[log_index].event_type = WRITE;
-	} else {
-		mem_events[log_index].event_type = READ;
-	}
-
+	mem_events[log_index].event_type = event_type;
 	mem_events[log_index].access_size = size;
 	mem_events[log_index].src_ip = ip;
 	mem_events[log_index].jiffies = jiffies;
@@ -197,3 +192,35 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	else
 		++log_index;
 }
+
+//==-- Memorizer external API for event recording -------------------------==//
+
+/**
+ * memorize_mem_access() - record associated data with the load or store
+ * @addr:	The virtual address being accessed
+ * @size:	The number of bits for the load/store
+ * @write:	True if the memory access is a write (store)
+ * @ip:		IP of the invocing instruction
+ *
+ * This function will memorize, ie. log, the particular data access.
+ */
+void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
+{
+	++ops_x; 
+	enum EventType event_type = write ? WRITE : READ;
+	log_event(addr, size, event_type, ip);
+}
+
+/**
+ * memorize_alloc() - record allocation event
+ *
+ * Track the allocation and add the object to the set of active object tree.
+ */
+void memorize_kmalloc(const void *object, size_t size)
+{
+	++memorizer_num_allocs;
+}
+
+static void memorize_kfree(const void *address, size_t size){ }
+void memorize_alloc_pages(struct page *page, unsigned int order) { }
+void memorize_free_pages(struct page *page, unsigned int order) { }

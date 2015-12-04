@@ -87,7 +87,7 @@ struct memorizer_event {
 	char comm[TASK_COMM_LEN];	/* executable name */
 };
 
-/* 10 GB / 64 bytes (per event) = 156 250 000 entries */
+/* TODO make this dynamically allocated based upon free memory */
 struct memorizer_event mem_events[1000000];
 uint64_t log_index = 0;
 

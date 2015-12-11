@@ -102,7 +102,8 @@ void __memorizer_print_events(unsigned int num_events)
 	{
 		char *type_str[10];
 		pr_info("Memorizer: access from IP 0x%p at addr 0x%p\n",
-			(void *)mem_events->src_ip, mem_events->access_addr);
+			(void *)mem_events->src_ip, (void *)
+			mem_events->access_addr);
 		switch(mem_events->event_type){
 		case READ:
 			*type_str = "Read\0";
@@ -120,9 +121,9 @@ void __memorizer_print_events(unsigned int num_events)
 			pr_info("Unmatched event type\n");
 			*type_str = "Unknown\0";
 		}
-		pr_info("%s of size %zu by task %s/%d\n", *type_str,
-			mem_events->access_size, mem_events->comm,
-			task_pid_nr(current));
+		pr_info("%s of size %lu by task %s/%d\n", *type_str,
+			(unsigned long) mem_events->access_size,
+			mem_events->comm, task_pid_nr(current));
 		i++;
 		if(i >= ARRAY_SIZE(mem_events))
 			i = 0;

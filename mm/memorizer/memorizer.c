@@ -61,7 +61,65 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 
-#include <linux/memorizer.h>
+//==-- Data types and structs for building maps ---------------------------==//
+enum AllocType {KALLAC};
+enum EventType {READ,WRITE,ALLOC,FREE};
+
+/* flag to keep track of whether or not to track writes */
+bool memorizer_enabled = false;
+
+/**
+ * struct memorizer_event - structure to capture all memory related events
+ * @alloc_type:	 if allocation then set the type of alloca
+ * @event_type:	 type of event
+ * @obj_id:	 for allocations track object identifier
+ * @src_ip:	 virtual address of the invoking instruction
+ * @access_addr: starting address of the operation
+ * @access_size: size of the access: for wr/rd size, allocation length
+ * @jiffies:	 timestamp
+ * @pid:	 PID of invoking task
+ * @comm:	 String of executable
+ */
+struct memorizer_event {
+	enum AllocType alloc_type;
+	enum EventType event_type;
+	uint64_t obj_id;
+	uintptr_t src_ip;
+	uintptr_t access_addr;		/* The location being accessed */
+	uint64_t access_size;		/* events can be allocs or memcpy */
+	unsigned long jiffies;		/* creation timestamp */
+	pid_t pid;			/* pid of the current task */
+	char comm[TASK_COMM_LEN];	/* executable name */
+};
+
+/** 
+ * struct memorizer_kobj - metadata for kernel objects 
+ * @rb_node:	the red-black tree relations
+ * @alloc_ip:	instruction that allocated the object
+ * @begin_va:	Virtual address of the beginning of the object
+ * @end_va:	Last valid byte virutal address of the object
+ * @size:	Size of the object
+ * @begin_pa:	Physical address of the beginning of object
+ * @end_pa:	Physical address of the last valid byte of object
+ *
+ * This data structure captures the details of allocated objects
+ */
+struct memorizer_kobj {
+	struct rb_node	node;
+	uintptr_t	alloc_ip;
+	uintptr_t	begin_va;
+	uintptr_t	end_va;
+	uintptr_t	begin_pa;
+	uintptr_t	end_pa;
+	uint32_t	size;
+};
+
+/* TODO make this dynamically allocated based upon free memory */
+struct memorizer_event mem_events[10000];
+uint64_t log_index = 0;
+
+/* object cache for memorizer kobjects */
+static struct kmem_cache *kobj_cache;
 
 //==-- Debugging and print information ------------------------------------==//
 
@@ -130,38 +188,6 @@ void __memorizer_print_events(unsigned int num_events)
 	}
 }
 EXPORT_SYMBOL(__memorizer_print_events);
-
-//==-- Data types and structs for building maps ---------------------------==//
-enum AllocType {KALLAC};
-enum EventType {READ,WRITE,ALLOC,FREE};
-
-/**
- * struct memorizer_event - structure to capture all memory related events
- * @alloc_type:	 if allocation then set the type of alloca
- * @event_type:	 type of event
- * @obj_id:	 for allocations track object identifier
- * @src_ip:	 virtual address of the invoking instruction
- * @access_addr: starting address of the operation
- * @access_size: size of the access: for wr/rd size, allocation length
- * @jiffies:	 timestamp
- * @pid:	 PID of invoking task
- * @comm:	 String of executable
- */
-struct memorizer_event {
-	enum AllocType alloc_type;
-	enum EventType event_type;
-	uint64_t obj_id;
-	uintptr_t src_ip;
-	uintptr_t access_addr;		/* The location being accessed */
-	uint64_t access_size;		/* events can be allocs or memcpy */
-	unsigned long jiffies;		/* creation timestamp */
-	pid_t pid;			/* pid of the current task */
-	char comm[TASK_COMM_LEN];	/* executable name */
-};
-
-/* TODO make this dynamically allocated based upon free memory */
-struct memorizer_event mem_events[1000000];
-uint64_t log_index = 0;
 
 //==-- Memorizer internal implementation ----------------------------------==//
 

@@ -38,13 +38,13 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * WITH THE SOFTWARE. 
  *
- *===-----------------------------------------------------------------------===
+ *===------------------------------------------------------------------------===
  *
  *       Filename:  memorizer.h
  *
  *    Description:  Memorizer records data for kernel object lifetime analysis. 
  *
- *===-----------------------------------------------------------------------===
+ *===------------------------------------------------------------------------===
  */
 
 #ifndef __MEMORIZER_H_
@@ -52,24 +52,35 @@
 
 #include <linux/types.h>
 
-#ifdef CONFIG_MEMORIZER
+#ifdef CONFIG_MEMORIZER /*----------- !CONFIG_MEMORIZER -------------------- */
 
+/* Init and Misc */
+void memorizer_init(void);
+
+/* Memorize access */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
+
+/* Allocation memorization */
+void memorize_alloc(const void *object, size_t size);
+void memorize_kfree(const void *address, size_t size);
 void memorize_alloc_pages(struct page *page, unsigned int order);
 void memorize_free_pages(struct page *page, unsigned int order);
 
-void memorize_kmalloc(const void *object, size_t size); 
-static void memorize_kfree(const void *address, size_t size);
-
+/* Temporary Debug and test code */
 uint64_t __memorizer_get_opsx(void);
 uint64_t __memorizer_get_allocs(void);
 void __memorizer_print_events(unsigned int num_events);
 
-#else /* !CONFIG_MEMORIZER */
+#else /*----------- !CONFIG_MEMORIZER ------------------------- */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	{}
 uint64_t __memorizer_get_opsx(void) {}
 void __memorizer_print_events(unsigned int num_events){}
+void memorizer_init(void){}
+void memorize_alloc(const void *object, size_t size){}
+void memorize_kfree(const void *address){}
+void memorize_alloc_pages(struct page *page, unsigned int order){}
+void memorize_free_pages(struct page *page, unsigned int order){}
 #endif /* CONFIG_MEMORIZER */
 
 #endif /* __MEMORIZER_H_ */

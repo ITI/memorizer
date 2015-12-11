@@ -240,11 +240,11 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
  *
  * Track the allocation and add the object to the set of active object tree.
  */
-void memorize_kmalloc(const void *object, size_t size)
+void memorize_alloc(const void *object, size_t size)
 {
 	++memorizer_num_allocs;
 }
 
-static void memorize_kfree(const void *address, size_t size){ }
+void memorize_kfree(const void *address, size_t size) { }
 void memorize_alloc_pages(struct page *page, unsigned int order) { }
 void memorize_free_pages(struct page *page, unsigned int order) { }

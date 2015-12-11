@@ -49,13 +49,17 @@
  *===-----------------------------------------------------------------------===
  */
 
-#include <linux/export.h>
-#include <linux/kernel.h>
-#include <linux/sched.h>
-#include <linux/preempt.h>
 #include <linux/bug.h>
+#include <linux/err.h>
+#include <linux/export.h>
 #include <linux/jiffies.h>
+#include <linux/kernel.h>
+#include <linux/memorizer.h>
+#include <linux/preempt.h>
 #include <linux/printk.h>
+#include <linux/rbtree.h>
+#include <linux/slab.h>
+#include <linux/sched.h>
 
 #include <linux/memorizer.h>
 

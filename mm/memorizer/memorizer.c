@@ -114,6 +114,24 @@ struct memorizer_kobj {
 	uint32_t	size;
 };
 
+/**
+ * struct code_region - simple struct to capture begin and end of a code region
+ */
+struct code_region {
+	uintptr_t b;
+	uintptr_t e;
+};
+
+struct code_region audit_code_region = {
+	.b = 0xffffffff81158b30,
+	.e = 0xffffffff8116b550
+};
+
+struct code_region crypto_code_region = {
+	.b = 0xffffffff814a3520,
+	.e = 0xffffffff814d61e0
+};
+
 /* TODO make this dynamically allocated based upon free memory */
 struct memorizer_event mem_events[10000];
 uint64_t log_index = 0;

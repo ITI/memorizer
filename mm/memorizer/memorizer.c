@@ -158,8 +158,6 @@ uint64_t __memorizer_get_allocs(void)
 }
 EXPORT_SYMBOL(__memorizer_get_allocs);
 
-//==-- Memory related event hooks for mapping -----------------------------==//
-
 /**
  * __memorizer_print_events - print the last num events
  * @num_events:		The total number of events to print

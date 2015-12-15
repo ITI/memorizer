@@ -211,7 +211,7 @@ void __memorizer_print_events(unsigned int num_events)
 }
 EXPORT_SYMBOL(__memorizer_print_events);
 
-//==-- Memorizer internal implementation ----------------------------------==//
+//==-- Memorizer memory access tracking -----------------------------------==//
 
 /**
  * log_event() - log the memory event
@@ -267,6 +267,37 @@ void log_event(uintptr_t addr, size_t size, enum EventType event_type,
 	else
 		++log_index;
 }
+
+/**
+ * memorize_mem_access() - record associated data with the load or store
+ * @addr:	The virtual address being accessed
+ * @size:	The number of bits for the load/store
+ * @write:	True if the memory access is a write (store)
+ * @ip:		IP of the invocing instruction
+ *
+ * This function will memorize, ie. log, the particular data access.
+ */
+void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
+{
+	unsigned long flags;
+	enum EventType event_type;
+
+	if(!memorizer_enabled)
+		return;
+	return;
+
+	//local_irq_save(flags);
+	//if(memorizer_enabled){
+	//if(addr > crypto_code_region.b && addr < crypto_code_region.e)
+	{
+		++ops_x;
+		event_type = write ? WRITE : READ;
+		log_event(addr, size, event_type, ip);
+	}
+	//local_irq_restore(flags);
+}
+
+//==-- Memorizer kernel object tracking -----------------------------------==//
 
 /**
  * add_kobj_to_rb_tree - add the object to the tree
@@ -367,37 +398,6 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 	}
 }
 
-//==-- Memorizer external API for event recording -------------------------==//
-
-/**
- * memorize_mem_access() - record associated data with the load or store
- * @addr:	The virtual address being accessed
- * @size:	The number of bits for the load/store
- * @write:	True if the memory access is a write (store)
- * @ip:		IP of the invocing instruction
- *
- * This function will memorize, ie. log, the particular data access.
- */
-void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
-{
-	unsigned long flags;
-	enum EventType event_type;
-
-	if(!memorizer_enabled)
-		return;
-	return;
-
-	//local_irq_save(flags);
-	//if(memorizer_enabled){
-	//if(addr > crypto_code_region.b && addr < crypto_code_region.e)
-	{
-		++ops_x;
-		event_type = write ? WRITE : READ;
-		log_event(addr, size, event_type, ip);
-	}
-	//local_irq_restore(flags);
-}
-
 /*** HOOKS similar to the kmem points ***/
 void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
@@ -436,6 +436,8 @@ void memorize_kmem_cache_free(_RET_IP_, x);
 
 void memorize_alloc_pages(struct page *page, unsigned int order) { }
 void memorize_free_pages(struct page *page, unsigned int order) { }
+
+//==-- Memorizer Initializtion --------------------------------------------==//
 
 /**
  * create_obj_kmem_cache() create the kernel object kmem_cache
@@ -501,5 +503,3 @@ int memorizer_init_from_driver(void)
 	return 0;
 }
 EXPORT_SYMBOL(memorizer_init_from_driver);
-
-

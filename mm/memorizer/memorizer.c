@@ -109,11 +109,9 @@ struct memorizer_event {
 struct memorizer_kobj {
 	struct rb_node	node;
 	uintptr_t	alloc_ip;
-	uintptr_t	begin_va;
-	uintptr_t	end_va;
-	uintptr_t	begin_pa;
-	uintptr_t	end_pa;
-	uint32_t	size;
+	uintptr_t	va_ptr_to_obj;
+	uintptr_t	pa_ptr_to_obj;
+	size_t		size;
 };
 
 /**
@@ -162,6 +160,7 @@ uint64_t __memorizer_get_opsx(void)
 EXPORT_SYMBOL(__memorizer_get_opsx);
 
 static uint64_t memorizer_num_allocs = 0;
+static uint64_t memorizer_num_tracked_allocs = 0;
 uint64_t __memorizer_get_allocs(void)
 {
     return memorizer_num_allocs;
@@ -308,46 +307,28 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 //==-- Memorizer kernel object tracking -----------------------------------==//
 
 /**
- * add_kobj_to_rb_tree - add the object to the tree
+ * init_kobj() - Initalize the metadata to track the recent allocation
  */
+int init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
+	      ptr_to_kobj, size_t bytes_alloc)
+{
+	kobj->alloc_ip = call_site;
+	kobj->va_ptr_to_obj = ptr_to_kobj;
+	kobj->pa_ptr_to_obj = __pa(ptr_to_kobj);
+	kobj->size = bytes_alloc;
+}
 
 /**
- * create_and_add_kobj - create and add the object to the tree
- * @object*	: pointer to the newly allocated object
- * @size	: size of the object
- *
- * Algorithm: 
- *
- *	1. Allocate and initialize the memorizer object
- *	2. Add the object to the RB tree
- *
- * ! Assumes that memorizer is initialized !
+ * add_kobj_to_rb_tree - add the object to the tree
+ * @kobj:	Pointer to the object to add to the tree
  */
-void create_and_add_kobj(uintptr_t call_site, uintptr_t ptr_to_kobj, size_t
-			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
+int add_kobj_to_rb_tree(struct memorizer_kobj *kobj)
 {
-	pr_info("Memorizer object from: %p @ %p of size: %lu.  GFP-Flags: 0x%llx\n", 
-		(void *)call_site, (void*)ptr_to_kobj, bytes_alloc, 
-		(unsigned long long) gfp_flags);
-
-	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache,
-							gfp_flags|GFP_ATOMIC);
-
-	if(!kobj){
-		pr_info("Cannot allocate a memorizer_kobj structure\n");
-	}
-
-	pr_info("Just allocated the object\n");
-
-	kmem_cache_free(kobj_cache, kobj);
-	pr_info("Just freed the object\n");
-//	struct memorizer_kobj * kobj = (struct memorizer_kobj *)
-//		kmalloc(sizeof(struct memorizer_kobj),
-//			gfp_memorizer_mask(SLAB_NOTRACK));
-	//init_kobj(object, size);
-	//add_kobj_to_rb_tree(kobj);
-
-	//local_irq_restore(flags);
+#if 0 // TODO IMPLEMENT
+	unsigned long flags;
+	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	write_unlock_irqsave(&active_kobj_rbtree_spinlock, flags);
+#endif
 }
 
 /**
@@ -363,7 +344,7 @@ void create_and_add_kobj(uintptr_t call_site, uintptr_t ptr_to_kobj, size_t
  * Maybe TODO: Do some processing here as opposed to later? This depends on when
  * we want to add our filtering.
  */
-void move_kobj_to_free_list(uintptr_t call_site, uintptr_t ptr_to_kobj)
+static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t ptr_to_kobj)
 {
 }
 
@@ -378,18 +359,31 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
 	//unlikely(IS_ERR(ptr)))
+	//if(object > crypto_code_region.b && object < crypto_code_region.e)
 	if(unlikely(ptr==NULL))
 		return;
 
-//	if(object > crypto_code_region.b && object < crypto_code_region.e)
-	{
-		++memorizer_num_allocs;
-		if(memorizer_enabled)
-		{
-			create_and_add_kobj(call_site, ptr, bytes_req,
-					    bytes_alloc, gfp_flags);
-		}
+	++memorizer_num_allocs;
+
+	if(unlikely(!memorizer_enabled))
+		return;
+
+	++memorizer_num_tracked_allocs;
+
+	pr_info("Memorizer object from %p @ %p of size: %lu. GFP-Flags: 0x%llx\n",
+		call_site, ptr, bytes_alloc, (unsigned long long) gfp_flags);
+
+	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache,
+							gfp_flags |
+							GFP_ATOMIC);
+	if(!kobj){
+		pr_info("Cannot allocate a memorizer_kobj structure\n");
 	}
+
+	init_kobj(kobj, call_site, ptr, bytes_alloc);
+
+	/* This function uses a spinlock to ensure tree insertion */
+	add_kobj_to_rb_tree(kobj);
 }
 
 /*** HOOKS similar to the kmem points ***/

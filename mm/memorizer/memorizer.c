@@ -158,6 +158,8 @@ uint64_t __memorizer_get_allocs(void)
 }
 EXPORT_SYMBOL(__memorizer_get_allocs);
 
+//==-- Memory related event hooks for mapping -----------------------------==//
+
 /**
  * __memorizer_print_events - print the last num events
  * @num_events:		The total number of events to print
@@ -180,8 +182,8 @@ void __memorizer_print_events(unsigned int num_events)
 	{
 		char *type_str[10];
 		pr_info("Memorizer: access from IP 0x%p at addr 0x%p\n",
-			(void *)mem_events->src_ip, (void *)
-			mem_events->access_addr);
+				(void *)mem_events->src_ip, (void *)
+				mem_events->access_addr);
 		switch(mem_events->event_type){
 		case READ:
 			*type_str = "Read\0";

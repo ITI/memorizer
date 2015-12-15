@@ -141,6 +141,16 @@ uint64_t log_index = 0;
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
 
+/* mask to apply to memorizer allocations TODO: verify the list */
+#define gfp_memorizer_mask(gfp)	(((gfp) & (		\
+					 | GFP_ATOMIC		\
+					 | __GFP_NOACCOUNT))	\
+					 | __GFP_NORETRY	\
+					 | __GFP_NOMEMALLOC	\
+					 | __GFP_NOWARN		\
+					 | __GFP_NOTRACK	\
+				 )
+
 //==-- Debugging and print information ------------------------------------==//
 
 //==-- Temporary test code --==//
@@ -316,23 +326,9 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 void create_and_add_kobj(uintptr_t call_site, uintptr_t ptr_to_kobj, size_t
 			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
-
-	//unsigned long flags;
-#if 0
-	struct memorizer_kobj * kobj = (struct memorizer_kobj *)
-		kmalloc(sizeof(struct memorizer_kobj), gfp_memorizer_mask(GFP_ATOMIC));
-	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache, 0);
-#endif
-
-	//local_irq_save(flags);
-
-	pr_info("Allocating new memorizer object from: %p @ %p of size: %lu.  GFP-Flags: 0x%llx\n", (void *)call_site, (void*)ptr_to_kobj,
-		bytes_alloc, (unsigned long long) gfp_flags);
-
-#define gfp_kmemleak_mask(gfp)	(((gfp) & (GFP_KERNEL | GFP_ATOMIC | \
-					   __GFP_NOACCOUNT)) | \
-				 __GFP_NORETRY | __GFP_NOMEMALLOC | \
-				 __GFP_NOWARN | __GFP_NOTRACK)
+	pr_info("Memorizer object from: %p @ %p of size: %lu.  GFP-Flags: 0x%llx\n", 
+		(void *)call_site, (void*)ptr_to_kobj, bytes_alloc, 
+		(unsigned long long) gfp_flags);
 
 	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache,
 							gfp_flags|GFP_ATOMIC);

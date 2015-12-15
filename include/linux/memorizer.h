@@ -72,8 +72,8 @@ void memorize_alloc_pages(struct page *page, unsigned int order);
 void memorize_free_pages(struct page *page, unsigned int order);
 
 /* Temporary Debug and test code */
-uint64_t __memorizer_get_opsx(void);
-uint64_t __memorizer_get_allocs(void);
+int __memorizer_get_opsx(void);
+int __memorizer_get_allocs(void);
 void __memorizer_print_events(unsigned int num_events);
 
 #else /*----------- !CONFIG_MEMORIZER ------------------------- */

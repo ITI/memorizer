@@ -66,11 +66,10 @@
 #include <asm/atomic.h>
 
 //==-- Data types and structs for building maps ---------------------------==//
+
+/* Types for events */
 enum AllocType {KALLAC};
 enum EventType {READ,WRITE,ALLOC,FREE};
-
-/* flag to keep track of whether or not to track writes */
-bool memorizer_enabled = false;
 
 /**
  * struct memorizer_event - structure to capture all memory related events
@@ -137,6 +136,9 @@ struct code_region crypto_code_region = {
 /* TODO make this dynamically allocated based upon free memory */
 struct memorizer_event mem_events[10000];
 uint64_t log_index = 0;
+
+/* flag to keep track of whether or not to track writes */
+bool memorizer_enabled = false;
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;

@@ -54,12 +54,14 @@
 #include <linux/export.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
+#include <linux/kmemleak.h>
 #include <linux/memorizer.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
 #include <linux/rbtree.h>
-#include <linux/slab.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
+#include <linux/smp.h>
 
 //==-- Data types and structs for building maps ---------------------------==//
 enum AllocType {KALLAC};
@@ -264,6 +266,105 @@ void log_event(uintptr_t addr, size_t size, enum EventType event_type,
 		++log_index;
 }
 
+/**
+ * add_kobj_to_rb_tree - add the object to the tree
+ */
+
+/**
+ * create_and_add_kobj - create and add the object to the tree
+ * @object*	: pointer to the newly allocated object
+ * @size	: size of the object
+ *
+ * Algorithm: 
+ *
+ *	1. Allocate and initialize the memorizer object
+ *	2. Add the object to the RB tree
+ *
+ * ! Assumes that memorizer is initialized !
+ */
+void create_and_add_kobj(uintptr_t call_site, uintptr_t ptr_to_kobj, size_t
+			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
+{
+
+	//unsigned long flags;
+#if 0
+	struct memorizer_kobj * kobj = (struct memorizer_kobj *)
+		kmalloc(sizeof(struct memorizer_kobj), gfp_memorizer_mask(GFP_ATOMIC));
+	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache, 0);
+#endif
+
+	//local_irq_save(flags);
+
+	pr_info("Allocating new memorizer object from: %p @ %p of size: %lu.  GFP-Flags: 0x%llx\n", (void *)call_site, (void*)ptr_to_kobj,
+		bytes_alloc, (unsigned long long) gfp_flags);
+
+#define gfp_kmemleak_mask(gfp)	(((gfp) & (GFP_KERNEL | GFP_ATOMIC | \
+					   __GFP_NOACCOUNT)) | \
+				 __GFP_NORETRY | __GFP_NOMEMALLOC | \
+				 __GFP_NOWARN | __GFP_NOTRACK)
+
+	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache,
+							gfp_flags|GFP_ATOMIC);
+
+	if(!kobj){
+		pr_info("Cannot allocate a memorizer_kobj structure\n");
+	}
+
+	pr_info("Just allocated the object\n");
+
+	kmem_cache_free(kobj_cache, kobj);
+	pr_info("Just freed the object\n");
+//	struct memorizer_kobj * kobj = (struct memorizer_kobj *)
+//		kmalloc(sizeof(struct memorizer_kobj),
+//			gfp_memorizer_mask(SLAB_NOTRACK));
+	//init_kobj(object, size);
+	//add_kobj_to_rb_tree(kobj);
+
+	//local_irq_restore(flags);
+}
+
+/**
+ * move_kobj_to_free_list - move the specified objec to free list
+ * @call_site:	Call site requesting the original free
+ * @ptr:	Address of the object to be freed
+ *
+ * Algorithm: 
+ *	1) find the object in the rbtree
+ *	2) add the object to the memorizer process kobj queue
+ *	3) remove the object from the rbtree
+ *
+ * Maybe TODO: Do some processing here as opposed to later? This depends on when
+ * we want to add our filtering.
+ */
+void move_kobj_to_free_list(uintptr_t call_site, uintptr_t ptr_to_kobj)
+{
+}
+
+/**
+ * memorize_alloc() - record allocation event
+ * @object:	Pointer to the beginning of hte object
+ * @size:	Size of the object
+ *
+ * Track the allocation and add the object to the set of active object tree.
+ */
+void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
+{
+	//unlikely(IS_ERR(ptr)))
+	if(unlikely(ptr==NULL))
+		return;
+
+//	if(object > crypto_code_region.b && object < crypto_code_region.e)
+	{
+		++memorizer_num_allocs;
+		if(memorizer_enabled)
+		{
+			create_and_add_kobj(call_site, ptr, bytes_req,
+					    bytes_alloc, gfp_flags);
+		}
+	}
+}
+
 //==-- Memorizer external API for event recording -------------------------==//
 
 /**
@@ -277,23 +378,126 @@ void log_event(uintptr_t addr, size_t size, enum EventType event_type,
  */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 {
-	++ops_x;
-	enum EventType event_type = write ? WRITE : READ;
-	log_event(addr, size, event_type, ip);
+	unsigned long flags;
+	enum EventType event_type;
+
+	if(!memorizer_enabled)
+		return;
+	return;
+
+	//local_irq_save(flags);
+	//if(memorizer_enabled){
+	//if(addr > crypto_code_region.b && addr < crypto_code_region.e)
+	{
+		++ops_x;
+		event_type = write ? WRITE : READ;
+		log_event(addr, size, event_type, ip);
+	}
+	//local_irq_restore(flags);
+}
+
+/*** HOOKS similar to the kmem points ***/
+void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
+{
+	__memorize_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+}
+
+void memorize_kmalloc_node(unsigned long call_site, const void *ptr, size_t
+			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
+			   node)
+{
+	__memorize_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+}
+
+void memorize_kfree(unsigned long call_site, const void *ptr)
+{
+	/* 
+	 * Condition for ensuring free is from online cpu: see trace point
+	 * condition from include/trace/events/kmem.h for reason
+	 */
+	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
+		return;
+	}
+
+	move_kobj_to_free_list(call_site, (void *) ptr);
+}
+
+#if 0
+void memorize_kmem_cache_alloc(_RET_IP_, ret, s->object_size, s->size,
+			       gfpflags);
+void memorize_kmem_cache_alloc_node(_RET_IP_, ret, s->object_size, s->size,
+				    gfpflags, node);
+void memorize_kmem_cache_free(_RET_IP_, x);
+#endif
+
+
+void memorize_alloc_pages(struct page *page, unsigned int order) { }
+void memorize_free_pages(struct page *page, unsigned int order) { }
+
+/**
+ * create_obj_kmem_cache() create the kernel object kmem_cache
+ */
+void create_obj_kmem_cache(void)
+{
+	pr_info("Creating kmem_cache object\n");
+	kobj_cache = KMEM_CACHE(memorizer_kobj,
+				SLAB_PANIC
+				//| SLAB_TRACE | SLAB_NOLEAKTRACE
+			       );
+	pr_info("Just created kmem_cache object\n");
 }
 
 /**
- * memorize_alloc() - record allocation event
- * @object:	Pointer to the beginning of hte object
- * @size:	Size of the object
+ * memorizer_init() - initialize memorizer state
  *
- * Track the allocation and add the object to the set of active object tree.
+ * Set enable flag to true which enables tracking for memory access and object
+ * allocation. Allocate the object cache as well.
  */
-void memorize_alloc(const void *object, size_t size)
+void __init memorizer_init(void)
 {
-	++memorizer_num_allocs;
+	unsigned long flags;
+	create_obj_kmem_cache();
+
+	local_irq_save(flags);
+	memorizer_enabled = true;
+	local_irq_restore(flags);
 }
 
-void memorize_kfree(const void *address, size_t size) { }
-void memorize_alloc_pages(struct page *page, unsigned int order) { }
-void memorize_free_pages(struct page *page, unsigned int order) { }
+/*
+ * Late initialization function.
+ */
+static int __init memorizer_late_init(void)
+{
+	//struct dentry *dentry;
+
+	//dentry = debugfs_create_file("memorizer", S_IRUGO, NULL, NULL,
+				     //&kmemleak_fops);
+	//if (!dentry)
+		//pr_warning("Failed to create the debugfs kmemleak file\n");
+
+	pr_info("Memorizer initialized\n");
+
+	return 0;
+}
+late_initcall(memorizer_late_init);
+
+/**
+ * init_from_driver() - Initialize memorizer from a driver
+ *
+ * The primary focus of this funciton is to allow for very late enable and init
+ */
+int memorizer_init_from_driver(void)
+{
+	if(memorizer_enabled)
+		return 0;
+
+	create_obj_kmem_cache();
+
+	memorizer_enabled = true;
+
+	return 0;
+}
+EXPORT_SYMBOL(memorizer_init_from_driver);
+
+

@@ -55,7 +55,8 @@
 #ifdef CONFIG_MEMORIZER /*----------- !CONFIG_MEMORIZER -------------------- */
 
 /* Init and Misc */
-void memorizer_init(void);
+void __init memorizer_init(void);
+int memorizer_init_from_driver(void);
 
 /* Memorize access */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
@@ -72,6 +73,10 @@ uint64_t __memorizer_get_allocs(void);
 void __memorizer_print_events(unsigned int num_events);
 
 #else /*----------- !CONFIG_MEMORIZER ------------------------- */
+
+int __init memorizer_init(void){}
+int memorizer_init_from_driver(void){}
+
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	{}
 uint64_t __memorizer_get_opsx(void) {}

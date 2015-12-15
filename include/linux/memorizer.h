@@ -62,8 +62,12 @@ int memorizer_init_from_driver(void);
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
 
 /* Allocation memorization */
-void memorize_alloc(const void *object, size_t size);
-void memorize_kfree(const void *address, size_t size);
+void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags);
+void memorize_kmalloc_node(unsigned long call_site, const void *ptr, size_t
+			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
+			   node);
+void memorize_kfree(unsigned long call_site, const void *ptr);
 void memorize_alloc_pages(struct page *page, unsigned int order);
 void memorize_free_pages(struct page *page, unsigned int order);
 
@@ -81,9 +85,13 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	{}
 uint64_t __memorizer_get_opsx(void) {}
 void __memorizer_print_events(unsigned int num_events){}
-void memorizer_init(void){}
-void memorize_alloc(const void *object, size_t size){}
-void memorize_kfree(const void *address){}
+static __init void memorizer_init(void){}
+void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags){}
+void memorize_kmalloc_node(unsigned long call_site, const void *ptr, size_t
+			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
+			   node){}
+void memorize_kfree(unsigned long call_site, const void *ptr){}
 void memorize_alloc_pages(struct page *page, unsigned int order){}
 void memorize_free_pages(struct page *page, unsigned int order){}
 #endif /* CONFIG_MEMORIZER */

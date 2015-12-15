@@ -98,13 +98,12 @@ struct memorizer_event {
 
 /** 
  * struct memorizer_kobj - metadata for kernel objects 
- * @rb_node:	the red-black tree relations
- * @alloc_ip:	instruction that allocated the object
- * @begin_va:	Virtual address of the beginning of the object
- * @end_va:	Last valid byte virutal address of the object
- * @size:	Size of the object
- * @begin_pa:	Physical address of the beginning of object
- * @end_pa:	Physical address of the last valid byte of object
+ * @rb_node:		the red-black tree relations
+ * @alloc_ip:		instruction that allocated the object
+ * @va_ptr_to_obj:	Virtual address of the beginning of the object
+ * @pa_ptr_to_obj:	Physical address of the beginning of object
+ * @size:		Size of the object
+ * @jiffies:		Time stamp of creation
  *
  * This data structure captures the details of allocated objects
  */
@@ -114,6 +113,7 @@ struct memorizer_kobj {
 	uintptr_t	va_ptr_to_obj;
 	uintptr_t	pa_ptr_to_obj;
 	size_t		size;
+	unsigned long	jiffies;
 };
 
 /**
@@ -184,7 +184,7 @@ void __memorizer_print_events(unsigned int num_events)
 
 	pr_info("\n\n***Memorizer Num Accesses: %d\n",
 		atomic_read(&memorizer_num_accesses));
-	pr_info("\n\n***Memorizer Num Allocs Tracked: %d Untracked: %d\n",
+	pr_info("***Memorizer Num Allocs Tracked: %d Untracked: %d\n",
 		atomic_read(&memorizer_num_tracked_allocs),
 		atomic_read(&memorizer_num_untracked_allocs));
 
@@ -326,6 +326,7 @@ int init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	kobj->va_ptr_to_obj = ptr_to_kobj;
 	kobj->pa_ptr_to_obj = __pa(ptr_to_kobj);
 	kobj->size = bytes_alloc;
+	kobj->jiffies = jiffies;
 }
 
 /**

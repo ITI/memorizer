@@ -63,6 +63,8 @@
 #include <linux/slab.h>
 #include <linux/smp.h>
 
+#include <asm/atomic.h>
+
 //==-- Data types and structs for building maps ---------------------------==//
 enum AllocType {KALLAC};
 enum EventType {READ,WRITE,ALLOC,FREE};
@@ -152,19 +154,18 @@ static struct kmem_cache *kobj_cache;
 //==-- Debugging and print information ------------------------------------==//
 
 //==-- Temporary test code --==//
-static uint64_t memorizer_num_accesses = 0;
-uint64_t __memorizer_get_opsx(void)
+atomic_t memorizer_num_accesses = ATOMIC_INIT(0);
+int __memorizer_get_opsx(void)
 {
-    return memorizer_num_accesses;
+    return atomic_read(&memorizer_num_accesses);
 }
 EXPORT_SYMBOL(__memorizer_get_opsx);
 
-//atomic_t u = ATOMIC_INIT(0);
-static uint64_t memorizer_num_untracked_allocs = 0;
-static uint64_t memorizer_num_tracked_allocs = 0;
-uint64_t __memorizer_get_allocs(void)
+atomic_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
+atomic_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
+int __memorizer_get_allocs(void)
 {
-    return memorizer_num_tracked_allocs;
+    return atomic_read(&memorizer_num_tracked_allocs);
 }
 EXPORT_SYMBOL(__memorizer_get_allocs);
 
@@ -181,10 +182,11 @@ void __memorizer_print_events(unsigned int num_events)
 	int i;
 	int e;
 
-	pr_info("\n\n***Memorizer Num Accesses: %llu\n", (uint64_t)
-		memorizer_num_accesses);
-	pr_info("\n\n***Memorizer Num Allocs Tracked: %llu Untracked: %llu\n", 
-		memorizer_num_tracked_allocs, memorizer_num_untracked_allocs);
+	pr_info("\n\n***Memorizer Num Accesses: %d\n",
+		atomic_read(&memorizer_num_accesses));
+	pr_info("\n\n***Memorizer Num Allocs Tracked: %d Untracked: %d\n",
+		atomic_read(&memorizer_num_tracked_allocs),
+		atomic_read(&memorizer_num_untracked_allocs));
 
 	if((log_index - num_events) > 0)
 		i = log_index - num_events;
@@ -295,7 +297,7 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	unsigned long flags;
 	enum EventType event_type;
 
-	++memorizer_num_accesses;
+	atomic_inc(&memorizer_num_accesses);
 
 #if 0 // TO_IMPLEMENT
 	if(!memorizer_enabled)
@@ -374,14 +376,15 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	if(unlikely(!memorizer_enabled))
 	{
-		++memorizer_num_untracked_allocs;
+		atomic_inc(&memorizer_num_untracked_allocs);
 		return;
 	}
 
-	++memorizer_num_tracked_allocs;
+	atomic_inc(&memorizer_num_tracked_allocs);
 
-	pr_info("Memorizer object from %p @ %p of size: %lu. GFP-Flags: 0x%llx\n",
-		call_site, ptr, bytes_alloc, (unsigned long long) gfp_flags);
+	pr_debug("Memorizer object from %p @ %p of size: %. GFP-Flags: 0x%llx\n",
+		(void*)call_site, ptr, bytes_alloc, (unsigned long long)
+		gfp_flags);
 
 	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache,
 							gfp_flags |

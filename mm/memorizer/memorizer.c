@@ -152,18 +152,19 @@ static struct kmem_cache *kobj_cache;
 //==-- Debugging and print information ------------------------------------==//
 
 //==-- Temporary test code --==//
-static uint64_t ops_x = 0;
+static uint64_t memorizer_num_accesses = 0;
 uint64_t __memorizer_get_opsx(void)
 {
-    return ops_x;
+    return memorizer_num_accesses;
 }
 EXPORT_SYMBOL(__memorizer_get_opsx);
 
-static uint64_t memorizer_num_allocs = 0;
+//atomic_t u = ATOMIC_INIT(0);
+static uint64_t memorizer_num_untracked_allocs = 0;
 static uint64_t memorizer_num_tracked_allocs = 0;
 uint64_t __memorizer_get_allocs(void)
 {
-    return memorizer_num_allocs;
+    return memorizer_num_tracked_allocs;
 }
 EXPORT_SYMBOL(__memorizer_get_allocs);
 
@@ -179,6 +180,11 @@ void __memorizer_print_events(unsigned int num_events)
 {
 	int i;
 	int e;
+
+	pr_info("\n\n***Memorizer Num Accesses: %llu\n", (uint64_t)
+		memorizer_num_accesses);
+	pr_info("\n\n***Memorizer Num Allocs Tracked: %llu Untracked: %llu\n", 
+		memorizer_num_tracked_allocs, memorizer_num_untracked_allocs);
 
 	if((log_index - num_events) > 0)
 		i = log_index - num_events;
@@ -289,19 +295,21 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	unsigned long flags;
 	enum EventType event_type;
 
+	++memorizer_num_accesses;
+
+#if 0 // TO_IMPLEMENT
 	if(!memorizer_enabled)
 		return;
-	return;
 
 	//local_irq_save(flags);
 	//if(memorizer_enabled){
 	//if(addr > crypto_code_region.b && addr < crypto_code_region.e)
 	{
-		++ops_x;
 		event_type = write ? WRITE : READ;
 		log_event(addr, size, event_type, ip);
 	}
 	//local_irq_restore(flags);
+#endif
 }
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
@@ -363,10 +371,12 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 	if(unlikely(ptr==NULL))
 		return;
 
-	++memorizer_num_allocs;
 
 	if(unlikely(!memorizer_enabled))
+	{
+		++memorizer_num_untracked_allocs;
 		return;
+	}
 
 	++memorizer_num_tracked_allocs;
 

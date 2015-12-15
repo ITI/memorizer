@@ -290,7 +290,7 @@ void kasan_alloc_pages(struct page *page, unsigned int order)
 {
 	if (likely(!PageHighMem(page)))
 		kasan_unpoison_shadow(page_address(page), PAGE_SIZE << order);
-	memorize_alloc_pages(page,order);
+	//memorize_alloc_pages(page,order);
 }
 
 void kasan_free_pages(struct page *page, unsigned int order)
@@ -299,7 +299,7 @@ void kasan_free_pages(struct page *page, unsigned int order)
 		kasan_poison_shadow(page_address(page),
 				PAGE_SIZE << order,
 				KASAN_FREE_PAGE);
-	memorize_free_pages(page,order);
+	//memorize_free_pages(page,order);
 }
 
 void kasan_poison_slab(struct page *page)
@@ -355,7 +355,7 @@ void kasan_kmalloc(struct kmem_cache *cache, const void *object, size_t size)
 	kasan_unpoison_shadow(object, size);
 	kasan_poison_shadow((void *)redzone_start, redzone_end - redzone_start,
 		KASAN_KMALLOC_REDZONE);
-	memorize_kmalloc(object, cache->object_size);
+	//memorize_alloc(object, cache->object_size);
 }
 EXPORT_SYMBOL(kasan_kmalloc);
 
@@ -376,7 +376,7 @@ void kasan_kmalloc_large(const void *ptr, size_t size)
 	kasan_unpoison_shadow(ptr, size);
 	kasan_poison_shadow((void *)redzone_start, redzone_end - redzone_start,
 		KASAN_PAGE_REDZONE);
-	memorize_kmalloc(ptr, size);
+	//memorize_alloc(ptr, size);
 }
 
 void kasan_krealloc(const void *object, size_t size)
@@ -413,6 +413,7 @@ void kasan_kfree_large(const void *ptr)
 
 	kasan_poison_shadow(ptr, PAGE_SIZE << compound_order(page),
 			KASAN_FREE_PAGE);
+	//memorize_kfree(ptr);
 }
 
 int kasan_module_alloc(void *addr, size_t size)

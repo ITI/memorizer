@@ -129,6 +129,7 @@ struct memorizer_event {
 struct memorizer_kobj {
 	struct rb_node	rb_node;
 	rwlock_t	rwlock;
+	long		obj_id;
 	uintptr_t	alloc_ip;
 	uintptr_t	va_ptr;
 	uintptr_t	pa_ptr;
@@ -171,6 +172,7 @@ static struct kmem_cache *kobj_cache;
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
 
 /* global object id reference counter */
+atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
 
 //==-- Locks --=//
 /* RW Spinlock for access to rb tree */
@@ -188,7 +190,7 @@ DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
 
 //==-- Debugging and print information ------------------------------------==//
 
-#define MEMORIZER_DEBUG		1
+#define MEMORIZER_DEBUG		2
 
 //==-- Temporary test code --==//
 atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
@@ -214,6 +216,7 @@ EXPORT_SYMBOL(__memorizer_get_allocs);
 void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 {
 	pr_info("%s: \n", title);
+	pr_info("\tkobj_id: %ld\n", kobj->obj_id);
 	pr_info("\talloc_ip: 0x%p\n", (void*) kobj->alloc_ip);
 	pr_info("\tva: 0x%p\n", (void*) kobj->va_ptr);
 	pr_info("\tpa: 0x%p\n", (void*) kobj->pa_ptr);
@@ -390,12 +393,18 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	      ptr_to_kobj, size_t bytes_alloc)
 {
 	rwlock_init(&kobj->rwlock);
+
+	if(atomic_long_inc_and_test(&global_kobj_id_count)){
+		pr_crit("Global kernel object counter overlapped...");
+	}
+
 	kobj->alloc_ip = call_site;
 	kobj->va_ptr = ptr_to_kobj;
 	kobj->pa_ptr = __pa(ptr_to_kobj);
 	kobj->size = bytes_alloc;
 	kobj->alloc_jiffies = jiffies;
 	kobj->free_jiffies = 0;
+	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
 	memset(kobj->comm, '\0', sizeof(kobj->comm));
 	/* task information */
 	if (in_irq()) {
@@ -538,7 +547,7 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		/* Update the free_jiffies for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_jiffies = jiffies;
-#if MEMORIZER_DEBUG >= 3
+#if MEMORIZER_DEBUG >= 2
 		__print_memorizer_kobj(kobj, "Free'd kobject");
 #endif
 		write_unlock_irqrestore(&kobj->rwlock, flags);

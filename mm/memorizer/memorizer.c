@@ -506,7 +506,6 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 	kobj = unlocked_lookup_kobj_rbtree(kobj_ptr, &active_kobj_rbtree_root);
 	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
-
 	/* 
 	 * If this is null it means we are freeing something we did not insert
 	 * into our tree and we have a missed alloc track

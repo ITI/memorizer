@@ -406,7 +406,8 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
  * right, and if not that means we have an overlap and have a problem in
  * overlapping allocations. 
  */
-struct memorizer_kobj * insert_active_kobj_rbtree(struct memorizer_kobj *kobj)
+struct memorizer_kobj * insert_kobj_rbtree(struct memorizer_kobj *kobj, struct
+					   rb_root *kobj_rbtree_root)
 {
 	unsigned long flags;
 	struct memorizer_kobj *parent;
@@ -415,7 +416,7 @@ struct memorizer_kobj * insert_active_kobj_rbtree(struct memorizer_kobj *kobj)
 
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 
-	link = &active_kobj_rbtree_root.rb_node;
+	link = &(kobj_rbtree_root->rb_node);
 	while (*link) {
 		rb_parent = *link;
 		parent = rb_entry(rb_parent, struct memorizer_kobj, rb_node);
@@ -444,7 +445,7 @@ struct memorizer_kobj * insert_active_kobj_rbtree(struct memorizer_kobj *kobj)
 	}
 	if(likely(kobj != NULL)){
 		rb_link_node(&kobj->rb_node, rb_parent, link);
-		rb_insert_color(&kobj->rb_node, &active_kobj_rbtree_root);
+		rb_insert_color(&kobj->rb_node, kobj_rbtree_root);
 	}
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 	return kobj;
@@ -456,7 +457,7 @@ struct memorizer_kobj * insert_active_kobj_rbtree(struct memorizer_kobj *kobj)
  * @rbtree:	The rbtree to remove from
  */
 void remove_kobj_rbtree(struct memorizer_kobj *kobj, struct rb_root
-			kobj_rbtree_root) 
+			* kobj_rbtree_root)
 {
 }
 
@@ -530,7 +531,7 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
 
 	/* This function uses a spinlock to ensure tree insertion */
-	insert_active_kobj_rbtree(kobj);
+	insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
 }
 
 /*** HOOKS similar to the kmem points ***/

@@ -452,13 +452,35 @@ struct memorizer_kobj * insert_kobj_rbtree(struct memorizer_kobj *kobj, struct
 }
 
 /**
- * remove_kobj_from_rbtree() - remove the kobj from the tree
- * @kobj:	The kobj to remove
- * @rbtree:	The rbtree to remove from
+ * search_kobj_from_rbtree() - lookup the kobj from the tree
+ * @kobj_ptr:	The ptr to find the active for 
+ * @rbtree:	The rbtree to lookup in
+ *
+ * This function searches for the memorizer_kobj associated with the passed in
+ * pointer in the passed in kobj_rbtree. Since this is a reading on the rbtree
+ * we assume that the particular tree being accessed has had it's lock acquired
+ * properly already.
  */
-void remove_kobj_rbtree(struct memorizer_kobj *kobj, struct rb_root
-			* kobj_rbtree_root)
+struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr, struct
+						  rb_root * kobj_rbtree_root)
 {
+	struct rb_node *rb = kobj_rbtree_root->rb_node;
+
+	while (rb) {
+		struct memorizer_kobj * kobj = rb_entry(rb, struct
+							memorizer_kobj,
+							rb_node);
+		/* Check if our pointer is less than the current node's ptr */
+		if (kobj_ptr < kobj->va_ptr)
+			rb = kobj->rb_node.rb_left;
+		/* Check if our pointer is greater than the current node's ptr */
+		else if (kobj_ptr >= kobj->va_ptr + kobj->size)
+			rb = kobj->rb_node.rb_right;
+		/* At this point we have found the node because rb != null */
+		else
+			return kobj;
+	}
+	return NULL;
 }
 
 /**
@@ -474,12 +496,28 @@ void remove_kobj_rbtree(struct memorizer_kobj *kobj, struct rb_root
  * Maybe TODO: Do some processing here as opposed to later? This depends on when
  * we want to add our filtering.
  */
-static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t ptr)
+static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 {
-#if 0
-	struct memorizer_kobj *kobj = search_kobj_rbtree(ptr);
-	remove_kobj_from_rbtree();
-#endif
+	struct memorizer_kobj *kobj;
+
+	unsigned long flags;
+
+	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	kobj = unlocked_lookup_kobj_rbtree(kobj_ptr, &active_kobj_rbtree_root);
+	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+
+
+	/* 
+	 * If this is null it means we are freeing something we did not insert
+	 * into our tree and we have a missed alloc track
+	 */
+	if(kobj){
+		/* TODO add to the to_proccess queue and remove */
+		write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+		rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
+		write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+	}
+
 }
 
 /**

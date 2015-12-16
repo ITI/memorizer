@@ -46,19 +46,28 @@
  *                  events to record object allocation/frees and all
  *                  loads/stores. 
  *
- *        Locking:  Memorizer has two global and a percpu data structure:
- *		
- *			- global rbtree of active kernel objects 
- *			- TODO queue for holding free'd objects that haven't
- *		    	  logged 
- *			- A percpu event queue to track memory access
- *			  events
- *		    
- *		    Therefore, we have the following locks:
+ *===-----------------------------------------------------------------------===
  *
- *		    - active_kobj_rbtree_spinlock 
- *		    - memorizer_kobj.rwlock: rw spinlock for access to object
- *		    internals
+ * Locking:  
+ *
+ *	Memorizer has two global and a percpu data structure:
+ *	
+ *		- global rbtree of active kernel objects 
+ *		- TODO queue for holding free'd objects that haven't logged 
+ *		- A percpu event queue to track memory access events
+ *		    
+ *     Therefore, we have the following locks:
+ *
+ *		- active_kobj_rbtree_spinlock: 
+ *		
+ *			The insert routine is generic to any kobj_rbtree and
+ *			therefore is only provided in an unlocked variant
+ *			currently. The code must take this lock prior to
+ *			inserting into the rbtree.  
+ *
+ *		- memorizer_kobj.rwlock: 
+ *
+ *			RW spinlock for access to object internals. 
  *
  *===-----------------------------------------------------------------------===
  */
@@ -438,15 +447,13 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
  * right, and if not that means we have an overlap and have a problem in
  * overlapping allocations. 
  */
-struct memorizer_kobj * insert_kobj_rbtree(struct memorizer_kobj *kobj, struct
-					   rb_root *kobj_rbtree_root)
+struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj *kobj,
+						    struct rb_root
+						    *kobj_rbtree_root) 
 {
-	unsigned long flags;
 	struct memorizer_kobj *parent;
 	struct rb_node **link;
 	struct rb_node *rb_parent = NULL;
-
-	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 
 	link = &(kobj_rbtree_root->rb_node);
 	while (*link) {
@@ -475,7 +482,6 @@ struct memorizer_kobj * insert_kobj_rbtree(struct memorizer_kobj *kobj, struct
 		rb_link_node(&kobj->rb_node, rb_parent, link);
 		rb_insert_color(&kobj->rb_node, kobj_rbtree_root);
 	}
-	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 	return kobj;
 }
 
@@ -575,6 +581,7 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
+	unsigned long flags;
 	struct memorizer_kobj *kobj;
 
 	//unlikely(IS_ERR(ptr)))
@@ -606,8 +613,11 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
 
+	/* Grab the writer lock for the active_kobj_rbtree */
+	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 	/* This function uses a spinlock to ensure tree insertion */
-	insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
+	unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
+	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 }
 
 /*** HOOKS similar to the kmem points ***/

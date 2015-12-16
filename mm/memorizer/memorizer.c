@@ -420,10 +420,6 @@ struct memorizer_kobj * insert_kobj_rbtree(struct memorizer_kobj *kobj, struct
 	while (*link) {
 		rb_parent = *link;
 		parent = rb_entry(rb_parent, struct memorizer_kobj, rb_node);
-
-		pr_info("parent va_kobj_ptr: 0x%p; size: %lu\n",
-			(void *) parent->va_ptr, parent->size);
-
 		if (kobj->va_ptr + kobj->size <= parent->va_ptr)
 		{
 			link = &parent->rb_node.rb_left;

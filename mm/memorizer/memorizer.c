@@ -170,6 +170,8 @@ static struct kmem_cache *kobj_cache;
 /* active kobj metadata rb tree */
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
 
+/* global object id reference counter */
+
 //==-- Locks --=//
 /* RW Spinlock for access to rb tree */
 DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
@@ -189,18 +191,18 @@ DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
 #define MEMORIZER_DEBUG		1
 
 //==-- Temporary test code --==//
-atomic_t memorizer_num_accesses = ATOMIC_INIT(0);
+atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
 int __memorizer_get_opsx(void)
 {
-    return atomic_read(&memorizer_num_accesses);
+    return atomic_long_read(&memorizer_num_accesses);
 }
 EXPORT_SYMBOL(__memorizer_get_opsx);
 
-atomic_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
-atomic_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
+atomic_long_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
+atomic_long_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
 int __memorizer_get_allocs(void)
 {
-    return atomic_read(&memorizer_num_tracked_allocs);
+    return atomic_long_read(&memorizer_num_tracked_allocs);
 }
 EXPORT_SYMBOL(__memorizer_get_allocs);
 
@@ -247,11 +249,11 @@ void __memorizer_print_events(unsigned int num_events)
 	int i;
 	int e;
 
-	pr_info("\n\n***Memorizer Num Accesses: %d\n",
-		atomic_read(&memorizer_num_accesses));
-	pr_info("***Memorizer Num Allocs Tracked: %d Untracked: %d\n",
-		atomic_read(&memorizer_num_tracked_allocs),
-		atomic_read(&memorizer_num_untracked_allocs));
+	pr_info("\n\n***Memorizer Num Accesses: %ld\n",
+		atomic_long_read(&memorizer_num_accesses));
+	pr_info("***Memorizer Num Allocs Tracked: %ld Untracked: %ld\n",
+		atomic_long_read(&memorizer_num_tracked_allocs),
+		atomic_long_read(&memorizer_num_untracked_allocs));
 
 	if((log_index - num_events) > 0)
 		i = log_index - num_events;
@@ -359,7 +361,7 @@ void log_event(uintptr_t addr, size_t size, enum EventType event_type,
  */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 {
-	atomic_inc(&memorizer_num_accesses);
+	atomic_long_inc(&memorizer_num_accesses);
 #if 0 // TO_IMPLEMENT
 	unsigned long flags;
 	enum EventType event_type;
@@ -536,7 +538,7 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		/* Update the free_jiffies for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_jiffies = jiffies;
-#if MEMORIZER_DEBUG >= 1
+#if MEMORIZER_DEBUG >= 3
 		__print_memorizer_kobj(kobj, "Free'd kobject");
 #endif
 		write_unlock_irqrestore(&kobj->rwlock, flags);
@@ -574,13 +576,13 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	if(unlikely(!memorizer_enabled))
 	{
-		atomic_inc(&memorizer_num_untracked_allocs);
+		atomic_long_inc(&memorizer_num_untracked_allocs);
 		return;
 	}
 
-	atomic_inc(&memorizer_num_tracked_allocs);
+	atomic_long_inc(&memorizer_num_tracked_allocs);
 
-#if MEMORIZER_DEBUG >= 2
+#if MEMORIZER_DEBUG >= 3
 	pr_info("Memorizer object from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
 		(void*)call_site, ptr, bytes_alloc, (unsigned long long)
 		gfp_flags);

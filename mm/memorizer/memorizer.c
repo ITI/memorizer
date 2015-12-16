@@ -46,6 +46,18 @@
  *                  events to record object allocation/frees and all
  *                  loads/stores. 
  *
+ *        Locking:  Memorizer has two global and a percpu data structure:
+ *		
+ *			- global rbtree of active kernel objects 
+ *			- TODO queue for holding free'd objects that haven't
+ *		    	  logged 
+ *			- A percpu event queue to track memory access
+ *			  events
+ *		    
+ *		    Therefore, we have the following locks:
+ *
+ *		    - active_kobj_rbtree_spinlock 
+ *
  *===-----------------------------------------------------------------------===
  */
 
@@ -62,6 +74,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/smp.h>
+#include <linux/rwlock.h>
 
 #include <asm/atomic.h>
 
@@ -142,6 +155,10 @@ bool memorizer_enabled = false;
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
+
+//==-- Locks --=//
+/* RW Spinlock for access to rb tree */
+DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
 
 /* mask to apply to memorizer allocations TODO: verify the list */
 #define gfp_memorizer_mask(gfp)	(((gfp) & (		\
@@ -337,11 +354,9 @@ int init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
  */
 int add_kobj_to_rb_tree(struct memorizer_kobj *kobj)
 {
-#if 0 // TODO IMPLEMENT
 	unsigned long flags;
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
-	write_unlock_irqsave(&active_kobj_rbtree_spinlock, flags);
-#endif
+	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 }
 
 /**

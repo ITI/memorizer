@@ -61,6 +61,8 @@
  *===-----------------------------------------------------------------------===
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/bug.h>
 #include <linux/err.h>
 #include <linux/export.h>
@@ -177,6 +179,8 @@ DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
 
 //==-- Debugging and print information ------------------------------------==//
 
+#define MEMORIZER_DEBUG		0
+
 //==-- Temporary test code --==//
 atomic_t memorizer_num_accesses = ATOMIC_INIT(0);
 int __memorizer_get_opsx(void)
@@ -192,6 +196,21 @@ int __memorizer_get_allocs(void)
     return atomic_read(&memorizer_num_tracked_allocs);
 }
 EXPORT_SYMBOL(__memorizer_get_allocs);
+
+/**
+ * __print_memorizer_kobj() - print out the object for debuggin
+ */
+void __print_memorizer_kobj(struct memorizer_kobj * kobj)
+{
+	pr_info("Memorizer kobj metadata: \n");
+	pr_info("\talloc_ip: 0x%p\n", (void*) kobj->alloc_ip);
+	pr_info("\tva: 0x%p\n", (void*) kobj->va_ptr_to_obj);
+	pr_info("\tpa: 0x%p\n", (void*) kobj->pa_ptr_to_obj);
+	pr_info("\tsize: %lu\n", kobj->size);
+	pr_info("\tjiffies: %lu\n", kobj->jiffies);
+	pr_info("\tpid: %d\n", kobj->pid);
+	pr_info("\texecutable: %s\n", kobj->comm);
+}
 
 /**
  * __memorizer_print_events - print the last num events
@@ -318,12 +337,12 @@ void log_event(uintptr_t addr, size_t size, enum EventType event_type,
  */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 {
+	atomic_inc(&memorizer_num_accesses);
+#if 0 // TO_IMPLEMENT
 	unsigned long flags;
 	enum EventType event_type;
 
-	atomic_inc(&memorizer_num_accesses);
 
-#if 0 // TO_IMPLEMENT
 	if(!memorizer_enabled)
 		return;
 
@@ -343,7 +362,7 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 /**
  * init_kobj() - Initalize the metadata to track the recent allocation
  */
-int init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
+void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	      ptr_to_kobj, size_t bytes_alloc)
 {
 	kobj->alloc_ip = call_site;
@@ -381,6 +400,7 @@ int add_kobj_to_rb_tree(struct memorizer_kobj *kobj)
 	unsigned long flags;
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+	return 0;
 }
 
 /**
@@ -410,6 +430,8 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t ptr_to_kobj)
 void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
+	struct memorizer_kobj *kobj;
+
 	//unlikely(IS_ERR(ptr)))
 	//if(object > crypto_code_region.b && object < crypto_code_region.e)
 	if(unlikely(ptr==NULL))
@@ -424,18 +446,20 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	atomic_inc(&memorizer_num_tracked_allocs);
 
-	pr_debug("Memorizer object from %p @ %p of size: %. GFP-Flags: 0x%llx\n",
+#if MEMORIZER_DEBUG
+	pr_info("Memorizer object from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
 		(void*)call_site, ptr, bytes_alloc, (unsigned long long)
 		gfp_flags);
+#endif
 
-	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache,
+	kobj = kmem_cache_alloc(kobj_cache,
 							gfp_flags |
 							GFP_ATOMIC);
 	if(!kobj){
 		pr_info("Cannot allocate a memorizer_kobj structure\n");
 	}
 
-	init_kobj(kobj, call_site, ptr, bytes_alloc);
+	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
 
 	/* This function uses a spinlock to ensure tree insertion */
 	add_kobj_to_rb_tree(kobj);
@@ -465,7 +489,7 @@ void memorize_kfree(unsigned long call_site, const void *ptr)
 		return;
 	}
 
-	move_kobj_to_free_list(call_site, (void *) ptr);
+	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t) ptr);
 }
 
 #if 0

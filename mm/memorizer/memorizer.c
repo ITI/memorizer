@@ -46,8 +46,22 @@
  *                  events to record object allocation/frees and all
  *                  loads/stores. 
  *
+ *        Locking:  Memorizer has two global and a percpu data structure:
+ *		
+ *			- global rbtree of active kernel objects 
+ *			- TODO queue for holding free'd objects that haven't
+ *		    	  logged 
+ *			- A percpu event queue to track memory access
+ *			  events
+ *		    
+ *		    Therefore, we have the following locks:
+ *
+ *		    - active_kobj_rbtree_spinlock 
+ *
  *===-----------------------------------------------------------------------===
  */
+
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/bug.h>
 #include <linux/err.h>
@@ -59,16 +73,19 @@
 #include <linux/preempt.h>
 #include <linux/printk.h>
 #include <linux/rbtree.h>
+#include <linux/rwlock.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/smp.h>
 
+#include <asm/atomic.h>
+
 //==-- Data types and structs for building maps ---------------------------==//
+
+/* Types for events */
 enum AllocType {KALLAC};
 enum EventType {READ,WRITE,ALLOC,FREE};
-
-/* flag to keep track of whether or not to track writes */
-bool memorizer_enabled = false;
 
 /**
  * struct memorizer_event - structure to capture all memory related events
@@ -96,24 +113,26 @@ struct memorizer_event {
 
 /** 
  * struct memorizer_kobj - metadata for kernel objects 
- * @rb_node:	the red-black tree relations
- * @alloc_ip:	instruction that allocated the object
- * @begin_va:	Virtual address of the beginning of the object
- * @end_va:	Last valid byte virutal address of the object
- * @size:	Size of the object
- * @begin_pa:	Physical address of the beginning of object
- * @end_pa:	Physical address of the last valid byte of object
+ * @rb_node:		the red-black tree relations
+ * @alloc_ip:		instruction that allocated the object
+ * @va_ptr:		Virtual address of the beginning of the object
+ * @pa_ptr:		Physical address of the beginning of object
+ * @size:		Size of the object
+ * @jiffies:		Time stamp of creation
+ * @pid:		PID of the current task
+ * @comm:		Executable name
  *
  * This data structure captures the details of allocated objects
  */
 struct memorizer_kobj {
-	struct rb_node	node;
+	struct rb_node	rb_node;
 	uintptr_t	alloc_ip;
-	uintptr_t	begin_va;
-	uintptr_t	end_va;
-	uintptr_t	begin_pa;
-	uintptr_t	end_pa;
-	uint32_t	size;
+	uintptr_t	va_ptr;
+	uintptr_t	pa_ptr;
+	size_t		size;
+	unsigned long	jiffies;
+	pid_t		pid;
+	char comm[TASK_COMM_LEN];
 };
 
 /**
@@ -138,27 +157,63 @@ struct code_region crypto_code_region = {
 struct memorizer_event mem_events[10000];
 uint64_t log_index = 0;
 
+/* flag to keep track of whether or not to track writes */
+bool memorizer_enabled = false;
+
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
 
+/* active kobj metadata rb tree */
+static struct rb_root active_kobj_rbtree_root = RB_ROOT;
+
+//==-- Locks --=//
+/* RW Spinlock for access to rb tree */
+DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
+
+/* mask to apply to memorizer allocations TODO: verify the list */
+#define gfp_memorizer_mask(gfp)	(((gfp) & (		\
+					 | GFP_ATOMIC		\
+					 | __GFP_NOACCOUNT))	\
+					 | __GFP_NORETRY	\
+					 | __GFP_NOMEMALLOC	\
+					 | __GFP_NOWARN		\
+					 | __GFP_NOTRACK	\
+				 )
+
 //==-- Debugging and print information ------------------------------------==//
 
+#define MEMORIZER_DEBUG		0
+
 //==-- Temporary test code --==//
-static uint64_t ops_x = 0;
-uint64_t __memorizer_get_opsx(void)
+atomic_t memorizer_num_accesses = ATOMIC_INIT(0);
+int __memorizer_get_opsx(void)
 {
-    return ops_x;
+    return atomic_read(&memorizer_num_accesses);
 }
 EXPORT_SYMBOL(__memorizer_get_opsx);
 
-static uint64_t memorizer_num_allocs = 0;
-uint64_t __memorizer_get_allocs(void)
+atomic_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
+atomic_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
+int __memorizer_get_allocs(void)
 {
-    return memorizer_num_allocs;
+    return atomic_read(&memorizer_num_tracked_allocs);
 }
 EXPORT_SYMBOL(__memorizer_get_allocs);
 
-//==-- Memory related event hooks for mapping -----------------------------==//
+/**
+ * __print_memorizer_kobj() - print out the object for debuggin
+ */
+void __print_memorizer_kobj(struct memorizer_kobj * kobj)
+{
+	pr_info("Memorizer kobj metadata: \n");
+	pr_info("\talloc_ip: 0x%p\n", (void*) kobj->alloc_ip);
+	pr_info("\tva: 0x%p\n", (void*) kobj->va_ptr);
+	pr_info("\tpa: 0x%p\n", (void*) kobj->pa_ptr);
+	pr_info("\tsize: %lu\n", kobj->size);
+	pr_info("\tjiffies: %lu\n", kobj->jiffies);
+	pr_info("\tpid: %d\n", kobj->pid);
+	pr_info("\texecutable: %s\n", kobj->comm);
+}
 
 /**
  * __memorizer_print_events - print the last num events
@@ -172,6 +227,12 @@ void __memorizer_print_events(unsigned int num_events)
 {
 	int i;
 	int e;
+
+	pr_info("\n\n***Memorizer Num Accesses: %d\n",
+		atomic_read(&memorizer_num_accesses));
+	pr_info("***Memorizer Num Allocs Tracked: %d Untracked: %d\n",
+		atomic_read(&memorizer_num_tracked_allocs),
+		atomic_read(&memorizer_num_untracked_allocs));
 
 	if((log_index - num_events) > 0)
 		i = log_index - num_events;
@@ -279,81 +340,147 @@ void log_event(uintptr_t addr, size_t size, enum EventType event_type,
  */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 {
+	atomic_inc(&memorizer_num_accesses);
+#if 0 // TO_IMPLEMENT
 	unsigned long flags;
 	enum EventType event_type;
 
+
 	if(!memorizer_enabled)
 		return;
-	return;
 
 	//local_irq_save(flags);
 	//if(memorizer_enabled){
 	//if(addr > crypto_code_region.b && addr < crypto_code_region.e)
 	{
-		++ops_x;
 		event_type = write ? WRITE : READ;
 		log_event(addr, size, event_type, ip);
 	}
 	//local_irq_restore(flags);
+#endif
 }
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
 
 /**
- * add_kobj_to_rb_tree - add the object to the tree
+ * init_kobj() - Initalize the metadata to track the recent allocation
  */
-
-/**
- * create_and_add_kobj - create and add the object to the tree
- * @object*	: pointer to the newly allocated object
- * @size	: size of the object
- *
- * Algorithm: 
- *
- *	1. Allocate and initialize the memorizer object
- *	2. Add the object to the RB tree
- *
- * ! Assumes that memorizer is initialized !
- */
-void create_and_add_kobj(uintptr_t call_site, uintptr_t ptr_to_kobj, size_t
-			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
+void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
+	      ptr_to_kobj, size_t bytes_alloc)
 {
-
-	//unsigned long flags;
-#if 0
-	struct memorizer_kobj * kobj = (struct memorizer_kobj *)
-		kmalloc(sizeof(struct memorizer_kobj), gfp_memorizer_mask(GFP_ATOMIC));
-	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache, 0);
-#endif
-
-	//local_irq_save(flags);
-
-	pr_info("Allocating new memorizer object from: %p @ %p of size: %lu.  GFP-Flags: 0x%llx\n", (void *)call_site, (void*)ptr_to_kobj,
-		bytes_alloc, (unsigned long long) gfp_flags);
-
-#define gfp_kmemleak_mask(gfp)	(((gfp) & (GFP_KERNEL | GFP_ATOMIC | \
-					   __GFP_NOACCOUNT)) | \
-				 __GFP_NORETRY | __GFP_NOMEMALLOC | \
-				 __GFP_NOWARN | __GFP_NOTRACK)
-
-	struct memorizer_kobj * kobj = kmem_cache_alloc(kobj_cache,
-							gfp_flags|GFP_ATOMIC);
-
-	if(!kobj){
-		pr_info("Cannot allocate a memorizer_kobj structure\n");
+	kobj->alloc_ip = call_site;
+	kobj->va_ptr = ptr_to_kobj;
+	kobj->pa_ptr = __pa(ptr_to_kobj);
+	kobj->size = bytes_alloc;
+	kobj->jiffies = jiffies;
+	memset(kobj->comm, '\0', sizeof(kobj->comm));
+	/* task information */
+	if (in_irq()) {
+		kobj->pid = 0;
+		strncpy(kobj->comm, "hardirq", sizeof(kobj->comm));
+	} else if (in_softirq()) {
+		kobj->pid = 0;
+		strncpy(kobj->comm, "softirq", sizeof(kobj->comm));
+	} else {
+		kobj->pid = current->pid;
+		/*
+		 * There is a small chance of a race with set_task_comm(),
+		 * however using get_task_comm() here may cause locking
+		 * dependency issues with current->alloc_lock. In the worst
+		 * case, the command line is not correct.
+		 */
+		strncpy(kobj->comm, current->comm, sizeof(kobj->comm));
 	}
 
-	pr_info("Just allocated the object\n");
+#if MEMORIZER_DEBUG > 5
+	__print_memorizer_kobj(kobj);
+#endif
+}
 
-	kmem_cache_free(kobj_cache, kobj);
-	pr_info("Just freed the object\n");
-//	struct memorizer_kobj * kobj = (struct memorizer_kobj *)
-//		kmalloc(sizeof(struct memorizer_kobj),
-//			gfp_memorizer_mask(SLAB_NOTRACK));
-	//init_kobj(object, size);
-	//add_kobj_to_rb_tree(kobj);
+/**
+ * add_kobj_to_rb_tree - add the object to the tree
+ * @kobj:	Pointer to the object to add to the tree
+ *
+ * Standard rb tree insert. The key is the range. So if the object is allocated
+ * < than the active node's region then traverse left, if greater than traverse
+ * right, and if not that means we have an overlap and have a problem in
+ * overlapping allocations. 
+ */
+struct memorizer_kobj * insert_kobj_rbtree(struct memorizer_kobj *kobj, struct
+					   rb_root *kobj_rbtree_root)
+{
+	unsigned long flags;
+	struct memorizer_kobj *parent;
+	struct rb_node **link;
+	struct rb_node *rb_parent = NULL;
 
-	//local_irq_restore(flags);
+	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+
+	link = &(kobj_rbtree_root->rb_node);
+	while (*link) {
+		rb_parent = *link;
+		parent = rb_entry(rb_parent, struct memorizer_kobj, rb_node);
+
+		pr_info("parent va_kobj_ptr: 0x%p; size: %lu\n",
+			(void *) parent->va_ptr, parent->size);
+
+		if (kobj->va_ptr + kobj->size <= parent->va_ptr)
+		{
+			link = &parent->rb_node.rb_left;
+		}
+		else if (parent->va_ptr + parent->size <=
+			   kobj->va_ptr)
+		{
+			link = &parent->rb_node.rb_right;
+		}
+		else
+		{
+			pr_err("Cannot insert 0x%lx into the object search tree"
+			       " (overlaps existing)\n", kobj->va_ptr);
+			__print_memorizer_kobj(parent);
+			kmem_cache_free(kobj_cache, kobj);
+			kobj = NULL;
+			break;
+		}
+	}
+	if(likely(kobj != NULL)){
+		rb_link_node(&kobj->rb_node, rb_parent, link);
+		rb_insert_color(&kobj->rb_node, kobj_rbtree_root);
+	}
+	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+	return kobj;
+}
+
+/**
+ * search_kobj_from_rbtree() - lookup the kobj from the tree
+ * @kobj_ptr:	The ptr to find the active for 
+ * @rbtree:	The rbtree to lookup in
+ *
+ * This function searches for the memorizer_kobj associated with the passed in
+ * pointer in the passed in kobj_rbtree. Since this is a reading on the rbtree
+ * we assume that the particular tree being accessed has had it's lock acquired
+ * properly already.
+ */
+struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr, struct
+						  rb_root * kobj_rbtree_root)
+{
+	struct rb_node *rb = kobj_rbtree_root->rb_node;
+
+	while (rb) {
+		struct memorizer_kobj * kobj = rb_entry(rb, struct
+							memorizer_kobj,
+							rb_node);
+		/* Check if our pointer is less than the current node's ptr */
+		if (kobj_ptr < kobj->va_ptr)
+			rb = kobj->rb_node.rb_left;
+		/* Check if our pointer is greater than the current node's ptr */
+		else if (kobj_ptr >= kobj->va_ptr + kobj->size)
+			rb = kobj->rb_node.rb_right;
+		/* At this point we have found the node because rb != null */
+		else
+			return kobj;
+	}
+	return NULL;
 }
 
 /**
@@ -369,9 +496,35 @@ void create_and_add_kobj(uintptr_t call_site, uintptr_t ptr_to_kobj, size_t
  * Maybe TODO: Do some processing here as opposed to later? This depends on when
  * we want to add our filtering.
  */
-void move_kobj_to_free_list(uintptr_t call_site, uintptr_t ptr_to_kobj)
+static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 {
+	struct memorizer_kobj *kobj;
+
+	unsigned long flags;
+
+	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	kobj = unlocked_lookup_kobj_rbtree(kobj_ptr, &active_kobj_rbtree_root);
+	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+
+	/* 
+	 * If this is null it means we are freeing something we did not insert
+	 * into our tree and we have a missed alloc track
+	 */
+	if(kobj){
+		/* TODO add to the to_proccess queue and remove */
+		write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+		rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
+		write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+	}
+
 }
+
+/**
+ * free_kobj_kmem_cache() - free the object from the kmem_cache
+ * @kobj:	The kernel object metadata to free
+ * @kmemcache:	The cache to free from
+ */
+
 
 /**
  * memorize_alloc() - record allocation event
@@ -383,19 +536,39 @@ void move_kobj_to_free_list(uintptr_t call_site, uintptr_t ptr_to_kobj)
 void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
+	struct memorizer_kobj *kobj;
+
 	//unlikely(IS_ERR(ptr)))
+	//if(object > crypto_code_region.b && object < crypto_code_region.e)
 	if(unlikely(ptr==NULL))
 		return;
 
-//	if(object > crypto_code_region.b && object < crypto_code_region.e)
+
+	if(unlikely(!memorizer_enabled))
 	{
-		++memorizer_num_allocs;
-		if(memorizer_enabled)
-		{
-			create_and_add_kobj(call_site, ptr, bytes_req,
-					    bytes_alloc, gfp_flags);
-		}
+		atomic_inc(&memorizer_num_untracked_allocs);
+		return;
 	}
+
+	atomic_inc(&memorizer_num_tracked_allocs);
+
+#if MEMORIZER_DEBUG
+	pr_info("Memorizer object from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
+		(void*)call_site, ptr, bytes_alloc, (unsigned long long)
+		gfp_flags);
+#endif
+
+	kobj = kmem_cache_alloc(kobj_cache,
+							gfp_flags |
+							GFP_ATOMIC);
+	if(!kobj){
+		pr_info("Cannot allocate a memorizer_kobj structure\n");
+	}
+
+	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
+
+	/* This function uses a spinlock to ensure tree insertion */
+	insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
 }
 
 /*** HOOKS similar to the kmem points ***/
@@ -422,7 +595,7 @@ void memorize_kfree(unsigned long call_site, const void *ptr)
 		return;
 	}
 
-	move_kobj_to_free_list(call_site, (void *) ptr);
+	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t) ptr);
 }
 
 #if 0

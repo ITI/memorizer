@@ -74,6 +74,7 @@
 #include <linux/rwlock.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/smp.h>
 
 #include <asm/atomic.h>
@@ -116,6 +117,8 @@ struct memorizer_event {
  * @pa_ptr_to_obj:	Physical address of the beginning of object
  * @size:		Size of the object
  * @jiffies:		Time stamp of creation
+ * @pid:		PID of the current task
+ * @comm:		Executable name
  *
  * This data structure captures the details of allocated objects
  */
@@ -126,6 +129,8 @@ struct memorizer_kobj {
 	uintptr_t	pa_ptr_to_obj;
 	size_t		size;
 	unsigned long	jiffies;
+	pid_t		pid;
+	char comm[TASK_COMM_LEN];
 };
 
 /**
@@ -346,6 +351,25 @@ int init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	kobj->pa_ptr_to_obj = __pa(ptr_to_kobj);
 	kobj->size = bytes_alloc;
 	kobj->jiffies = jiffies;
+	memset(kobj->comm, '\0', sizeof(kobj->comm));
+	/* task information */
+	if (in_irq()) {
+		kobj->pid = 0;
+		strncpy(kobj->comm, "hardirq", sizeof(kobj->comm));
+	} else if (in_softirq()) {
+		kobj->pid = 0;
+		strncpy(kobj->comm, "softirq", sizeof(kobj->comm));
+	} else {
+		kobj->pid = current->pid;
+		/*
+		 * There is a small chance of a race with set_task_comm(),
+		 * however using get_task_comm() here may cause locking
+		 * dependency issues with current->alloc_lock. In the worst
+		 * case, the command line is not correct.
+		 */
+		strncpy(kobj->comm, current->comm, sizeof(kobj->comm));
+	}
+	__print_memorizer_kobj(kobj);
 }
 
 /**

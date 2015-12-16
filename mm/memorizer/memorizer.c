@@ -57,6 +57,8 @@
  *		    Therefore, we have the following locks:
  *
  *		    - active_kobj_rbtree_spinlock 
+ *		    - memorizer_kobj.rwlock: rw spinlock for access to object
+ *		    internals
  *
  *===-----------------------------------------------------------------------===
  */
@@ -126,11 +128,13 @@ struct memorizer_event {
  */
 struct memorizer_kobj {
 	struct rb_node	rb_node;
+	rwlock_t	rwlock;
 	uintptr_t	alloc_ip;
 	uintptr_t	va_ptr;
 	uintptr_t	pa_ptr;
 	size_t		size;
-	unsigned long	jiffies;
+	unsigned long	alloc_jiffies;
+	unsigned long	free_jiffies;
 	pid_t		pid;
 	char comm[TASK_COMM_LEN];
 };
@@ -202,6 +206,8 @@ EXPORT_SYMBOL(__memorizer_get_allocs);
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
+ *
+ * Grap reader lock to make sure things don't get modified while we are printing
  */
 void __print_memorizer_kobj(struct memorizer_kobj * kobj)
 {
@@ -210,9 +216,21 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj)
 	pr_info("\tva: 0x%p\n", (void*) kobj->va_ptr);
 	pr_info("\tpa: 0x%p\n", (void*) kobj->pa_ptr);
 	pr_info("\tsize: %lu\n", kobj->size);
-	pr_info("\tjiffies: %lu\n", kobj->jiffies);
+	pr_info("\talloc jiffies: %lu\n", kobj->alloc_jiffies);
+	pr_info("\tfree jiffies: %lu\n", kobj->free_jiffies);
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
+}
+
+/**
+ * read_locking_print_memorizer_kobj() - grap the reader spinlock then print
+ */
+void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj)
+{
+	unsigned long flags;
+	read_lock_irqsave(&kobj->rwlock, flags);
+	__print_memorizer_kobj(kobj);
+	read_unlock_irqrestore(&kobj->rwlock, flags);
 }
 
 /**
@@ -368,11 +386,13 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	      ptr_to_kobj, size_t bytes_alloc)
 {
+	rwlock_init(&kobj->rwlock);
 	kobj->alloc_ip = call_site;
 	kobj->va_ptr = ptr_to_kobj;
 	kobj->pa_ptr = __pa(ptr_to_kobj);
 	kobj->size = bytes_alloc;
-	kobj->jiffies = jiffies;
+	kobj->alloc_jiffies = jiffies;
+	kobj->free_jiffies = 0;
 	memset(kobj->comm, '\0', sizeof(kobj->comm));
 	/* task information */
 	if (in_irq()) {
@@ -507,10 +527,20 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 	 * into our tree and we have a missed alloc track
 	 */
 	if(kobj){
-		/* TODO add to the to_proccess queue and remove */
+		/* remove from the active_kobj_rbtree */
 		write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 		rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
 		write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+
+		/* Update the free_jiffies for the object */
+		write_lock_irqsave(&kobj->rwlock, flags);
+		kobj->free_jiffies = jiffies;
+		write_unlock_irqrestore(&kobj->rwlock, flags);
+
+		pr_info("Object on free");
+		read_locking_print_memorizer_kobj(kobj);
+
+		/* Insert into the process queue */
 	}
 
 }

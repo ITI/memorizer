@@ -71,10 +71,10 @@
 #include <linux/preempt.h>
 #include <linux/printk.h>
 #include <linux/rbtree.h>
+#include <linux/rwlock.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/smp.h>
-#include <linux/rwlock.h>
 
 #include <asm/atomic.h>
 

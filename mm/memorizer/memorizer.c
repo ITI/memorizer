@@ -92,6 +92,9 @@
 
 #include <asm/atomic.h>
 
+//==-- Debugging and print information ------------------------------------==//
+#define MEMORIZER_DEBUG		1
+
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Types for events */
@@ -196,10 +199,6 @@ DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
 					 | __GFP_NOWARN		\
 					 | __GFP_NOTRACK	\
 				 )
-
-//==-- Debugging and print information ------------------------------------==//
-
-#define MEMORIZER_DEBUG		2
 
 //==-- Temporary test code --==//
 atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
@@ -404,7 +403,7 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	rwlock_init(&kobj->rwlock);
 
 	if(atomic_long_inc_and_test(&global_kobj_id_count)){
-		pr_crit("Global kernel object counter overlapped...");
+		pr_warn("Global kernel object counter overlapped...");
 	}
 
 	kobj->alloc_ip = call_site;

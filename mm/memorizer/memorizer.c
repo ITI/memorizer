@@ -186,7 +186,7 @@ DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
 
 //==-- Debugging and print information ------------------------------------==//
 
-#define MEMORIZER_DEBUG		0
+#define MEMORIZER_DEBUG		1
 
 //==-- Temporary test code --==//
 atomic_t memorizer_num_accesses = ATOMIC_INIT(0);
@@ -209,9 +209,9 @@ EXPORT_SYMBOL(__memorizer_get_allocs);
  *
  * Grap reader lock to make sure things don't get modified while we are printing
  */
-void __print_memorizer_kobj(struct memorizer_kobj * kobj)
+void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 {
-	pr_info("Memorizer kobj metadata: \n");
+	pr_info("%s: \n", title);
 	pr_info("\talloc_ip: 0x%p\n", (void*) kobj->alloc_ip);
 	pr_info("\tva: 0x%p\n", (void*) kobj->va_ptr);
 	pr_info("\tpa: 0x%p\n", (void*) kobj->pa_ptr);
@@ -225,11 +225,12 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj)
 /**
  * read_locking_print_memorizer_kobj() - grap the reader spinlock then print
  */
-void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj)
+void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj, char *
+				       title)
 {
 	unsigned long flags;
 	read_lock_irqsave(&kobj->rwlock, flags);
-	__print_memorizer_kobj(kobj);
+	__print_memorizer_kobj(kobj, title);
 	read_unlock_irqrestore(&kobj->rwlock, flags);
 }
 
@@ -413,7 +414,7 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	}
 
 #if MEMORIZER_DEBUG > 5
-	__print_memorizer_kobj(kobj);
+	__print_memorizer_kobj(kobj, "Allocated and initalized kobj");
 #endif
 }
 
@@ -453,7 +454,7 @@ struct memorizer_kobj * insert_kobj_rbtree(struct memorizer_kobj *kobj, struct
 		{
 			pr_err("Cannot insert 0x%lx into the object search tree"
 			       " (overlaps existing)\n", kobj->va_ptr);
-			__print_memorizer_kobj(parent);
+			__print_memorizer_kobj(parent, "");
 			kmem_cache_free(kobj_cache, kobj);
 			kobj = NULL;
 			break;
@@ -535,10 +536,11 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		/* Update the free_jiffies for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_jiffies = jiffies;
+#if MEMORIZER_DEBUG >= 1
+		__print_memorizer_kobj(kobj, "Free'd kobject");
+#endif
 		write_unlock_irqrestore(&kobj->rwlock, flags);
 
-		pr_info("Object on free");
-		read_locking_print_memorizer_kobj(kobj);
 
 		/* Insert into the process queue */
 	}
@@ -578,7 +580,7 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	atomic_inc(&memorizer_num_tracked_allocs);
 
-#if MEMORIZER_DEBUG
+#if MEMORIZER_DEBUG >= 2
 	pr_info("Memorizer object from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
 		(void*)call_site, ptr, bytes_alloc, (unsigned long long)
 		gfp_flags);

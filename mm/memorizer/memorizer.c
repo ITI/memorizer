@@ -115,8 +115,8 @@ struct memorizer_event {
  * struct memorizer_kobj - metadata for kernel objects 
  * @rb_node:		the red-black tree relations
  * @alloc_ip:		instruction that allocated the object
- * @va_ptr_to_obj:	Virtual address of the beginning of the object
- * @pa_ptr_to_obj:	Physical address of the beginning of object
+ * @va_ptr:		Virtual address of the beginning of the object
+ * @pa_ptr:		Physical address of the beginning of object
  * @size:		Size of the object
  * @jiffies:		Time stamp of creation
  * @pid:		PID of the current task
@@ -125,10 +125,10 @@ struct memorizer_event {
  * This data structure captures the details of allocated objects
  */
 struct memorizer_kobj {
-	struct rb_node	node;
+	struct rb_node	rb_node;
 	uintptr_t	alloc_ip;
-	uintptr_t	va_ptr_to_obj;
-	uintptr_t	pa_ptr_to_obj;
+	uintptr_t	va_ptr;
+	uintptr_t	pa_ptr;
 	size_t		size;
 	unsigned long	jiffies;
 	pid_t		pid;
@@ -162,6 +162,9 @@ bool memorizer_enabled = false;
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
+
+/* active kobj metadata rb tree */
+static struct rb_root active_kobj_rbtree_root = RB_ROOT;
 
 //==-- Locks --=//
 /* RW Spinlock for access to rb tree */
@@ -204,8 +207,8 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj)
 {
 	pr_info("Memorizer kobj metadata: \n");
 	pr_info("\talloc_ip: 0x%p\n", (void*) kobj->alloc_ip);
-	pr_info("\tva: 0x%p\n", (void*) kobj->va_ptr_to_obj);
-	pr_info("\tpa: 0x%p\n", (void*) kobj->pa_ptr_to_obj);
+	pr_info("\tva: 0x%p\n", (void*) kobj->va_ptr);
+	pr_info("\tpa: 0x%p\n", (void*) kobj->pa_ptr);
 	pr_info("\tsize: %lu\n", kobj->size);
 	pr_info("\tjiffies: %lu\n", kobj->jiffies);
 	pr_info("\tpid: %d\n", kobj->pid);
@@ -366,8 +369,8 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	      ptr_to_kobj, size_t bytes_alloc)
 {
 	kobj->alloc_ip = call_site;
-	kobj->va_ptr_to_obj = ptr_to_kobj;
-	kobj->pa_ptr_to_obj = __pa(ptr_to_kobj);
+	kobj->va_ptr = ptr_to_kobj;
+	kobj->pa_ptr = __pa(ptr_to_kobj);
 	kobj->size = bytes_alloc;
 	kobj->jiffies = jiffies;
 	memset(kobj->comm, '\0', sizeof(kobj->comm));
@@ -388,19 +391,73 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 		 */
 		strncpy(kobj->comm, current->comm, sizeof(kobj->comm));
 	}
+
+#if MEMORIZER_DEBUG > 5
 	__print_memorizer_kobj(kobj);
+#endif
 }
 
 /**
  * add_kobj_to_rb_tree - add the object to the tree
  * @kobj:	Pointer to the object to add to the tree
+ *
+ * Standard rb tree insert. The key is the range. So if the object is allocated
+ * < than the active node's region then traverse left, if greater than traverse
+ * right, and if not that means we have an overlap and have a problem in
+ * overlapping allocations. 
  */
-int add_kobj_to_rb_tree(struct memorizer_kobj *kobj)
+struct memorizer_kobj * insert_active_kobj_rbtree(struct memorizer_kobj *kobj)
 {
 	unsigned long flags;
+	struct memorizer_kobj *parent;
+	struct rb_node **link;
+	struct rb_node *rb_parent = NULL;
+
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+
+	link = &active_kobj_rbtree_root.rb_node;
+	while (*link) {
+		rb_parent = *link;
+		parent = rb_entry(rb_parent, struct memorizer_kobj, rb_node);
+
+		pr_info("parent va_kobj_ptr: 0x%p; size: %lu\n",
+			(void *) parent->va_ptr, parent->size);
+
+		if (kobj->va_ptr + kobj->size <= parent->va_ptr)
+		{
+			link = &parent->rb_node.rb_left;
+		}
+		else if (parent->va_ptr + parent->size <=
+			   kobj->va_ptr)
+		{
+			link = &parent->rb_node.rb_right;
+		}
+		else
+		{
+			pr_err("Cannot insert 0x%lx into the object search tree"
+			       " (overlaps existing)\n", kobj->va_ptr);
+			__print_memorizer_kobj(parent);
+			kmem_cache_free(kobj_cache, kobj);
+			kobj = NULL;
+			break;
+		}
+	}
+	if(likely(kobj != NULL)){
+		rb_link_node(&kobj->rb_node, rb_parent, link);
+		rb_insert_color(&kobj->rb_node, &active_kobj_rbtree_root);
+	}
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
-	return 0;
+	return kobj;
+}
+
+/**
+ * remove_kobj_from_rbtree() - remove the kobj from the tree
+ * @kobj:	The kobj to remove
+ * @rbtree:	The rbtree to remove from
+ */
+void remove_kobj_rbtree(struct memorizer_kobj *kobj, struct rb_root
+			kobj_rbtree_root) 
+{
 }
 
 /**
@@ -416,9 +473,20 @@ int add_kobj_to_rb_tree(struct memorizer_kobj *kobj)
  * Maybe TODO: Do some processing here as opposed to later? This depends on when
  * we want to add our filtering.
  */
-static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t ptr_to_kobj)
+static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t ptr)
 {
+#if 0
+	struct memorizer_kobj *kobj = search_kobj_rbtree(ptr);
+	remove_kobj_from_rbtree();
+#endif
 }
+
+/**
+ * free_kobj_kmem_cache() - free the object from the kmem_cache
+ * @kobj:	The kernel object metadata to free
+ * @kmemcache:	The cache to free from
+ */
+
 
 /**
  * memorize_alloc() - record allocation event
@@ -462,7 +530,7 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
 
 	/* This function uses a spinlock to ensure tree insertion */
-	add_kobj_to_rb_tree(kobj);
+	insert_active_kobj_rbtree(kobj);
 }
 
 /*** HOOKS similar to the kmem points ***/

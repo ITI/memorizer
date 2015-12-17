@@ -38,13 +38,13 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * WITH THE SOFTWARE. 
  *
- *===-----------------------------------------------------------------------===
+ *===------------------------------------------------------------------------===
  *
  *       Filename:  memorizer.h
  *
  *    Description:  Memorizer records data for kernel object lifetime analysis. 
  *
- *===-----------------------------------------------------------------------===
+ *===------------------------------------------------------------------------===
  */
 
 #ifndef __MEMORIZER_H_
@@ -52,17 +52,48 @@
 
 #include <linux/types.h>
 
-#ifdef CONFIG_MEMORIZER
+#ifdef CONFIG_MEMORIZER /*----------- !CONFIG_MEMORIZER -------------------- */
 
+/* Init and Misc */
+void __init memorizer_init(void);
+int memorizer_init_from_driver(void);
+
+/* Memorize access */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
-uint64_t __memorizer_get_opsx(void);
+
+/* Allocation memorization */
+void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags);
+void memorize_kmalloc_node(unsigned long call_site, const void *ptr, size_t
+			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
+			   node);
+void memorize_kfree(unsigned long call_site, const void *ptr);
+void memorize_alloc_pages(struct page *page, unsigned int order);
+void memorize_free_pages(struct page *page, unsigned int order);
+
+/* Temporary Debug and test code */
+int __memorizer_get_opsx(void);
+int __memorizer_get_allocs(void);
 void __memorizer_print_events(unsigned int num_events);
 
-#else /* !CONFIG_MEMORIZER */
+#else /*----------- !CONFIG_MEMORIZER ------------------------- */
+
+int __init memorizer_init(void){}
+int memorizer_init_from_driver(void){}
+
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	{}
 uint64_t __memorizer_get_opsx(void) {}
 void __memorizer_print_events(unsigned int num_events){}
+static __init void memorizer_init(void){}
+void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags){}
+void memorize_kmalloc_node(unsigned long call_site, const void *ptr, size_t
+			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
+			   node){}
+void memorize_kfree(unsigned long call_site, const void *ptr){}
+void memorize_alloc_pages(struct page *page, unsigned int order){}
+void memorize_free_pages(struct page *page, unsigned int order){}
 #endif /* CONFIG_MEMORIZER */
 
 #endif /* __MEMORIZER_H_ */

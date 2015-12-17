@@ -256,12 +256,6 @@ static noinline void __init kasan_stack_oob(void)
 	*(volatile char *)p;
 }
 
-static noinline void __init memorizer_test(void)
-{
-    pr_info("\n\n***OPS Num Writes: %llu\n", 
-            (uint64_t) __memorizer_get_opsx());
-}
-
 static int __init kmalloc_tests_init(void)
 {
 #if 0
@@ -280,8 +274,9 @@ static int __init kmalloc_tests_init(void)
 	kasan_stack_oob();
 	kasan_global_oob();
 #endif
-	memorizer_test();
+	//memorizer_init_from_driver();
 	__memorizer_print_events(10);
+	/* error statement will unload the module for fast extra checking */
 	return -EAGAIN;
 }
 

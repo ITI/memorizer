@@ -98,14 +98,11 @@
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Types for events */
-enum AllocType {KALLAC};
-enum EventType {READ,WRITE,ALLOC,FREE};
+enum EventType {READ,WRITE};
 
 /**
- * struct memorizer_event - structure to capture all memory related events
- * @alloc_type:	 if allocation then set the type of alloca
+ * struct memorizer_mem_access - structure to capture all memory related events
  * @event_type:	 type of event
- * @obj_id:	 for allocations track object identifier
  * @src_ip:	 virtual address of the invoking instruction
  * @access_addr: starting address of the operation
  * @access_size: size of the access: for wr/rd size, allocation length
@@ -113,10 +110,8 @@ enum EventType {READ,WRITE,ALLOC,FREE};
  * @pid:	 PID of invoking task
  * @comm:	 String of executable
  */
-struct memorizer_event {
-	enum AllocType alloc_type;
+struct memorizer_mem_access {
 	enum EventType event_type;
-	uint64_t obj_id;
 	uintptr_t src_ip;
 	uintptr_t access_addr;		/* The location being accessed */
 	uint64_t access_size;		/* events can be allocs or memcpy */

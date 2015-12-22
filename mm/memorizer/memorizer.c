@@ -407,10 +407,7 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 		ma_wls->head = 0;
 	else
 		++ma_wls->head;
-	/* 
-	 * If head == tail then producer caught the consumer just overwrite
-	 * losing the oldest events. 
-	 */
+	/* if producer caught consumer overwrite, losing the oldest events */
 	if(ma_wls->head == ma_wls->tail)
 		++ma_wls->tail;
 	ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);

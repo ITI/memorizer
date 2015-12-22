@@ -75,6 +75,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/bug.h>
+#include <linux/cpumask.h>
 #include <linux/err.h>
 #include <linux/export.h>
 #include <linux/jiffies.h>
@@ -97,6 +98,9 @@
 #define MEMORIZER_DEBUG		1
 
 //==-- Data types and structs for building maps ---------------------------==//
+
+/* Size of the memory access recording worklist arrays */
+#define MEM_ACC_L_SIZE 10000
 
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
@@ -124,11 +128,11 @@ struct memorizer_mem_access {
 /**
  * mem_access_wlists - This struct contains work queues holding accesses
  */
-struct mem_access_wlists {
-	struct memorizer_mem_access wl[2];
+struct mem_access_worklists {
+	struct memorizer_mem_access wls[2][MEM_ACC_L_SIZE];
 	size_t selector;
-	uint64_t head;
-	uint64_t tail;
+	long head;
+	long tail;
 };
 
 /** 
@@ -177,14 +181,8 @@ struct code_region crypto_code_region = {
 };
 
 /* TODO make this dynamically allocated based upon free memory */
-#define MEM_ACC_L_SIZE 1000
-//struct memorizer_mem_access mem_access_list[10000];
-DEFINE_PER_CPU(struct memorizer_mem_access[2][MEM_ACC_L_SIZE], mem_access_lists);
-//DEFINE_PER_CPU(struct memorizer_mem_access[MEM_ACC_L_SIZE], mem_access_list);
-//DEFINE_PER_CPU(struct memorizer_mem_access, mem_access);
-DEFINE_PER_CPU(uint64_t, q_top);
-DEFINE_PER_CPU(size_t, mem_access_queue_selector);
-//struct memorizer_mem_access mem_access_lists[2][10000];
+//DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls = {.selector = 0, .head = 0, .tail = 0 });
+DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 
 /* flag to keep track of whether or not to track writes */
 bool memorizer_enabled = false;
@@ -273,8 +271,10 @@ void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj, char *
  */
 void __memorizer_print_events(unsigned int num_events)
 {
-	int i, e, q, log_index;
-	struct memorizer_mem_access *mal, *ma;	/* memory access list */
+	int i, e, log_index;
+	struct mem_access_worklists * ma_wls;
+	struct memorizer_mem_access *mal, *ma; /* mal is the list ma is the
+						  instance */
 
 	pr_info("\n\n***Memorizer Num Accesses: %ld\n",
 		atomic_long_read(&memorizer_num_accesses));
@@ -282,13 +282,24 @@ void __memorizer_print_events(unsigned int num_events)
 		atomic_long_read(&memorizer_num_tracked_allocs),
 		atomic_long_read(&memorizer_num_untracked_allocs));
 
-	q = get_cpu_var(mem_access_queue_selector);
-	log_index = get_cpu_var(q_top);
-	mal = &get_cpu_var(mem_access_lists[q]);
+	/* Get data structure for the worklists and init the iterators */
+	ma_wls = &get_cpu_var(mem_access_wls);
+	mal = (struct memorizer_mem_access*) &(ma_wls->wls[ma_wls->selector]);
+	log_index = ma_wls->head;
+
+	pr_info("WLS State: selector = %lu, head = %ld, tail = %ld",
+		ma_wls->selector, ma_wls->head, ma_wls->tail);
+
+	/* 
+	 * If we are at the front of the list then allow wrap back, note that
+	 * this will print garbage if this function is called without having
+	 * wrapped.
+	 */
 	if((log_index - num_events) > 0)
 		i = log_index - num_events;
 	else
 		i = MEM_ACC_L_SIZE - (num_events - log_index + 1);
+
 	for(e = 0; e < num_events; e++)
 	{
 		char *type_str[10];
@@ -306,15 +317,13 @@ void __memorizer_print_events(unsigned int num_events)
 			pr_info("Unmatched event type\n");
 			*type_str = "Unknown\0";
 		}
-		pr_info("%s of size %lu by task %s/%d\n", *type_str, 
+		pr_info("%s of size %lu by task %s/%d\n", *type_str,
 			(unsigned long) ma->access_size, ma->comm,
 			task_pid_nr(current));
 		if(++i >= MEM_ACC_L_SIZE)
 			i = 0;
 	}
-	put_cpu_var(mem_access_lists[q]);
-	put_cpu_var(q_top);
-	put_cpu_var(mem_access_queue_selector);
+	put_cpu_var(mem_access_wls);
 }
 EXPORT_SYMBOL(__memorizer_print_events);
 
@@ -375,12 +384,15 @@ void log_event(uintptr_t addr, size_t size, enum AccessType access_type,
  * queue. 
  */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
-{ unsigned long flags; struct memorizer_mem_access * ma; size_t q; uint64_t
-	*top;
+{
+	unsigned long flags;
+	struct memorizer_mem_access * ma;
+	struct mem_access_worklists * ma_wls;
 
 	atomic_long_inc(&memorizer_num_accesses);
 
-	if(!memorizer_enabled || !memorizer_access_enabled)
+	//if(!memorizer_enabled || !memorizer_access_enabled)
+	if(!memorizer_enabled)
 		return;
 
 	if(atomic_read(&in_ma))
@@ -389,13 +401,19 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	local_irq_save(flags);
 
 	/* Get the local cpu data structure */
-	q = get_cpu_var(mem_access_queue_selector);
-	top = &get_cpu_var(q_top);
-	if(*top >= MEM_ACC_L_SIZE)
-		*top = 0;
+	ma_wls = &get_cpu_var(mem_access_wls);
+	/* Head points to the last inserted element, except for -1 on init */
+	if(ma_wls->head >= MEM_ACC_L_SIZE)
+		ma_wls->head = 0;
 	else
-		++*top;
-	ma = &get_cpu_var(mem_access_lists[q][*top]);
+		++ma_wls->head;
+	/* 
+	 * If head == tail then producer caught the consumer just overwrite
+	 * losing the oldest events. 
+	 */
+	if(ma_wls->head == ma_wls->tail)
+		++ma_wls->tail;
+	ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
 
 	/* Initialize the event data */
 	ma->access_type = write ? Memorizer_WRITE : Memorizer_READ;
@@ -405,10 +423,7 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	ma->jiffies = jiffies;
 
 	/* put the cpu vars and reenable interrupts */
-	put_cpu_var(mem_access_lists[q][*top]);
-	put_cpu_var(q_top);
-	put_cpu_var(mem_access_queue_selector);
-
+	put_cpu_var(mem_access_wls);
 	local_irq_restore(flags);
 	atomic_dec(&in_ma);
 }
@@ -694,6 +709,23 @@ void create_obj_kmem_cache(void)
 }
 
 /**
+ * init_mem_access_wl - initialize the percpu data structures
+ *
+ * Init all the values to 0 for the selector, head, and tail
+ */
+static void init_mem_access_wls(void)
+{
+	struct mem_access_worklists * wls;
+	size_t cpu;
+	for_each_possible_cpu(cpu){
+		wls = &per_cpu(mem_access_wls, cpu);
+		wls->selector = 0;
+		wls->head = -1;
+		wls->tail = 0;
+	}
+}
+
+/**
  * memorizer_init() - initialize memorizer state
  *
  * Set enable flag to true which enables tracking for memory access and object
@@ -702,18 +734,21 @@ void create_obj_kmem_cache(void)
 void __init memorizer_init(void)
 {
 	unsigned long flags;
-	create_obj_kmem_cache();
 
+	init_mem_access_wls();
+
+	create_obj_kmem_cache();
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_access_enabled = true;
+
 	local_irq_restore(flags);
 }
 
 /*
  * Late initialization function.
  */
-static int __init memorizer_late_init(void)
+static int memorizer_late_init(void)
 {
 	unsigned long flags;
 	//struct dentry *dentry;
@@ -725,6 +760,8 @@ static int __init memorizer_late_init(void)
 
 	local_irq_save(flags);
 	local_irq_restore(flags);
+
+	__memorizer_print_events(10);
 
 	pr_info("Memorizer initialized\n");
 

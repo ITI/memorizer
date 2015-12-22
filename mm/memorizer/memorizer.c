@@ -205,7 +205,6 @@ atomic_t in_ma = ATOMIC_INIT(0);
 //==-- Locks --=//
 /* RW Spinlock for access to rb tree */
 DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
-DEFINE_RWLOCK(rw_memlists_spinlock);
 
 /* mask to apply to memorizer allocations TODO: verify the list */
 #define gfp_memorizer_mask(gfp)	(((gfp) & (		\

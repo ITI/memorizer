@@ -371,14 +371,12 @@ void log_event(uintptr_t addr, size_t size, enum AccessType access_type,
  * @write:	True if the memory access is a write (store)
  * @ip:		IP of the invocing instruction
  *
- * This function will memorize, ie. log, the particular data access.
+ * Memorize, ie. log, the particular data access by inserting it into a percpu
+ * queue. 
  */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
-{
-	unsigned long flags;
-	struct memorizer_mem_access * ma;
-	size_t q;
-	uint64_t *top;
+{ unsigned long flags; struct memorizer_mem_access * ma; size_t q; uint64_t
+	*top;
 
 	atomic_long_inc(&memorizer_num_accesses);
 

@@ -334,9 +334,8 @@ void __memorizer_print_events(unsigned int num_events)
 			pr_info("Unmatched event type\n");
 			*type_str = "Unknown\0";
 		}
-		pr_info("%s of size %lu by task %s/%d\n", *type_str,
-			(unsigned long) ma->access_size, ma->comm,
-			task_pid_nr(current));
+		pr_info("%s of size %lu by task %s pid %d\n", *type_str,
+			(unsigned long) ma->access_size, ma->comm, ma->pid);
 		if(++i >= MEM_ACC_L_SIZE)
 			i = 0;
 	}
@@ -347,47 +346,38 @@ EXPORT_SYMBOL(__memorizer_print_events);
 //==-- Memorizer memory access tracking -----------------------------------==//
 
 /**
- * log_event() - log the memory event
- * @addr:	The virtual address for the event start location
- * @size:	The number of bits associated with the event
- * @access_type:The type of event to record
- * @ip:		IP of the invoking instruction
+ * set_comm_and_pid - Find the execution context of the ld/st
  *
- * This function records the memory event to the event log. Currently emulates a
- * circular buffer for logging the most recent set of events. TODO extend this
- * to be dynamically determined.
+ * Set the pid and the task name. These are together because we want to optimize
+ * the number of branches in this to make it faster.
  */
-void log_event(uintptr_t addr, size_t size, enum AccessType access_type,
-	       uintptr_t ip)
+static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 {
-#if 0 /* NOT IMPLEMENTED YET--- BREAKS EARLY BOOT */
+	int i;
+	char *comm;
+	char *hardirq = "hardirq";
+	char *softirq = "softirq";
 
 	/* task information */
-	if (in_irq()) {
-		mem_events[log_index].pid = 0;
-		//strncpy(mem_events[log_index].comm, "hardirq",
-		//	sizeof(mem_events[log_index].comm));
-	} else if (in_softirq()) {
-		mem_events[log_index].pid = 0;
-		//strncpy(mem_events[log_index].comm, "softirq",
-		//	sizeof(mem_events[log_index].comm));
+	if (unlikely(in_irq())) {
+		ma->pid = 0;
+		comm = hardirq;
+	} else if (unlikely(in_softirq())) {
+		ma->pid = 0;
+		comm = softirq;
 	} else {
-		mem_events[log_index].pid = current->pid;
+		ma->pid = task_pid_nr(current);
 		/*
 		 * There is a small chance of a race with set_task_comm(),
 		 * however using get_task_comm() here may cause locking
 		 * dependency issues with current->alloc_lock. In the worst
 		 * case, the command line is not correct.
 		 */
-		//strncpy(mem_events[log_index].comm, current->comm,
-		//	sizeof(mem_events[log_index].comm));
+		comm = current->comm;
 	}
-
-	if(log_index >= ARRAY_SIZE(mem_events))
-		log_index = 0;
-	else
-		++log_index;
-#endif
+	for(i=0; i<sizeof(comm); i++)
+		ma->comm[i] = comm[i];
+	ma->comm[i] = '\0';
 }
 
 /**
@@ -432,7 +422,8 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
 
 	/* Initialize the event data */
-	ma->access_type = write ? Memorizer_WRITE : Memorizer_READ;
+	set_comm_and_pid(ma);
+	ma->access_type = write;
 	ma->access_addr = addr;
 	ma->access_size = size;
 	ma->src_ip = ip;

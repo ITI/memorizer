@@ -68,6 +68,16 @@
  *		- memorizer_kobj.rwlock: 
  *
  *			RW spinlock for access to object internals. 
+ * 
+ * Re-Entrance:
+ *
+ *	This system hooks all memory reads/writes and object allocation,
+ *	therefore any external function called will re-enter via ld/st
+ *	instrumentation as well as from allocations. So to avoid this we must be
+ *	very careful about any external functions called to ensure correct
+ *	behavior. This is particulary critical of the memorize access function.
+ *	The others can call external, but note that the memory ld/st as a
+ *	response to that call will be recorded. 
  *
  *===-----------------------------------------------------------------------===
  */

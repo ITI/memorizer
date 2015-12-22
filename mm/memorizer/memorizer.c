@@ -99,7 +99,7 @@
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Types for events */
-enum AccessType {READ=0,WRITE};
+enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
 
 /**
  * struct memorizer_mem_access - structure to capture all memory related events

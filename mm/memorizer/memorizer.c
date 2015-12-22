@@ -172,13 +172,13 @@ struct code_region crypto_code_region = {
 };
 
 /* TODO make this dynamically allocated based upon free memory */
-#define MEM_ACC_L_SIZE 10000
+#define MEM_ACC_L_SIZE 1000
 //struct memorizer_mem_access mem_access_list[10000];
-//DEFINE_PER_CPU(struct memorizer_mem_access[2][MEM_ACC_L_SIZE], mem_access_lists);
-DEFINE_PER_CPU(struct memorizer_mem_access[MEM_ACC_L_SIZE], mem_access_list);
-DEFINE_PER_CPU(struct memorizer_mem_access, mem_access);
-//DEFINE_PER_CPU(uint64_t, q_top);
-//DEFINE_PER_CPU(size_t, mem_access_queue_selector);
+DEFINE_PER_CPU(struct memorizer_mem_access[2][MEM_ACC_L_SIZE], mem_access_lists);
+//DEFINE_PER_CPU(struct memorizer_mem_access[MEM_ACC_L_SIZE], mem_access_list);
+//DEFINE_PER_CPU(struct memorizer_mem_access, mem_access);
+DEFINE_PER_CPU(uint64_t, q_top);
+DEFINE_PER_CPU(size_t, mem_access_queue_selector);
 //struct memorizer_mem_access mem_access_lists[2][10000];
 
 /* flag to keep track of whether or not to track writes */
@@ -372,8 +372,9 @@ void log_event(uintptr_t addr, size_t size, enum AccessType access_type,
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 {
 	unsigned long flags;
-	struct memorizer_mem_access * ma;  /* Specific instance pointer */
-	size_t q, top;
+	struct memorizer_mem_access * ma;
+	size_t q;
+	uint64_t *top;
 
 	atomic_long_inc(&memorizer_num_accesses);
 
@@ -383,26 +384,16 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	if(atomic_read(&in_ma))
 		return;
 	atomic_inc(&in_ma);
-	//pr_notice("addr: %p, size: %lu, write: %d, from: %p", addr,size,write,ip);
-#if 0
-	//write_trylock(&rw_memlists_spinlock);
-	write_lock_irqsave(&rw_memlists_spinlock,flags);
-#else
 	local_irq_save(flags);
-#endif
 
-#if 0
 	/* Get the local cpu data structure */
 	q = get_cpu_var(mem_access_queue_selector);
-	top = ++get_cpu_var(q_top);
-	if(top >= MEM_ACC_L_SIZE){	// circular buffer: wrap if at end
-		q_top = 0;
-		top = q_top;
-	}
-	ma = &get_cpu_var(mem_access_lists[q][top]);
-
-	pr_info("addr: %p, size: %lu, write: %d, from: %p", ma->access_addr,
-		ma->access_size,ma->access_type ? 1: 0, ma->src_ip);
+	top = &get_cpu_var(q_top);
+	if(*top >= MEM_ACC_L_SIZE)
+		*top = 0;
+	else
+		++*top;
+	ma = &get_cpu_var(mem_access_lists[q][*top]);
 
 	/* Initialize the event data */
 	ma->access_type = write ? WRITE : READ;
@@ -412,16 +403,11 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	ma->jiffies = jiffies;
 
 	/* put the cpu vars and reenable interrupts */
-	put_cpu_var(mem_access_lists[q][top]);
+	put_cpu_var(mem_access_lists[q][*top]);
 	put_cpu_var(q_top);
 	put_cpu_var(mem_access_queue_selector);
-#endif
 
-#if 0
-	write_unlock_irqrestore(&rw_memlists_spinlock,flags);
-#else
 	local_irq_restore(flags);
-#endif
 	atomic_dec(&in_ma);
 }
 
@@ -718,6 +704,7 @@ void __init memorizer_init(void)
 
 	local_irq_save(flags);
 	memorizer_enabled = true;
+	memorizer_access_enabled = true;
 	local_irq_restore(flags);
 }
 
@@ -735,11 +722,6 @@ static int __init memorizer_late_init(void)
 		//pr_warning("Failed to create the debugfs kmemleak file\n");
 
 	local_irq_save(flags);
-	/* TODO: enabling this early fails: due to either premption or irq disable */
-	memorizer_access_enabled = true;
-	DEFINE_PER_CPU(struct per_cpu_mem_access_wl, mem_access_lists);
-	DEFINE_PER_CPU(uint64_t, q_top);
-	DEFINE_PER_CPU(size_t, mem_access_queue_selector);
 	local_irq_restore(flags);
 
 	pr_info("Memorizer initialized\n");

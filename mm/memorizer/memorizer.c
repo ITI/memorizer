@@ -121,10 +121,15 @@ struct memorizer_mem_access {
 	char comm[TASK_COMM_LEN];	/* executable name */
 };
 
+/**
+ * mem_access_wlists - This struct contains work queues holding accesses
+ */
 struct mem_access_wlists {
 	struct memorizer_mem_access wl[2];
+	size_t selector;
+	uint64_t head;
+	uint64_t tail;
 };
-struct memorizer_mem_access[2][MEM_ACC_L_SIZE]
 
 /** 
  * struct memorizer_kobj - metadata for kernel objects 

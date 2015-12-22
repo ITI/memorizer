@@ -204,8 +204,6 @@ DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 /* flag to keep track of whether or not to track writes */
 bool memorizer_enabled = false;
 
-bool memorizer_access_enabled = false;
-
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
 
@@ -398,7 +396,6 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 
 	atomic_long_inc(&memorizer_num_accesses);
 
-	//if(!memorizer_enabled || !memorizer_access_enabled)
 	if(!memorizer_enabled)
 		return;
 
@@ -749,7 +746,6 @@ void __init memorizer_init(void)
 	create_obj_kmem_cache();
 	local_irq_save(flags);
 	memorizer_enabled = true;
-	memorizer_access_enabled = true;
 
 	local_irq_restore(flags);
 }
@@ -790,7 +786,6 @@ int memorizer_init_from_driver(void)
 	pr_info("Enabling from driver...");
 
 	local_irq_save(flags);
-	memorizer_access_enabled = true;
 	local_irq_restore(flags);
 
 	return 0;

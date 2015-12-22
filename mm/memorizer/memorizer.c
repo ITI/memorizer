@@ -107,6 +107,13 @@
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
 
+/* 
+ * If we have a bug in memorizer (like calling an external function from the
+ * memorizer_mem_access function, then we will re-enter that function. This is
+ * costly so disable most of the time.
+ */
+#define PROTECT_MEM_ACCESS_REENTRY 0
+
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
@@ -405,9 +412,11 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	if(!memorizer_enabled)
 		return;
 
+#if PROTECT_MEM_ACCESS_REENTRY
 	if(atomic_read(&in_ma))
 		return;
 	atomic_inc(&in_ma);
+#endif
 	local_irq_save(flags);
 
 	/* Get the local cpu data structure */
@@ -432,7 +441,9 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	/* put the cpu vars and reenable interrupts */
 	put_cpu_var(mem_access_wls);
 	local_irq_restore(flags);
+#if PROTECT_MEM_ACCESS_REENTRY
 	atomic_dec(&in_ma);
+#endif
 }
 
 //==-- Memorizer kernel object tracking -----------------------------------==//

@@ -296,10 +296,10 @@ void __memorizer_print_events(unsigned int num_events)
 		pr_info("access from IP 0x%p at addr 0x%p\n", (void *)
 			ma->src_ip, (void *) ma->access_addr);
 		switch(ma->access_type){
-		case READ:
+		case Memorizer_READ:
 			*type_str = "Read\0";
 			break;
-		case WRITE:
+		case Memorizer_WRITE:
 			*type_str = "Write\0";
 			break;
 		default:
@@ -400,7 +400,7 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	ma = &get_cpu_var(mem_access_lists[q][*top]);
 
 	/* Initialize the event data */
-	ma->access_type = write ? WRITE : READ;
+	ma->access_type = write ? Memorizer_WRITE : Memorizer_READ;
 	ma->access_addr = addr;
 	ma->access_size = size;
 	ma->src_ip = ip;

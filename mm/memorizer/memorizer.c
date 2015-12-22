@@ -68,6 +68,16 @@
  *		- memorizer_kobj.rwlock: 
  *
  *			RW spinlock for access to object internals. 
+ * 
+ * Re-Entrance:
+ *
+ *	This system hooks all memory reads/writes and object allocation,
+ *	therefore any external function called will re-enter via ld/st
+ *	instrumentation as well as from allocations. So to avoid this we must be
+ *	very careful about any external functions called to ensure correct
+ *	behavior. This is particulary critical of the memorize access function.
+ *	The others can call external, but note that the memory ld/st as a
+ *	response to that call will be recorded. 
  *
  *===-----------------------------------------------------------------------===
  */
@@ -75,6 +85,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/bug.h>
+#include <linux/cpumask.h>
 #include <linux/err.h>
 #include <linux/export.h>
 #include <linux/jiffies.h>
@@ -91,21 +102,29 @@
 #include <linux/smp.h>
 
 #include <asm/atomic.h>
+#include <asm/percpu.h>
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
 
+/* 
+ * If we have a bug in memorizer (like calling an external function from the
+ * memorizer_mem_access function, then we will re-enter that function. This is
+ * costly so disable most of the time.
+ */
+#define PROTECT_MEM_ACCESS_REENTRY 0
+
 //==-- Data types and structs for building maps ---------------------------==//
 
+/* Size of the memory access recording worklist arrays */
+#define MEM_ACC_L_SIZE 10000
+
 /* Types for events */
-enum AllocType {KALLAC};
-enum EventType {READ,WRITE,ALLOC,FREE};
+enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
 
 /**
- * struct memorizer_event - structure to capture all memory related events
- * @alloc_type:	 if allocation then set the type of alloca
- * @event_type:	 type of event
- * @obj_id:	 for allocations track object identifier
+ * struct memorizer_mem_access - structure to capture all memory related events
+ * @access_type: type of event
  * @src_ip:	 virtual address of the invoking instruction
  * @access_addr: starting address of the operation
  * @access_size: size of the access: for wr/rd size, allocation length
@@ -113,16 +132,24 @@ enum EventType {READ,WRITE,ALLOC,FREE};
  * @pid:	 PID of invoking task
  * @comm:	 String of executable
  */
-struct memorizer_event {
-	enum AllocType alloc_type;
-	enum EventType event_type;
-	uint64_t obj_id;
+struct memorizer_mem_access {
+	enum AccessType access_type;
 	uintptr_t src_ip;
 	uintptr_t access_addr;		/* The location being accessed */
 	uint64_t access_size;		/* events can be allocs or memcpy */
 	unsigned long jiffies;		/* creation timestamp */
 	pid_t pid;			/* pid of the current task */
 	char comm[TASK_COMM_LEN];	/* executable name */
+};
+
+/**
+ * mem_access_wlists - This struct contains work queues holding accesses
+ */
+struct mem_access_worklists {
+	struct memorizer_mem_access wls[2][MEM_ACC_L_SIZE];
+	size_t selector;
+	long head;
+	long tail;
 };
 
 /** 
@@ -171,11 +198,13 @@ struct code_region crypto_code_region = {
 };
 
 /* TODO make this dynamically allocated based upon free memory */
-struct memorizer_event mem_events[10000];
-uint64_t log_index = 0;
+//DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls = {.selector = 0, .head = 0, .tail = 0 });
+DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 
 /* flag to keep track of whether or not to track writes */
 bool memorizer_enabled = false;
+
+bool memorizer_access_enabled = false;
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
@@ -185,6 +214,8 @@ static struct rb_root active_kobj_rbtree_root = RB_ROOT;
 
 /* global object id reference counter */
 atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
+
+atomic_t in_ma = ATOMIC_INIT(0);
 
 //==-- Locks --=//
 /* RW Spinlock for access to rb tree */
@@ -257,8 +288,10 @@ void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj, char *
  */
 void __memorizer_print_events(unsigned int num_events)
 {
-	int i;
-	int e;
+	int i, e, log_index;
+	struct mem_access_worklists * ma_wls;
+	struct memorizer_mem_access *mal, *ma; /* mal is the list ma is the
+						  instance */
 
 	pr_info("\n\n***Memorizer Num Accesses: %ld\n",
 		atomic_long_read(&memorizer_num_accesses));
@@ -266,99 +299,85 @@ void __memorizer_print_events(unsigned int num_events)
 		atomic_long_read(&memorizer_num_tracked_allocs),
 		atomic_long_read(&memorizer_num_untracked_allocs));
 
+	/* Get data structure for the worklists and init the iterators */
+	ma_wls = &get_cpu_var(mem_access_wls);
+	mal = (struct memorizer_mem_access*) &(ma_wls->wls[ma_wls->selector]);
+	log_index = ma_wls->head;
+
+	pr_info("WLS State: selector = %lu, head = %ld, tail = %ld",
+		ma_wls->selector, ma_wls->head, ma_wls->tail);
+
+	/* 
+	 * If we are at the front of the list then allow wrap back, note that
+	 * this will print garbage if this function is called without having
+	 * wrapped.
+	 */
 	if((log_index - num_events) > 0)
 		i = log_index - num_events;
 	else
-		i = ARRAY_SIZE(mem_events) - (num_events - log_index + 1);
+		i = MEM_ACC_L_SIZE - (num_events - log_index + 1);
 
 	for(e = 0; e < num_events; e++)
 	{
 		char *type_str[10];
-		pr_info("Memorizer: access from IP 0x%p at addr 0x%p\n",
-				(void *)mem_events->src_ip, (void *)
-				mem_events->access_addr);
-		switch(mem_events->event_type){
-		case READ:
+		ma = &mal[i];
+		pr_info("access from IP 0x%p at addr 0x%p\n", (void *)
+			ma->src_ip, (void *) ma->access_addr);
+		switch(ma->access_type){
+		case Memorizer_READ:
 			*type_str = "Read\0";
 			break;
-		case WRITE:
+		case Memorizer_WRITE:
 			*type_str = "Write\0";
-			break;
-		case ALLOC:
-			*type_str = "Alloc\0";
-			break;
-		case FREE:
-			*type_str = "Free\0";
 			break;
 		default:
 			pr_info("Unmatched event type\n");
 			*type_str = "Unknown\0";
 		}
-		pr_info("%s of size %lu by task %s/%d\n", *type_str,
-			(unsigned long) mem_events->access_size,
-			mem_events->comm, task_pid_nr(current));
-		i++;
-		if(i >= ARRAY_SIZE(mem_events))
+		pr_info("%s of size %lu by task %s pid %d\n", *type_str,
+			(unsigned long) ma->access_size, ma->comm, ma->pid);
+		if(++i >= MEM_ACC_L_SIZE)
 			i = 0;
 	}
+	put_cpu_var(mem_access_wls);
 }
 EXPORT_SYMBOL(__memorizer_print_events);
 
 //==-- Memorizer memory access tracking -----------------------------------==//
 
 /**
- * log_event() - log the memory event
- * @addr:	The virtual address for the event start location
- * @size:	The number of bits associated with the event
- * @event_type:	The type of event to record
- * @ip:		IP of the invoking instruction
+ * set_comm_and_pid - Find the execution context of the ld/st
  *
- * This function records the memory event to the event log. Currently emulates a
- * circular buffer for logging the most recent set of events. TODO extend this
- * to be dynamically determined.
+ * Set the pid and the task name. These are together because we want to optimize
+ * the number of branches in this to make it faster.
  */
-void log_event(uintptr_t addr, size_t size, enum EventType event_type, 
-	       uintptr_t ip)
+static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 {
-	mem_events[log_index].access_addr = addr;
-	mem_events[log_index].event_type = event_type;
-	mem_events[log_index].access_size = size;
-	mem_events[log_index].src_ip = ip;
-	mem_events[log_index].jiffies = jiffies;
+	int i;
+	char *comm;
+	char *hardirq = "hardirq";
+	char *softirq = "softirq";
 
-#if 0 /* NOT IMPLEMENTED YET--- BREAKS EARLY BOOT */
 	/* task information */
-	if (in_irq()) {
-		mem_events[log_index].pid = 0;
-		//strncpy(mem_events[log_index].comm, "hardirq",
-		//	sizeof(mem_events[log_index].comm));
-	} else if (in_softirq()) {
-		mem_events[log_index].pid = 0;
-		//strncpy(mem_events[log_index].comm, "softirq",
-		//	sizeof(mem_events[log_index].comm));
+	if (unlikely(in_irq())) {
+		ma->pid = 0;
+		comm = hardirq;
+	} else if (unlikely(in_softirq())) {
+		ma->pid = 0;
+		comm = softirq;
 	} else {
-		mem_events[log_index].pid = current->pid;
+		ma->pid = task_pid_nr(current);
 		/*
 		 * There is a small chance of a race with set_task_comm(),
 		 * however using get_task_comm() here may cause locking
 		 * dependency issues with current->alloc_lock. In the worst
 		 * case, the command line is not correct.
 		 */
-		//strncpy(mem_events[log_index].comm, current->comm,
-		//	sizeof(mem_events[log_index].comm));
+		comm = current->comm;
 	}
-#endif
-
-#if 0 // TODO: Working on creating a lookup function to determine if the given
-	page is being used as a PTP. 
-	if(is_pagetbl(addr))
-	   pr_info("Memorizer: Write to PT from IP 0x%p",ip);
-#endif
-
-	if(log_index >= ARRAY_SIZE(mem_events))
-		log_index = 0;
-	else
-		++log_index;
+	for(i=0; i<sizeof(comm); i++)
+		ma->comm[i] = comm[i];
+	ma->comm[i] = '\0';
 }
 
 /**
@@ -368,27 +387,53 @@ void log_event(uintptr_t addr, size_t size, enum EventType event_type,
  * @write:	True if the memory access is a write (store)
  * @ip:		IP of the invocing instruction
  *
- * This function will memorize, ie. log, the particular data access.
+ * Memorize, ie. log, the particular data access by inserting it into a percpu
+ * queue. 
  */
 void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 {
-	atomic_long_inc(&memorizer_num_accesses);
-#if 0 // TO_IMPLEMENT
 	unsigned long flags;
-	enum EventType event_type;
+	struct memorizer_mem_access * ma;
+	struct mem_access_worklists * ma_wls;
 
+	atomic_long_inc(&memorizer_num_accesses);
 
+	//if(!memorizer_enabled || !memorizer_access_enabled)
 	if(!memorizer_enabled)
 		return;
 
-	//local_irq_save(flags);
-	//if(memorizer_enabled){
-	//if(addr > crypto_code_region.b && addr < crypto_code_region.e)
-	{
-		event_type = write ? WRITE : READ;
-		log_event(addr, size, event_type, ip);
-	}
-	//local_irq_restore(flags);
+#if PROTECT_MEM_ACCESS_REENTRY
+	if(atomic_read(&in_ma))
+		return;
+	atomic_inc(&in_ma);
+#endif
+	local_irq_save(flags);
+
+	/* Get the local cpu data structure */
+	ma_wls = &get_cpu_var(mem_access_wls);
+	/* Head points to the last inserted element, except for -1 on init */
+	if(ma_wls->head >= MEM_ACC_L_SIZE)
+		ma_wls->head = 0;
+	else
+		++ma_wls->head;
+	/* if producer caught consumer overwrite, losing the oldest events */
+	if(ma_wls->head == ma_wls->tail)
+		++ma_wls->tail;
+	ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
+
+	/* Initialize the event data */
+	set_comm_and_pid(ma);
+	ma->access_type = write;
+	ma->access_addr = addr;
+	ma->access_size = size;
+	ma->src_ip = ip;
+	ma->jiffies = jiffies;
+
+	/* put the cpu vars and reenable interrupts */
+	put_cpu_var(mem_access_wls);
+	local_irq_restore(flags);
+#if PROTECT_MEM_ACCESS_REENTRY
+	atomic_dec(&in_ma);
 #endif
 }
 
@@ -462,8 +507,7 @@ struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj *kobj,
 		{
 			link = &parent->rb_node.rb_left;
 		}
-		else if (parent->va_ptr + parent->size <=
-			   kobj->va_ptr)
+		else if (parent->va_ptr + parent->size <= kobj->va_ptr)
 		{
 			link = &parent->rb_node.rb_right;
 		}
@@ -598,7 +642,7 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 	atomic_long_inc(&memorizer_num_tracked_allocs);
 
 #if MEMORIZER_DEBUG >= 3
-	pr_info("Memorizer object from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
+	pr_info("alloca from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
 		(void*)call_site, ptr, bytes_alloc, (unsigned long long)
 		gfp_flags);
 #endif
@@ -674,6 +718,23 @@ void create_obj_kmem_cache(void)
 }
 
 /**
+ * init_mem_access_wl - initialize the percpu data structures
+ *
+ * Init all the values to 0 for the selector, head, and tail
+ */
+static void init_mem_access_wls(void)
+{
+	struct mem_access_worklists * wls;
+	size_t cpu;
+	for_each_possible_cpu(cpu){
+		wls = &per_cpu(mem_access_wls, cpu);
+		wls->selector = 0;
+		wls->head = -1;
+		wls->tail = 0;
+	}
+}
+
+/**
  * memorizer_init() - initialize memorizer state
  *
  * Set enable flag to true which enables tracking for memory access and object
@@ -682,24 +743,34 @@ void create_obj_kmem_cache(void)
 void __init memorizer_init(void)
 {
 	unsigned long flags;
-	create_obj_kmem_cache();
 
+	init_mem_access_wls();
+
+	create_obj_kmem_cache();
 	local_irq_save(flags);
 	memorizer_enabled = true;
+	memorizer_access_enabled = true;
+
 	local_irq_restore(flags);
 }
 
 /*
  * Late initialization function.
  */
-static int __init memorizer_late_init(void)
+static int memorizer_late_init(void)
 {
+	unsigned long flags;
 	//struct dentry *dentry;
 
 	//dentry = debugfs_create_file("memorizer", S_IRUGO, NULL, NULL,
 				     //&kmemleak_fops);
 	//if (!dentry)
 		//pr_warning("Failed to create the debugfs kmemleak file\n");
+
+	local_irq_save(flags);
+	local_irq_restore(flags);
+
+	__memorizer_print_events(10);
 
 	pr_info("Memorizer initialized\n");
 
@@ -714,12 +785,13 @@ late_initcall(memorizer_late_init);
  */
 int memorizer_init_from_driver(void)
 {
-	if(memorizer_enabled)
-		return 0;
+	unsigned long flags;
 
-	create_obj_kmem_cache();
+	pr_info("Enabling from driver...");
 
-	memorizer_enabled = true;
+	local_irq_save(flags);
+	memorizer_access_enabled = true;
+	local_irq_restore(flags);
 
 	return 0;
 }

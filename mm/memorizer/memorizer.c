@@ -313,7 +313,7 @@ void __memorizer_print_events(unsigned int num_events)
 	if((log_index - num_events) > 0)
 		i = log_index - num_events;
 	else
-		i = MEM_ACC_L_SIZE - (num_events - log_index + 1);
+		i = MEM_ACC_L_SIZE - 1 - (num_events - log_index + 1);
 
 	for(e = 0; e < num_events; e++)
 	{
@@ -409,7 +409,7 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	/* Get the local cpu data structure */
 	ma_wls = &get_cpu_var(mem_access_wls);
 	/* Head points to the last inserted element, except for -1 on init */
-	if(ma_wls->head >= MEM_ACC_L_SIZE)
+	if(ma_wls->head >= MEM_ACC_L_SIZE - 1)
 		ma_wls->head = 0;
 	else
 		++ma_wls->head;

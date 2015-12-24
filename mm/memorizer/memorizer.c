@@ -515,7 +515,7 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
  */
 void drain_and_process_access_queue(struct mem_access_worklists * ma_wls)
 {
-	while(ma_wls->head){
+	while(ma_wls->head >= 0){
 		//pr_info("Head: %ld", ma_wls->head);
 		find_and_update_kobj_access(
 			    &(ma_wls->wls[ma_wls->selector][ma_wls->head])
@@ -594,10 +594,9 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	/* Head points to the last inserted element, except for -1 on init */
 	if(ma_wls->head >= MEM_ACC_L_SIZE - 1){
 		drain_and_process_access_queue(ma_wls);
-		ma_wls->head = 0;
-	} else {
-		++ma_wls->head;
 	}
+	++ma_wls->head;
+
 	/* if producer caught consumer overwrite, losing the oldest events */
 	if(ma_wls->head == ma_wls->tail)
 		++ma_wls->tail;

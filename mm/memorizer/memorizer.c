@@ -165,6 +165,7 @@ struct mem_access_worklists {
  struct access_from_counts {
 	 struct list_head list;
 	 uintptr_t ip;
+	 pid_t pid;
 	 uint64_t writes;
 	 uint64_t reads;
  };
@@ -402,9 +403,11 @@ EXPORT_SYMBOL(__memorizer_print_events);
  * @ip:		ip of access
  */
 static inline void
-init_access_counts_object(struct access_from_counts *afc, uint64_t ip)
+init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
+			  pid) 
 {
 	afc->ip = ip;
+	afc->pid = pid;
 	afc->writes = 0;
 	afc->reads = 0;
 }
@@ -414,12 +417,12 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip)
  * @ip:		the access from value
  */
 static inline struct access_from_counts *
-alloc_and_init_access_counts(uint64_t ip)
+alloc_and_init_access_counts(uint64_t ip, pid_t pid)
 {
 	struct access_from_counts * afc = NULL;
 	afc = kmem_cache_alloc(access_from_counts_cache, GFP_ATOMIC);
 	if(afc)
-		init_access_counts_object(afc, ip);
+		init_access_counts_object(afc, ip, pid);
 	return afc;
 }
 
@@ -441,7 +444,8 @@ alloc_and_init_access_counts(uint64_t ip)
  * linearly monotonic sorted list.
  */
 static inline struct access_from_counts *
-unlckd_insert_get_access_counts(uint64_t src_ip, struct memorizer_kobj *kobj)
+unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
+				memorizer_kobj *kobj) 
 {
 	struct list_head * listptr;
 	struct access_from_counts *entry;
@@ -454,7 +458,7 @@ unlckd_insert_get_access_counts(uint64_t src_ip, struct memorizer_kobj *kobj)
 			break;
 	}
 	/* allocate the new one and initialize the count none in list */
-	afc = alloc_and_init_access_counts(src_ip);
+	afc = alloc_and_init_access_counts(src_ip, pid);
 	if(afc)
 		list_add_tail(&(afc->list), listptr);
 	return afc;
@@ -489,7 +493,7 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 		/* Grab the object lock here */
 		write_lock(&kobj->rwlock);
 		/* Search the queue and return the pointer to the entry */
-		afc = unlckd_insert_get_access_counts(ma->src_ip, kobj);
+		afc = unlckd_insert_get_access_counts(ma->src_ip,ma->pid,kobj);
 		if(afc)
 			ma->access_type ? ++afc->writes : ++afc->reads;
 
@@ -972,14 +976,16 @@ int memorizer_init_from_driver(void)
 {
 	unsigned long flags;
 
-	pr_info("Enabling from driver...");
+	pr_info("Running test from driver...");
+
+	local_irq_save(flags);
+	memorizer_enabled = true;
+	memorizer_log_access = true;
+	local_irq_restore(flags);
+
 	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
 	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
-
-
-	local_irq_save(flags);
-	local_irq_restore(flags);
 
 	return 0;
 }

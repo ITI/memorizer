@@ -272,10 +272,14 @@ EXPORT_SYMBOL(__memorizer_get_allocs);
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
  *
- * Grap reader lock to make sure things don't get modified while we are printing
+ * Grab reader lock if you want to  make sure things don't get modified while we
+ * are printing
  */
-void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
+static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 {
+	struct list_head * listptr;
+	struct access_from_counts *entry;
+
 	pr_info("%s: \n", title);
 	pr_info("\tkobj_id: %ld\n", kobj->obj_id);
 	pr_info("\talloc_ip: 0x%p\n", (void*) kobj->alloc_ip);
@@ -286,6 +290,13 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("\tfree jiffies: %lu\n", kobj->free_jiffies);
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
+
+	list_for_each(listptr, &(kobj->access_counts)){
+		entry = list_entry(listptr, struct access_from_counts, list);
+		pr_info("\t\tAccess IP: %p, Writes: %llu, Reads: %llu\n",
+			(void *) entry->ip, (unsigned long long) entry->writes,
+			(unsigned long long) entry->reads);
+	}
 }
 
 /**
@@ -298,6 +309,22 @@ void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj, char *
 	read_lock_irqsave(&kobj->rwlock, flags);
 	__print_memorizer_kobj(kobj, title);
 	read_unlock_irqrestore(&kobj->rwlock, flags);
+}
+
+/**
+ * __print_rb_tree() - print the tree
+ */
+static void __print_active_rb_tree(struct rb_node * rb)
+{
+	struct memorizer_kobj * kobj; 
+	if(rb){
+		kobj = rb_entry(rb, struct memorizer_kobj, rb_node);
+		read_locking_print_memorizer_kobj(kobj,"");
+		if(kobj->rb_node.rb_left)
+			__print_active_rb_tree(kobj->rb_node.rb_left);
+		if(kobj->rb_node.rb_right)
+			__print_active_rb_tree(kobj->rb_node.rb_right);
+	}
 }
 
 /**
@@ -356,7 +383,7 @@ void __memorizer_print_events(unsigned int num_events)
 			pr_info("Unmatched event type\n");
 			*type_str = "Unknown\0";
 		}
-		pr_info("%s of size %lu by task %s pid %d\n", *type_str,
+		pr_info("%s of size %lu by task %s/%d\n", *type_str,
 			(unsigned long) ma->access_size, ma->comm, ma->pid);
 		if(++i >= MEM_ACC_L_SIZE)
 			i = 0;
@@ -548,7 +575,7 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 
 	atomic_long_inc(&memorizer_num_accesses);
 
-	if(!memorizer_enabled)
+	if(!memorizer_enabled || !memorizer_log_access)
 		return;
 
 #if PROTECT_MEM_ACCESS_REENTRY
@@ -690,20 +717,20 @@ struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj *kobj,
  * we assume that the particular tree being accessed has had it's lock acquired
  * properly already.
  */
-struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr, struct
-						  rb_root * kobj_rbtree_root)
+static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
+							   struct rb_root *
+							   kobj_rbtree_root)
 {
 	struct rb_node *rb = kobj_rbtree_root->rb_node;
 
 	while (rb) {
-		struct memorizer_kobj * kobj = rb_entry(rb, struct
-							memorizer_kobj,
-							rb_node);
+		struct memorizer_kobj * kobj = 
+			rb_entry(rb, struct memorizer_kobj, rb_node);
 		/* Check if our pointer is less than the current node's ptr */
 		if (kobj_ptr < kobj->va_ptr)
 			rb = kobj->rb_node.rb_left;
 		/* Check if our pointer is greater than the current node's ptr */
-		else if (kobj_ptr >= kobj->va_ptr + kobj->size)
+		else if (kobj_ptr >= (kobj->va_ptr + kobj->size))
 			rb = kobj->rb_node.rb_right;
 		/* At this point we have found the node because rb != null */
 		else
@@ -798,9 +825,7 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 		gfp_flags);
 #endif
 
-	kobj = kmem_cache_alloc(kobj_cache,
-							gfp_flags |
-							GFP_ATOMIC);
+	kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
 	if(!kobj){
 		pr_info("Cannot allocate a memorizer_kobj structure\n");
 	}
@@ -809,7 +834,6 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	/* Grab the writer lock for the active_kobj_rbtree */
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
-	/* This function uses a spinlock to ensure tree insertion */
 	unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 }
@@ -927,9 +951,11 @@ static int memorizer_late_init(void)
 		//pr_warning("Failed to create the debugfs kmemleak file\n");
 
 	local_irq_save(flags);
+	memorizer_enabled = true;
+	memorizer_log_access = true;
 	local_irq_restore(flags);
 
-	__memorizer_print_events(10);
+	//__memorizer_print_events(10);
 
 	pr_info("Memorizer initialized\n");
 
@@ -947,6 +973,10 @@ int memorizer_init_from_driver(void)
 	unsigned long flags;
 
 	pr_info("Enabling from driver...");
+	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
+	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+
 
 	local_irq_save(flags);
 	local_irq_restore(flags);

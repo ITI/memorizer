@@ -255,6 +255,7 @@ DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
 				 )
 
 //==-- Temporary test code --==//
+atomic_long_t memorizer_num_stale_accesses = ATOMIC_INIT(0);
 atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
 int __memorizer_get_opsx(void)
 {
@@ -343,8 +344,10 @@ void __memorizer_print_events(unsigned int num_events)
 	struct memorizer_mem_access *mal, *ma; /* mal is the list ma is the
 						  instance */
 
-	pr_info("\n\n***Memorizer Num Accesses: %ld\n",
-		atomic_long_read(&memorizer_num_accesses));
+	pr_info("\n\n***Memorizer Num Accesses: %ld, Stale due to free: %ld\n",
+		atomic_long_read(&memorizer_num_accesses),
+		atomic_long_read(&memorizer_num_stale_accesses)
+		);
 	pr_info("***Memorizer Num Allocs Tracked: %ld Untracked: %ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs),
 		atomic_long_read(&memorizer_num_untracked_allocs));
@@ -492,14 +495,20 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 	if(kobj){
 		/* Grab the object lock here */
 		write_lock(&kobj->rwlock);
+		/* Check to see if this isn't to an already free'd object */
+		if(kobj->alloc_jiffies <= ma->jiffies)
+		{
 		/* Search the queue and return the pointer to the entry */
-		afc = unlckd_insert_get_access_counts(ma->src_ip,ma->pid,kobj);
-		if(afc)
-			ma->access_type ? ++afc->writes : ++afc->reads;
+			afc = unlckd_insert_get_access_counts(ma->src_ip,ma->pid,kobj);
+			if(afc)
+				ma->access_type ? ++afc->writes : ++afc->reads;
 
 #if MEMORIZER_DEBUG >= 2
-		__print_memorizer_kobj(kobj, "New Object Access Update");
+			__print_memorizer_kobj(kobj, "New Object Access Update");
 #endif
+		}
+		else
+			atomic_long_inc(&memorizer_num_stale_accesses);
 		write_unlock(&kobj->rwlock);
 	}
 	return afc ? 0 : -1;

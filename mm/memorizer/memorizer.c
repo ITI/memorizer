@@ -320,7 +320,7 @@ static void __print_active_rb_tree(struct rb_node * rb)
 	struct memorizer_kobj * kobj; 
 	if(rb){
 		kobj = rb_entry(rb, struct memorizer_kobj, rb_node);
-		read_locking_print_memorizer_kobj(kobj,"");
+		read_locking_print_memorizer_kobj(kobj,"Kernel Object");
 		if(kobj->rb_node.rb_left)
 			__print_active_rb_tree(kobj->rb_node.rb_left);
 		if(kobj->rb_node.rb_right)
@@ -984,6 +984,7 @@ int memorizer_init_from_driver(void)
 	local_irq_restore(flags);
 
 	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	pr_info("The live kernel object tree now:");
 	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
 	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 

@@ -295,8 +295,8 @@ static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 
 	list_for_each(listptr, &(kobj->access_counts)){
 		entry = list_entry(listptr, struct access_from_counts, list);
-		pr_info("\t\tAccess IP: %p, Writes: %llu, Reads: %llu\n",
-			(void *) entry->ip, (unsigned long long) entry->writes,
+		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
+			(void *) entry->ip, entry->pid, (unsigned long long) entry->writes,
 			(unsigned long long) entry->reads);
 	}
 }

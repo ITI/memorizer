@@ -117,7 +117,7 @@
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
-#define MEM_ACC_L_SIZE 1000000
+#define MEM_ACC_L_SIZE 100000
 
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};

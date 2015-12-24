@@ -112,7 +112,7 @@
  * memorizer_mem_access function, then we will re-enter that function. This is
  * costly so disable most of the time.
  */
-#define PROTECT_MEM_ACCESS_REENTRY 0
+#define PROTECT_MEM_ACCESS_REENTRY 1
 
 //==-- Data types and structs for building maps ---------------------------==//
 

@@ -779,7 +779,7 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		/* Update the free_jiffies for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_jiffies = jiffies;
-#if MEMORIZER_DEBUG >= 2
+#if MEMORIZER_DEBUG >= 1
 		__print_memorizer_kobj(kobj, "Free'd kobject");
 #endif
 		write_unlock_irqrestore(&kobj->rwlock, flags);

@@ -117,7 +117,7 @@
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
-#define MEM_ACC_L_SIZE 10000
+#define MEM_ACC_L_SIZE 1000000
 
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
@@ -144,6 +144,9 @@ struct memorizer_mem_access {
 
 /**
  * mem_access_wlists - This struct contains work queues holding accesses
+ *
+ * Size Calculation for memorizer_mem_access:
+ *	(1+64+64+64+64+32+256)*100000 = 54.5Mb
  */
 struct mem_access_worklists {
 	struct memorizer_mem_access wls[2][MEM_ACC_L_SIZE];

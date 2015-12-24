@@ -114,6 +114,10 @@
  */
 #define PROTECT_MEM_ACCESS_REENTRY 1
 
+//==-- Prototype Declarations ---------------------------------------------==//
+static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
+							   struct rb_root *
+							   kobj_rbtree_root);
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
@@ -155,6 +159,16 @@ struct mem_access_worklists {
 	long tail;
 };
 
+/**
+ * access_counts - track reads/writes from single source IP
+ */
+ struct access_from_counts {
+	 struct list_head list;
+	 uintptr_t ip;
+	 uint64_t writes;
+	 uint64_t reads;
+ };
+
 /** 
  * struct memorizer_kobj - metadata for kernel objects 
  * @rb_node:		the red-black tree relations
@@ -180,6 +194,7 @@ struct memorizer_kobj {
 	unsigned long	free_jiffies;
 	pid_t		pid;
 	char comm[TASK_COMM_LEN];
+	struct list_head access_counts;
 };
 
 /**
@@ -207,8 +222,14 @@ DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 /* flag to keep track of whether or not to track writes */
 bool memorizer_enabled = false;
 
+/* flag enable/disable memory access logging */
+bool memorizer_log_access = false;
+
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
+
+/* object cache for access count objects */
+static struct kmem_cache *access_from_counts_cache;
 
 /* active kobj metadata rb tree */
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
@@ -344,6 +365,134 @@ void __memorizer_print_events(unsigned int num_events)
 }
 EXPORT_SYMBOL(__memorizer_print_events);
 
+//----
+//==-- Memorizer Access Processing ----------------------------------------==//
+//----
+
+/**
+ * init_access_counts_object() - initialize data for the object
+ * @afc:	object to init 
+ * @ip:		ip of access
+ */
+static inline void
+init_access_counts_object(struct access_from_counts *afc, uint64_t ip)
+{
+	afc->ip = ip;
+	afc->writes = 0;
+	afc->reads = 0;
+}
+
+/**
+ * alloc_new_and_init_access_counts() - allocate a new access count and init
+ * @ip:		the access from value
+ */
+static inline struct access_from_counts *
+alloc_and_init_access_counts(uint64_t ip)
+{
+	struct access_from_counts * afc = NULL;
+	afc = kmem_cache_alloc(access_from_counts_cache, GFP_ATOMIC);
+	if(afc)
+		init_access_counts_object(afc, ip);
+	return afc;
+}
+
+/**
+ * add_to_access_count_list() - Add a new entry to the access count list
+ * @src_ip:	the address of the instance
+ * @list_head: 
+ */
+
+/**
+ * access_from_counts - search kobj's access_from for an entry from src_ip
+ * @src_ip:	the ip to search for
+ * @kobj:	the object to search within
+ *
+ * This function does not do any locking and therefore assumes the caller will
+ * already have at least a reader lock. This is a big aggregate function, but
+ * given that it will occur a lot we will be searching the list for a given
+ * object, therefore we can easily do insertion if we don't find it, keeping a
+ * linearly monotonic sorted list.
+ */
+static inline struct access_from_counts *
+unlckd_insert_get_access_counts(uint64_t src_ip, struct memorizer_kobj *kobj)
+{
+	struct list_head * listptr;
+	struct access_from_counts *entry;
+	struct access_from_counts * afc = NULL;
+	list_for_each(listptr, &(kobj->access_counts)){
+		entry = list_entry(listptr, struct access_from_counts, list);
+		if(src_ip == entry->ip)
+			return entry;
+		else if(src_ip < entry->ip)
+			break;
+	}
+	/* allocate the new one and initialize the count none in list */
+	afc = alloc_and_init_access_counts(src_ip);
+	if(afc)
+		list_add_tail(&(afc->list), listptr);
+	return afc;
+}
+
+/**
+ * update_kobj_access() - find and update the object information
+ * @memorizer_mem_access:	The access to account for
+ *
+ * Find the object associated with this memory write, search for the src ip in
+ * the access structures, incr if found or alloc and add new if not.
+ *
+ * Executes from the context of memorizer_mem_access and therefore we are
+ * already operating with interrupts off and preemption disabled, and thus we
+ * cannot sleep.
+ */
+int find_and_update_kobj_access(struct memorizer_mem_access *ma)
+{
+	struct memorizer_kobj *kobj = NULL;
+	struct access_from_counts *afc = NULL;
+
+	read_lock(&active_kobj_rbtree_spinlock);
+	kobj = unlocked_lookup_kobj_rbtree(ma->access_addr,
+					   &active_kobj_rbtree_root);
+	read_unlock(&active_kobj_rbtree_spinlock);
+
+	/* 
+	 * If this is null then we didn't find it, for now just skip TODO: add
+	 * the second queue to find it after free.
+	 */
+	if(kobj){
+		/* Grab the object lock here */
+		write_lock(&kobj->rwlock);
+		/* Search the queue and return the pointer to the entry */
+		afc = unlckd_insert_get_access_counts(ma->src_ip, kobj);
+		if(afc)
+			ma->access_type ? ++afc->writes : ++afc->reads;
+
+#if MEMORIZER_DEBUG >= 2
+		__print_memorizer_kobj(kobj, "New Object Access Update");
+#endif
+		write_unlock(&kobj->rwlock);
+	}
+	return afc ? 0 : -1;
+}
+
+/**
+ * drain_and_process_access_queue() - remove entries from the queue and do stats
+ * @mawls:	the percpu wl struct to drain
+ *
+ * While the list is not empty take the top element and update the kobj it
+ * accessed. Note that the kobj for this could be not found so we just ignore it
+ * and move on if the update function failed.
+ */
+void drain_and_process_access_queue(struct mem_access_worklists * ma_wls)
+{
+	while(ma_wls->head){
+		//pr_info("Head: %ld", ma_wls->head);
+		find_and_update_kobj_access(
+			    &(ma_wls->wls[ma_wls->selector][ma_wls->head])
+			     );
+		--ma_wls->head;
+	}
+}
+
 //==-- Memorizer memory access tracking -----------------------------------==//
 
 /**
@@ -412,10 +561,12 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	/* Get the local cpu data structure */
 	ma_wls = &get_cpu_var(mem_access_wls);
 	/* Head points to the last inserted element, except for -1 on init */
-	if(ma_wls->head >= MEM_ACC_L_SIZE - 1)
+	if(ma_wls->head >= MEM_ACC_L_SIZE - 1){
+		drain_and_process_access_queue(ma_wls);
 		ma_wls->head = 0;
-	else
+	} else {
 		++ma_wls->head;
+	}
 	/* if producer caught consumer overwrite, losing the oldest events */
 	if(ma_wls->head == ma_wls->tail)
 		++ma_wls->tail;
@@ -458,6 +609,7 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	kobj->alloc_jiffies = jiffies;
 	kobj->free_jiffies = 0;
 	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
+	INIT_LIST_HEAD(&kobj->access_counts);
 	memset(kobj->comm, '\0', sizeof(kobj->comm));
 	/* task information */
 	if (in_irq()) {
@@ -477,7 +629,7 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 		strncpy(kobj->comm, current->comm, sizeof(kobj->comm));
 	}
 
-#if MEMORIZER_DEBUG > 5
+#if MEMORIZER_DEBUG >= 5
 	__print_memorizer_kobj(kobj, "Allocated and initalized kobj");
 #endif
 }
@@ -632,7 +784,6 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 	if(unlikely(ptr==NULL))
 		return;
 
-
 	if(unlikely(!memorizer_enabled))
 	{
 		atomic_long_inc(&memorizer_num_untracked_allocs);
@@ -705,12 +856,22 @@ void memorize_free_pages(struct page *page, unsigned int order) { }
 //==-- Memorizer Initializtion --------------------------------------------==//
 
 /**
- * create_obj_kmem_cache() create the kernel object kmem_cache
+ * create_obj_kmem_cache() - create the kernel object kmem_cache
  */
 void create_obj_kmem_cache(void)
 {
-	pr_info("Creating kmem_cache object\n");
 	kobj_cache = KMEM_CACHE(memorizer_kobj,
+				SLAB_PANIC
+				//| SLAB_TRACE | SLAB_NOLEAKTRACE
+			       );
+}
+
+/**
+ * create_access_counts_kmem_cache() - create the kmem_cache for access_counts
+ */
+void create_access_counts_kmem_cache(void)
+{
+	access_from_counts_cache = KMEM_CACHE(access_from_counts,
 				SLAB_PANIC
 				//| SLAB_TRACE | SLAB_NOLEAKTRACE
 			       );
@@ -745,11 +906,10 @@ void __init memorizer_init(void)
 	unsigned long flags;
 
 	init_mem_access_wls();
-
 	create_obj_kmem_cache();
+	create_access_counts_kmem_cache();
 	local_irq_save(flags);
 	memorizer_enabled = true;
-
 	local_irq_restore(flags);
 }
 

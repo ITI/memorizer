@@ -493,26 +493,27 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 	 * If this is null then we didn't find it, for now just skip TODO: add
 	 * the second queue to find it after free.
 	 */
-	if(kobj){
-		/* Grab the object lock here */
-		write_lock(&kobj->rwlock);
-		/* Check to see if this isn't to an already free'd object */
-		if(kobj->alloc_jiffies <= ma->jiffies)
-		{
+	if(!kobj){
+		atomic_long_inc(&memorizer_num_stale_accesses);
+		return -1;
+	}
+
+	/* Grab the object lock here */
+	write_lock(&kobj->rwlock);
+	if(kobj->alloc_jiffies <= ma->jiffies)
+	{
 		/* Search access queue to the entry associated with src_ip */
-			afc = unlckd_insert_get_access_counts(ma->src_ip,
-							      ma->pid, kobj);
-			if(afc)
-				ma->access_type ? ++afc->writes : ++afc->reads;
+		afc = unlckd_insert_get_access_counts(ma->src_ip, ma->pid,
+						      kobj);
+		/* increment teh counter associated with the access type */
+		if(afc)
+			ma->access_type ? ++afc->writes : ++afc->reads;
 
 #if MEMORIZER_DEBUG >= 2
-			__print_memorizer_kobj(kobj, "New Object Access Update");
+		__print_memorizer_kobj(kobj, "New Object Access Update");
 #endif
-		}
-		else
-			atomic_long_inc(&memorizer_num_stale_accesses);
-		write_unlock(&kobj->rwlock);
 	}
+	write_unlock(&kobj->rwlock);
 	return afc ? 0 : -1;
 }
 

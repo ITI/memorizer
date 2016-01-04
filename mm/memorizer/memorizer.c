@@ -483,6 +483,7 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 	struct memorizer_kobj *kobj = NULL;
 	struct access_from_counts *afc = NULL;
 
+	/* Get the kernel object associated with this VA */
 	read_lock(&active_kobj_rbtree_spinlock);
 	kobj = unlocked_lookup_kobj_rbtree(ma->access_addr,
 					   &active_kobj_rbtree_root);
@@ -498,8 +499,9 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 		/* Check to see if this isn't to an already free'd object */
 		if(kobj->alloc_jiffies <= ma->jiffies)
 		{
-		/* Search the queue and return the pointer to the entry */
-			afc = unlckd_insert_get_access_counts(ma->src_ip,ma->pid,kobj);
+		/* Search access queue to the entry associated with src_ip */
+			afc = unlckd_insert_get_access_counts(ma->src_ip,
+							      ma->pid, kobj);
 			if(afc)
 				ma->access_type ? ++afc->writes : ++afc->reads;
 

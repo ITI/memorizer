@@ -121,7 +121,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
-#define MEM_ACC_L_SIZE 10000
+#define MEM_ACC_L_SIZE 100000
 
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};

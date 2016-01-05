@@ -270,7 +270,7 @@ DEFINE_RWLOCK(freed_kobjs_spinlock);
 					 | __GFP_NOTRACK	\
 				 )
 
-//==-- Temporary test code --==//
+//==-- Debug and Output Code --==//
 atomic_long_t memorizer_num_stale_accesses = ATOMIC_INIT(0);
 atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
 int __memorizer_get_opsx(void)
@@ -412,6 +412,23 @@ void __memorizer_print_events(unsigned int num_events)
 }
 EXPORT_SYMBOL(__memorizer_print_events);
 
+
+/**
+ * dump_freed_kobjs() - print out the list of free'd objects
+ */
+void dump_freed_kobjs(void)
+{
+	unsigned long flags;
+	struct list_head *p;
+	struct memorizer_kobj *kobj;
+	read_lock_irqsave(&freed_kobjs_spinlock, flags);
+	list_for_each(p, &freed_kobjs){
+		kobj = list_entry(p, struct memorizer_kobj, freed_kobjs);
+		read_locking_print_memorizer_kobj(kobj, "Dump Free'd kobj");
+	}
+	read_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+}
+
 //----
 //==-- Memorizer Access Processing ----------------------------------------==//
 //----
@@ -423,7 +440,7 @@ EXPORT_SYMBOL(__memorizer_print_events);
  */
 static inline void
 init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
-			  pid) 
+			  pid)
 {
 	afc->ip = ip;
 	afc->pid = pid;
@@ -990,6 +1007,7 @@ static int memorizer_late_init(void)
 	local_irq_restore(flags);
 
 	//__memorizer_print_events(10);
+	dump_freed_kobjs();
 
 	pr_info("Memorizer initialized\n");
 

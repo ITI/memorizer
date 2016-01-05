@@ -53,7 +53,7 @@
  *	Memorizer has two global and a percpu data structure:
  *	
  *		- global rbtree of active kernel objects 
- *		- TODO queue for holding free'd objects that haven't logged 
+ *		- queue for holding free'd objects that haven't logged 
  *		- A percpu event queue to track memory access events
  *		    
  *     Therefore, we have the following locks:
@@ -64,6 +64,13 @@
  *			therefore is only provided in an unlocked variant
  *			currently. The code must take this lock prior to
  *			inserting into the rbtree.  
+ * 
+ *		- freed_kobjs_spinlock: 
+ *			
+ *			Lock for the list of all objects. This list is added to
+ *			on each kobj free. On log this queue should collect any
+ *			queued writes in the local PerCPU access queues and then
+ *			remove it from the list.
  *
  *		- memorizer_kobj.rwlock: 
  *
@@ -180,6 +187,8 @@ struct mem_access_worklists {
  * @jiffies:		Time stamp of creation
  * @pid:		PID of the current task
  * @comm:		Executable name
+ * @kobj_list:		List of all objects allocated
+ * @access_counts:	List of memory access count structures
  *
  * This data structure captures the details of allocated objects
  */
@@ -194,8 +203,9 @@ struct memorizer_kobj {
 	unsigned long	alloc_jiffies;
 	unsigned long	free_jiffies;
 	pid_t		pid;
-	char comm[TASK_COMM_LEN];
-	struct list_head access_counts;
+	char		comm[TASK_COMM_LEN];
+	struct list_head	freed_kobjs;
+	struct list_head	access_counts;
 };
 
 /**
@@ -235,6 +245,9 @@ static struct kmem_cache *access_from_counts_cache;
 /* active kobj metadata rb tree */
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
 
+/* full list of freed kobjs */
+static LIST_HEAD(freed_kobjs);
+
 /* global object id reference counter */
 atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
 
@@ -243,6 +256,9 @@ atomic_t in_ma = ATOMIC_INIT(0);
 //==-- Locks --=//
 /* RW Spinlock for access to rb tree */
 DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
+
+/* RW Spinlock for access to freed kobject list */
+DEFINE_RWLOCK(freed_kobjs_spinlock);
 
 /* mask to apply to memorizer allocations TODO: verify the list */
 #define gfp_memorizer_mask(gfp)	(((gfp) & (		\
@@ -652,6 +668,7 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
 	kobj->free_jiffies = 0;
 	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
 	INIT_LIST_HEAD(&kobj->access_counts);
+	INIT_LIST_HEAD(&kobj->freed_kobjs);
 	memset(kobj->comm, '\0', sizeof(kobj->comm));
 	/* task information */
 	if (in_irq()) {
@@ -687,7 +704,7 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
  */
 struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj *kobj,
 						    struct rb_root
-						    *kobj_rbtree_root) 
+						    *kobj_rbtree_root)
 {
 	struct memorizer_kobj *parent;
 	struct rb_node **link;
@@ -790,13 +807,15 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		/* Update the free_jiffies for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_jiffies = jiffies;
-#if MEMORIZER_DEBUG >= 1
+#if MEMORIZER_DEBUG >= 2
 		__print_memorizer_kobj(kobj, "Free'd kobject");
 #endif
 		write_unlock_irqrestore(&kobj->rwlock, flags);
 
-
 		/* Insert into the process queue */
+		write_lock_irqsave(&freed_kobjs_spinlock, flags);
+		list_add(&kobj->freed_kobjs, &freed_kobjs);
+		write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
 	}
 
 }

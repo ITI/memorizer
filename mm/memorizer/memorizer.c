@@ -903,6 +903,7 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
 
+#if 0
 	/* Grab the writer lock for the active_kobj_rbtree */
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 #if PROTECT_MEM_ACCESS_REENTRY
@@ -914,6 +915,7 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 	atomic_dec(&in_ma);
 #endif
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+#endif
 }
 
 /*** HOOKS similar to the kmem points ***/

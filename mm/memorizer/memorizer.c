@@ -128,7 +128,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
-#define MEM_ACC_L_SIZE 100000
+#define MEM_ACC_L_SIZE 1
 
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
@@ -517,10 +517,16 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 	struct access_from_counts *afc = NULL;
 
 	/* Get the kernel object associated with this VA */
+#if 1
 	read_lock(&active_kobj_rbtree_spinlock);
+#else
+	if(!read_trylock(&active_kobj_rbtree_spinlock))
+		return -1;
+#endif
 	kobj = unlocked_lookup_kobj_rbtree(ma->access_addr,
 					   &active_kobj_rbtree_root);
 	read_unlock(&active_kobj_rbtree_spinlock);
+	return -1;
 
 	/* 
 	 * If this is null then we didn't find it, for now just skip TODO: add
@@ -637,10 +643,11 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	/* Get the local cpu data structure */
 	ma_wls = &get_cpu_var(mem_access_wls);
 	/* Head points to the last inserted element, except for -1 on init */
-	if(ma_wls->head >= MEM_ACC_L_SIZE - 1){
-		drain_and_process_access_queue(ma_wls);
-	}
-	++ma_wls->head;
+	//if(ma_wls->head >= MEM_ACC_L_SIZE - 1){
+		//drain_and_process_access_queue(ma_wls);
+	//}
+	//++ma_wls->head;
+	ma_wls->head = 0;
 
 	/* if producer caught consumer overwrite, losing the oldest events */
 	if(ma_wls->head == ma_wls->tail)
@@ -648,12 +655,14 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
 
 	/* Initialize the event data */
-	set_comm_and_pid(ma);
+	//set_comm_and_pid(ma);
 	ma->access_type = write;
 	ma->access_addr = addr;
 	ma->access_size = size;
 	ma->src_ip = ip;
-	ma->jiffies = jiffies;
+	//ma->jiffies = jiffies;
+
+	drain_and_process_access_queue(ma_wls);
 
 	/* put the cpu vars and reenable interrupts */
 	put_cpu_var(mem_access_wls);
@@ -818,7 +827,18 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 	if(kobj){
 		/* remove from the active_kobj_rbtree */
 		write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+
+#if PROTECT_MEM_ACCESS_REENTRY
+	atomic_inc(&in_ma);
+#endif
+
+		/* External Memorizer Function: Must protect from re-entry */
 		rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
+
+#if PROTECT_MEM_ACCESS_REENTRY
+	atomic_dec(&in_ma);
+#endif
+
 		write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 		/* Update the free_jiffies for the object */
@@ -885,7 +905,14 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	/* Grab the writer lock for the active_kobj_rbtree */
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+#if PROTECT_MEM_ACCESS_REENTRY
+	atomic_inc(&in_ma);
+#endif
+	/* subcall to an non-memorizer function that re-enters ma code */
 	unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
+#if PROTECT_MEM_ACCESS_REENTRY
+	atomic_dec(&in_ma);
+#endif
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 }
 
@@ -1007,7 +1034,7 @@ static int memorizer_late_init(void)
 	local_irq_restore(flags);
 
 	//__memorizer_print_events(10);
-	dump_freed_kobjs();
+	//dump_freed_kobjs();
 
 	pr_info("Memorizer initialized\n");
 

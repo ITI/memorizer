@@ -244,8 +244,6 @@ static LIST_HEAD(freed_kobjs);
 /* global object id reference counter */
 static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
 
-static atomic_t in_ma = ATOMIC_INIT(0);
-
 //==-- Locks --=//
 /* RW Spinlock for access to rb tree */
 DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
@@ -263,40 +261,40 @@ DEFINE_RWLOCK(freed_kobjs_spinlock);
 					 | __GFP_NOTRACK	\
 				 )
 
-static inline int __memorizer_trylock(void)
+/**
+ * __memorizer_enter() - increment recursion counter for entry into memorizer
+ *
+ * The primary goal of this is to stop recursive handling of events. Memorizer
+ * by design tracks two types of events: allocations and accesses. Effectively,
+ * while tracking either type we do not want to re-enter and track memorizer
+ * events that are sources from within memorizer. Yes this means we may not
+ * track legitimate access of some types, but these are caused by memorizer and
+ * we want to ignore them. 
+ */
+static inline void __memorizer_enter(void)
 {
-	if(atomic_read(&in_ma))
-		return -1;
-	atomic_inc(&in_ma);
-	return 0;
+	++current->memorizer_recursion;
 }
 
-static inline void __memorizer_lock(void)
+static inline void __memorizer_exit(void)
 {
-	atomic_inc(&in_ma);
+	--current->memorizer_recursion;
 }
 
-static inline void __memorizer_unlock(void)
+/**
+ * in_memorizer() - check if this thread has already entered memorizer
+ */
+static inline bool in_memorizer(void)
 {
-	atomic_dec(&in_ma);
+	return current->memorizer_recursion;
 }
 
-//==-- Debug and Output Code --==//
+//==-- Debug and Stats Output Code --==//
 static atomic_long_t memorizer_num_untracked_accesses = ATOMIC_INIT(0);
+static atomic_long_t memorizer_caused_accesses = ATOMIC_INIT(0);
 static atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
-int __memorizer_get_opsx(void)
-{
-    return atomic_long_read(&memorizer_num_accesses);
-}
-EXPORT_SYMBOL(__memorizer_get_opsx);
-
 static atomic_long_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
 static atomic_long_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
-int __memorizer_get_allocs(void)
-{
-    return atomic_long_read(&memorizer_num_tracked_allocs);
-}
-EXPORT_SYMBOL(__memorizer_get_allocs);
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
@@ -358,6 +356,23 @@ static void __print_active_rb_tree(struct rb_node * rb)
 }
 
 /**
+ * print_stats() - print global stats from memorizer 
+ */
+static void print_stats(void)
+{
+	pr_info("Total Accesses:		%ld\n",
+		atomic_long_read(&memorizer_num_accesses));
+	pr_info("Not-tracked Accesses:		%ld\n",
+		atomic_long_read(&memorizer_num_untracked_accesses));
+	pr_info("Memorizer-Induced Accesses:	%ld\n",
+		atomic_long_read(&memorizer_caused_accesses));
+	pr_info("Num Allocs Tracked:		%ld\n",
+		atomic_long_read(&memorizer_num_tracked_allocs));
+	pr_info("Untracked:			%ld\n",
+		atomic_long_read(&memorizer_num_untracked_allocs));
+}
+
+/**
  * __memorizer_print_events - print the last num events
  * @num_events:		The total number of events to print
  *
@@ -371,15 +386,9 @@ void __memorizer_print_events(unsigned int num_events)
 	struct mem_access_worklists * ma_wls;
 	struct memorizer_mem_access *mal, *ma; /* mal is the list ma is the
 						  instance */
-	__memorizer_lock();
+	__memorizer_enter();
 
-	pr_info("\n\n***Memorizer Num Accesses: %ld, Not-tracked: %ld\n",
-		atomic_long_read(&memorizer_num_accesses),
-		atomic_long_read(&memorizer_num_untracked_accesses)
-		);
-	pr_info("***Memorizer Num Allocs Tracked: %ld Untracked: %ld\n",
-		atomic_long_read(&memorizer_num_tracked_allocs),
-		atomic_long_read(&memorizer_num_untracked_allocs));
+	print_stats();
 
 	/* Get data structure for the worklists and init the iterators */
 	ma_wls = &get_cpu_var(mem_access_wls);
@@ -423,7 +432,7 @@ void __memorizer_print_events(unsigned int num_events)
 	}
 	put_cpu_var(mem_access_wls);
 
-	__memorizer_unlock();
+	__memorizer_exit();
 }
 EXPORT_SYMBOL(__memorizer_print_events);
 
@@ -632,12 +641,18 @@ void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 
 	atomic_long_inc(&memorizer_num_accesses);
 
-	if(!memorizer_enabled || !memorizer_log_access)
+	if(!memorizer_enabled || !memorizer_log_access){
+		atomic_long_inc(&memorizer_num_untracked_accesses);
 		return;
+	}
 
 	/* Try to grab the lock and if not just returns */
-	if(__memorizer_trylock())
+	if(in_memorizer()){
+		atomic_long_inc(&memorizer_caused_accesses);
 		return;
+	} else {
+		__memorizer_enter();
+	}
 
 	local_irq_save(flags);
 
@@ -669,7 +684,7 @@ void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	put_cpu_var(mem_access_wls);
 	local_irq_restore(flags);
 
-	__memorizer_unlock();
+	__memorizer_exit();
 }
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
@@ -852,7 +867,6 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
  * @kmemcache:	The cache to free from
  */
 
-
 /**
  * memorizer_alloc() - record allocation event
  * @object:	Pointer to the beginning of hte object
@@ -903,18 +917,18 @@ static void __memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
-	__memorizer_lock();
+	__memorizer_enter();
 	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
-	__memorizer_unlock();
+	__memorizer_exit();
 }
 
 void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
 			   node)
 {
-	__memorizer_lock();
+	__memorizer_enter();
 	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
-	__memorizer_unlock();
+	__memorizer_exit();
 }
 
 void memorizer_kfree(unsigned long call_site, const void *ptr)
@@ -926,9 +940,9 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
 		return;
 	}
-	__memorizer_lock();
+	__memorizer_enter();
 	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t) ptr);
-	__memorizer_unlock();
+	__memorizer_exit();
 }
 
 #if 0
@@ -994,7 +1008,7 @@ static void init_mem_access_wls(void)
 void __init memorizer_init(void)
 {
 	unsigned long flags;
-	__memorizer_lock();
+	__memorizer_enter();
 	init_mem_access_wls();
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
@@ -1002,7 +1016,7 @@ void __init memorizer_init(void)
 	memorizer_enabled = true;
 	memorizer_log_access = true;
 	local_irq_restore(flags);
-	__memorizer_unlock();
+	__memorizer_exit();
 }
 
 /*
@@ -1018,7 +1032,7 @@ static int memorizer_late_init(void)
 	//if (!dentry)
 		//pr_warning("Failed to create the debugfs kmemleak file\n");
 
-	__memorizer_lock();
+	__memorizer_enter();
 
 	local_irq_save(flags);
 	memorizer_enabled = true;
@@ -1027,11 +1041,12 @@ static int memorizer_late_init(void)
 
 	pr_info("Memorizer initialized\n");
 
+	print_stats();
 	//__memorizer_print_events(10);
 	//dump_freed_kobjs();
 	//__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
 
-	__memorizer_unlock();
+	__memorizer_exit();
 
 	return 0;
 }
@@ -1046,7 +1061,7 @@ int memorizer_init_from_driver(void)
 {
 	unsigned long flags;
 
-	__memorizer_lock();
+	__memorizer_enter();
 
 	pr_info("Running test from driver...");
 
@@ -1062,7 +1077,7 @@ int memorizer_init_from_driver(void)
 	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
 	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
-	__memorizer_unlock();
+	__memorizer_exit();
 
 	return 0;
 }

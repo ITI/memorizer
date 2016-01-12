@@ -994,13 +994,15 @@ static void init_mem_access_wls(void)
 void __init memorizer_init(void)
 {
 	unsigned long flags;
-
+	__memorizer_lock();
 	init_mem_access_wls();
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 	local_irq_save(flags);
 	memorizer_enabled = true;
+	memorizer_log_access = true;
 	local_irq_restore(flags);
+	__memorizer_unlock();
 }
 
 /*

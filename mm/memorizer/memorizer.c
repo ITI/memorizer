@@ -270,6 +270,22 @@ DEFINE_RWLOCK(freed_kobjs_spinlock);
 					 | __GFP_NOTRACK	\
 				 )
 
+static inline void __memorizer_trylock(void)
+{
+#if PROTECT_MEM_ACCESS_REENTRY
+	if(atomic_read(&in_ma))
+		return;
+	atomic_inc(&in_ma);
+#endif
+}
+
+static inline void __memorizer_unlock(void)
+{
+#if PROTECT_MEM_ACCESS_REENTRY
+	atomic_dec(&in_ma);
+#endif
+}
+
 //==-- Debug and Output Code --==//
 atomic_long_t memorizer_num_stale_accesses = ATOMIC_INIT(0);
 atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
@@ -324,9 +340,13 @@ void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj, char *
 				       title)
 {
 	unsigned long flags;
-	read_lock_irqsave(&kobj->rwlock, flags);
+	//read_lock_irqsave(&kobj->rwlock, flags);
+	__memorizer_trylock();
+	local_irq_save(flags);
 	__print_memorizer_kobj(kobj, title);
-	read_unlock_irqrestore(&kobj->rwlock, flags);
+	__memorizer_unlock();
+	local_irq_restore(flags);
+	//read_unlock_irqrestore(&kobj->rwlock, flags);
 }
 
 /**
@@ -515,19 +535,11 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 {
 	struct memorizer_kobj *kobj = NULL;
 	struct access_from_counts *afc = NULL;
+	unsigned long flags;
 
 	/* Get the kernel object associated with this VA */
-#if 1
-	read_lock(&active_kobj_rbtree_spinlock);
-#else
-	if(!read_trylock(&active_kobj_rbtree_spinlock))
-		return -1;
-#endif
 	kobj = unlocked_lookup_kobj_rbtree(ma->access_addr,
 					   &active_kobj_rbtree_root);
-	read_unlock(&active_kobj_rbtree_spinlock);
-	return -1;
-
 	/* 
 	 * If this is null then we didn't find it, for now just skip TODO: add
 	 * the second queue to find it after free.
@@ -539,7 +551,7 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 
 	/* Grab the object lock here */
 	write_lock(&kobj->rwlock);
-	if(kobj->alloc_jiffies <= ma->jiffies)
+	if(likely(kobj->alloc_jiffies <= ma->jiffies))
 	{
 		/* Search access queue to the entry associated with src_ip */
 		afc = unlckd_insert_get_access_counts(ma->src_ip, ma->pid,
@@ -607,8 +619,10 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 		 */
 		comm = current->comm;
 	}
+#if 0 /* TODO: this is to make the testing faster */
 	for(i=0; i<sizeof(comm); i++)
 		ma->comm[i] = comm[i];
+#endif
 	ma->comm[i] = '\0';
 }
 
@@ -633,11 +647,12 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	if(!memorizer_enabled || !memorizer_log_access)
 		return;
 
-#if PROTECT_MEM_ACCESS_REENTRY
-	if(atomic_read(&in_ma))
-		return;
-	atomic_inc(&in_ma);
-#endif
+	//if(write_trylock(&active_kobj_rbtree_spinlock))
+		//return;
+	//write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+
+	__memorizer_trylock();
+
 	local_irq_save(flags);
 
 	/* Get the local cpu data structure */
@@ -655,21 +670,20 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
 
 	/* Initialize the event data */
-	//set_comm_and_pid(ma);
+	set_comm_and_pid(ma);
 	ma->access_type = write;
 	ma->access_addr = addr;
 	ma->access_size = size;
 	ma->src_ip = ip;
-	//ma->jiffies = jiffies;
+	ma->jiffies = jiffies;
 
-	drain_and_process_access_queue(ma_wls);
+	find_and_update_kobj_access(ma);
 
 	/* put the cpu vars and reenable interrupts */
 	put_cpu_var(mem_access_wls);
 	local_irq_restore(flags);
-#if PROTECT_MEM_ACCESS_REENTRY
-	atomic_dec(&in_ma);
-#endif
+	__memorizer_unlock();
+	//write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 }
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
@@ -816,9 +830,11 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 
 	unsigned long flags;
 
-	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	__memorizer_trylock();
+
+	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 	kobj = unlocked_lookup_kobj_rbtree(kobj_ptr, &active_kobj_rbtree_root);
-	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 	/* 
 	 * If this is null it means we are freeing something we did not insert
@@ -827,18 +843,8 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 	if(kobj){
 		/* remove from the active_kobj_rbtree */
 		write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
-
-#if PROTECT_MEM_ACCESS_REENTRY
-	atomic_inc(&in_ma);
-#endif
-
 		/* External Memorizer Function: Must protect from re-entry */
 		rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
-
-#if PROTECT_MEM_ACCESS_REENTRY
-	atomic_dec(&in_ma);
-#endif
-
 		write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 		/* Update the free_jiffies for the object */
@@ -854,7 +860,7 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		list_add(&kobj->freed_kobjs, &freed_kobjs);
 		write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
 	}
-
+	__memorizer_unlock();
 }
 
 /**
@@ -888,6 +894,7 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 		return;
 	}
 
+	__memorizer_trylock();
 	atomic_long_inc(&memorizer_num_tracked_allocs);
 
 #if MEMORIZER_DEBUG >= 3
@@ -903,19 +910,12 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
 
-#if 0
 	/* Grab the writer lock for the active_kobj_rbtree */
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
-#if PROTECT_MEM_ACCESS_REENTRY
-	atomic_inc(&in_ma);
-#endif
 	/* subcall to an non-memorizer function that re-enters ma code */
 	unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
-#if PROTECT_MEM_ACCESS_REENTRY
-	atomic_dec(&in_ma);
-#endif
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
-#endif
+	__memorizer_unlock();
 }
 
 /*** HOOKS similar to the kmem points ***/
@@ -1035,10 +1035,11 @@ static int memorizer_late_init(void)
 	memorizer_log_access = true;
 	local_irq_restore(flags);
 
+	pr_info("Memorizer initialized\n");
+
 	//__memorizer_print_events(10);
 	//dump_freed_kobjs();
-
-	pr_info("Memorizer initialized\n");
+	//__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
 
 	return 0;
 }
@@ -1060,10 +1061,12 @@ int memorizer_init_from_driver(void)
 	memorizer_log_access = true;
 	local_irq_restore(flags);
 
-	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	pr_info("The free'd Kobj list");
+	dump_freed_kobjs();
 	pr_info("The live kernel object tree now:");
 	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
-	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 	return 0;
 }

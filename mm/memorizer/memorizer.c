@@ -282,7 +282,7 @@ static inline void __memorizer_unlock(void)
 }
 
 //==-- Debug and Output Code --==//
-atomic_long_t memorizer_num_stale_accesses = ATOMIC_INIT(0);
+atomic_long_t memorizer_num_untracked_accesses = ATOMIC_INIT(0);
 atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
 int __memorizer_get_opsx(void)
 {
@@ -349,7 +349,7 @@ void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj, char *
  */
 static void __print_active_rb_tree(struct rb_node * rb)
 {
-	struct memorizer_kobj * kobj; 
+	struct memorizer_kobj * kobj;
 	if(rb){
 		kobj = rb_entry(rb, struct memorizer_kobj, rb_node);
 		read_locking_print_memorizer_kobj(kobj,"Kernel Object");
@@ -375,9 +375,9 @@ void __memorizer_print_events(unsigned int num_events)
 	struct memorizer_mem_access *mal, *ma; /* mal is the list ma is the
 						  instance */
 
-	pr_info("\n\n***Memorizer Num Accesses: %ld, Stale due to free: %ld\n",
+	pr_info("\n\n***Memorizer Num Accesses: %ld, Not-tracked: %ld\n",
 		atomic_long_read(&memorizer_num_accesses),
-		atomic_long_read(&memorizer_num_stale_accesses)
+		atomic_long_read(&memorizer_num_untracked_accesses)
 		);
 	pr_info("***Memorizer Num Allocs Tracked: %ld Untracked: %ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs),
@@ -538,7 +538,7 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 	read_unlock(&active_kobj_rbtree_spinlock);
 
 	if(!kobj){
-		atomic_long_inc(&memorizer_num_stale_accesses);
+		atomic_long_inc(&memorizer_num_untracked_accesses);
 		return -1;
 	}
 

@@ -290,7 +290,7 @@ void kasan_alloc_pages(struct page *page, unsigned int order)
 {
 	if (likely(!PageHighMem(page)))
 		kasan_unpoison_shadow(page_address(page), PAGE_SIZE << order);
-	//memorize_alloc_pages(page,order);
+	//memorizer_alloc_pages(page,order);
 }
 
 void kasan_free_pages(struct page *page, unsigned int order)
@@ -299,7 +299,7 @@ void kasan_free_pages(struct page *page, unsigned int order)
 		kasan_poison_shadow(page_address(page),
 				PAGE_SIZE << order,
 				KASAN_FREE_PAGE);
-	//memorize_free_pages(page,order);
+	//memorizer_free_pages(page,order);
 }
 
 void kasan_poison_slab(struct page *page)
@@ -336,7 +336,7 @@ void kasan_slab_free(struct kmem_cache *cache, void *object)
 		return;
 
 	kasan_poison_shadow(object, rounded_up_size, KASAN_KMALLOC_FREE);
-	//memorize_kfree(object, cache->object_size);
+	//memorizer_kfree(object, cache->object_size);
 }
 
 void kasan_kmalloc(struct kmem_cache *cache, const void *object, size_t size)
@@ -355,7 +355,7 @@ void kasan_kmalloc(struct kmem_cache *cache, const void *object, size_t size)
 	kasan_unpoison_shadow(object, size);
 	kasan_poison_shadow((void *)redzone_start, redzone_end - redzone_start,
 		KASAN_KMALLOC_REDZONE);
-	//memorize_alloc(object, cache->object_size);
+	//memorizer_alloc(object, cache->object_size);
 }
 EXPORT_SYMBOL(kasan_kmalloc);
 
@@ -376,7 +376,7 @@ void kasan_kmalloc_large(const void *ptr, size_t size)
 	kasan_unpoison_shadow(ptr, size);
 	kasan_poison_shadow((void *)redzone_start, redzone_end - redzone_start,
 		KASAN_PAGE_REDZONE);
-	//memorize_alloc(ptr, size);
+	//memorizer_alloc(ptr, size);
 }
 
 void kasan_krealloc(const void *object, size_t size)
@@ -413,7 +413,7 @@ void kasan_kfree_large(const void *ptr)
 
 	kasan_poison_shadow(ptr, PAGE_SIZE << compound_order(page),
 			KASAN_FREE_PAGE);
-	//memorize_kfree(ptr);
+	//memorizer_kfree(ptr);
 }
 
 int kasan_module_alloc(void *addr, size_t size)
@@ -478,7 +478,7 @@ EXPORT_SYMBOL(__asan_unregister_globals);
 	void __asan_load##size(unsigned long addr)			\
 	{								\
 		check_memory_region(addr, size, false);			\
-		memorize_mem_access(addr, size, false, _RET_IP_);	\
+		memorizer_mem_access(addr, size, false, _RET_IP_);	\
 	}								\
 	EXPORT_SYMBOL(__asan_load##size);				\
 	__alias(__asan_load##size)					\
@@ -487,7 +487,7 @@ EXPORT_SYMBOL(__asan_unregister_globals);
 	void __asan_store##size(unsigned long addr)			\
 	{								\
 		check_memory_region(addr, size, true);			\
-		memorize_mem_access(addr, size, true, _RET_IP_);	\
+		memorizer_mem_access(addr, size, true, _RET_IP_);	\
 	}								\
 	EXPORT_SYMBOL(__asan_store##size);				\
 	__alias(__asan_store##size)					\
@@ -503,7 +503,7 @@ DEFINE_ASAN_LOAD_STORE(16);
 void __asan_loadN(unsigned long addr, size_t size)
 {
 	check_memory_region(addr, size, false);
-	memorize_mem_access(addr, size, false, _RET_IP_);
+	memorizer_mem_access(addr, size, false, _RET_IP_);
 }
 EXPORT_SYMBOL(__asan_loadN);
 
@@ -514,7 +514,7 @@ EXPORT_SYMBOL(__asan_loadN_noabort);
 void __asan_storeN(unsigned long addr, size_t size)
 {
 	check_memory_region(addr, size, true);
-	memorize_mem_access(addr, size, true, _RET_IP_);
+	memorizer_mem_access(addr, size, true, _RET_IP_);
 }
 EXPORT_SYMBOL(__asan_storeN);
 

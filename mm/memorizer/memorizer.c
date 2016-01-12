@@ -615,7 +615,7 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 }
 
 /**
- * memorize_mem_access() - record associated data with the load or store
+ * memorizer_mem_access() - record associated data with the load or store
  * @addr:	The virtual address being accessed
  * @size:	The number of bits for the load/store
  * @write:	True if the memory access is a write (store)
@@ -624,7 +624,7 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
  * Memorize, ie. log, the particular data access by inserting it into a percpu
  * queue. 
  */
-void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
+void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 {
 	unsigned long flags;
 	struct memorizer_mem_access * ma;
@@ -854,13 +854,13 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 
 
 /**
- * memorize_alloc() - record allocation event
+ * memorizer_alloc() - record allocation event
  * @object:	Pointer to the beginning of hte object
  * @size:	Size of the object
  *
  * Track the allocation and add the object to the set of active object tree.
  */
-static void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+static void __memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
 	unsigned long flags;
@@ -900,24 +900,24 @@ static void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 }
 
 /*** HOOKS similar to the kmem points ***/
-void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
 	__memorizer_lock();
-	__memorize_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
 	__memorizer_unlock();
 }
 
-void memorize_kmalloc_node(unsigned long call_site, const void *ptr, size_t
+void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
 			   node)
 {
 	__memorizer_lock();
-	__memorize_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
 	__memorizer_unlock();
 }
 
-void memorize_kfree(unsigned long call_site, const void *ptr)
+void memorizer_kfree(unsigned long call_site, const void *ptr)
 {
 	/* 
 	 * Condition for ensuring free is from online cpu: see trace point
@@ -932,16 +932,16 @@ void memorize_kfree(unsigned long call_site, const void *ptr)
 }
 
 #if 0
-void memorize_kmem_cache_alloc(_RET_IP_, ret, s->object_size, s->size,
+void memorizer_kmem_cache_alloc(_RET_IP_, ret, s->object_size, s->size,
 			       gfpflags);
-void memorize_kmem_cache_alloc_node(_RET_IP_, ret, s->object_size, s->size,
+void memorizer_kmem_cache_alloc_node(_RET_IP_, ret, s->object_size, s->size,
 				    gfpflags, node);
-void memorize_kmem_cache_free(_RET_IP_, x);
+void memorizer_kmem_cache_free(_RET_IP_, x);
 #endif
 
 
-void memorize_alloc_pages(struct page *page, unsigned int order) { }
-void memorize_free_pages(struct page *page, unsigned int order) { }
+void memorizer_alloc_pages(struct page *page, unsigned int order) { }
+void memorizer_free_pages(struct page *page, unsigned int order) { }
 
 //==-- Memorizer Initializtion --------------------------------------------==//
 

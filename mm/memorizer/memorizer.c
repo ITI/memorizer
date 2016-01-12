@@ -948,7 +948,7 @@ void memorizer_free_pages(struct page *page, unsigned int order) { }
 /**
  * create_obj_kmem_cache() - create the kernel object kmem_cache
  */
-void create_obj_kmem_cache(void)
+static void create_obj_kmem_cache(void)
 {
 	kobj_cache = KMEM_CACHE(memorizer_kobj,
 				SLAB_PANIC
@@ -959,7 +959,7 @@ void create_obj_kmem_cache(void)
 /**
  * create_access_counts_kmem_cache() - create the kmem_cache for access_counts
  */
-void create_access_counts_kmem_cache(void)
+static void create_access_counts_kmem_cache(void)
 {
 	access_from_counts_cache = KMEM_CACHE(access_from_counts,
 				SLAB_PANIC

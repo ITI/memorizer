@@ -360,15 +360,20 @@ static void __print_active_rb_tree(struct rb_node * rb)
  */
 static void print_stats(void)
 {
-	pr_info("Total Accesses:		%16ld\n",
-		atomic_long_read(&memorizer_num_accesses));
-	pr_info("Not-tracked Accesses:		%16ld\n",
+	pr_info("------- Memory Accesses -------\n");
+	pr_info("\tTracked:		%16ld\n",
+		atomic_long_read(&memorizer_num_accesses) -
 		atomic_long_read(&memorizer_num_untracked_accesses));
-	pr_info("Memorizer-Induced Accesses:	%16ld\n",
+	pr_info("\tNot-tracked:		%16ld\n",
+		atomic_long_read(&memorizer_num_untracked_accesses));
+	pr_info("\tMemorizer-Induced:	%16ld\n",
 		atomic_long_read(&memorizer_caused_accesses));
-	pr_info("Num Allocs Tracked:		%16ld\n",
+	pr_info("\tTotal:		\t%16ld\n",
+		atomic_long_read(&memorizer_num_accesses));
+	pr_info("------- Memory Allocations (kmalloc) -------\n");
+	pr_info("\tTracked:		%16ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs));
-	pr_info("Untracked:			%16ld\n",
+	pr_info("\tUntracked:		%16ld\n",
 		atomic_long_read(&memorizer_num_untracked_allocs));
 }
 
@@ -1071,11 +1076,16 @@ int memorizer_init_from_driver(void)
 	local_irq_restore(flags);
 
 	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+
 	pr_info("The free'd Kobj list");
 	dump_freed_kobjs();
+
 	pr_info("The live kernel object tree now:");
 	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
+
 	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+
+	print_stats();
 
 	__memorizer_exit();
 

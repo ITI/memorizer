@@ -360,15 +360,15 @@ static void __print_active_rb_tree(struct rb_node * rb)
  */
 static void print_stats(void)
 {
-	pr_info("Total Accesses:		%ld\n",
+	pr_info("Total Accesses:		%16ld\n",
 		atomic_long_read(&memorizer_num_accesses));
-	pr_info("Not-tracked Accesses:		%ld\n",
+	pr_info("Not-tracked Accesses:		%16ld\n",
 		atomic_long_read(&memorizer_num_untracked_accesses));
-	pr_info("Memorizer-Induced Accesses:	%ld\n",
+	pr_info("Memorizer-Induced Accesses:	%16ld\n",
 		atomic_long_read(&memorizer_caused_accesses));
-	pr_info("Num Allocs Tracked:		%ld\n",
+	pr_info("Num Allocs Tracked:		%16ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs));
-	pr_info("Untracked:			%ld\n",
+	pr_info("Untracked:			%16ld\n",
 		atomic_long_read(&memorizer_num_untracked_allocs));
 }
 

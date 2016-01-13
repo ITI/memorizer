@@ -952,17 +952,44 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	__memorizer_exit();
 }
 
-#if 0
-void memorizer_kmem_cache_alloc(_RET_IP_, ret, s->object_size, s->size,
-			       gfpflags);
-void memorizer_kmem_cache_alloc_node(_RET_IP_, ret, s->object_size, s->size,
-				    gfpflags, node);
-void memorizer_kmem_cache_free(_RET_IP_, x);
-#endif
+void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
+				bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
+{
+	if(in_memorizer())
+		return;
+	__memorizer_enter();
+	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_exit();
+}
+
+void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
+				      size_t bytes_req, size_t bytes_alloc,
+				      gfp_t gfp_flags, int node)
+{
+	if(in_memorizer())
+		return;
+	__memorizer_enter();
+	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_exit();
+}
+
+void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
+{
+	/* 
+	 * Condition for ensuring free is from online cpu: see trace point
+	 * condition from include/trace/events/kmem.h for reason
+	 */
+	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
+		return;
+	}
+	__memorizer_enter();
+	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t) ptr);
+	__memorizer_exit();
+}
 
 
-void memorizer_alloc_pages(struct page *page, unsigned int order) { }
-void memorizer_free_pages(struct page *page, unsigned int order) { }
+//void memorizer_alloc_pages(struct page *page, unsigned int order) { }
+//void memorizer_free_pages(struct page *page, unsigned int order) { }
 
 //==-- Memorizer Initializtion --------------------------------------------==//
 

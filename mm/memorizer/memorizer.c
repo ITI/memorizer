@@ -363,7 +363,9 @@ static void print_stats(void)
 	pr_info("------- Memory Accesses -------\n");
 	pr_info("\tTracked:		%16ld\n",
 		atomic_long_read(&memorizer_num_accesses) -
-		atomic_long_read(&memorizer_num_untracked_accesses));
+		atomic_long_read(&memorizer_num_untracked_accesses) -
+		atomic_long_read(&memorizer_caused_accesses)
+		);
 	pr_info("\tNot-tracked:		%16ld\n",
 		atomic_long_read(&memorizer_num_untracked_accesses));
 	pr_info("\tMemorizer-Induced:	%16ld\n",
@@ -1074,6 +1076,8 @@ int memorizer_init_from_driver(void)
 	memorizer_enabled = true;
 	memorizer_log_access = true;
 	local_irq_restore(flags);
+
+	print_stats();
 
 	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 

@@ -190,6 +190,7 @@ struct memorizer_kobj {
 	rwlock_t	rwlock;
 	long		obj_id;
 	uintptr_t	alloc_ip;
+	uintptr_t	free_ip;
 	uintptr_t	va_ptr;
 	uintptr_t	pa_ptr;
 	size_t		size;
@@ -308,13 +309,14 @@ static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	struct access_from_counts *entry;
 
 	pr_info("%s: \n", title);
-	pr_info("\tkobj_id: %ld\n", kobj->obj_id);
-	pr_info("\talloc_ip: 0x%p\n", (void*) kobj->alloc_ip);
-	pr_info("\tva: 0x%p\n", (void*) kobj->va_ptr);
-	pr_info("\tpa: 0x%p\n", (void*) kobj->pa_ptr);
-	pr_info("\tsize: %lu\n", kobj->size);
+	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
+	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
+	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
+	pr_info("\tva:		0x%p\n", (void*) kobj->va_ptr);
+	pr_info("\tpa:		0x%p\n", (void*) kobj->pa_ptr);
+	pr_info("\tsize:	%lu\n", kobj->size);
 	pr_info("\talloc jiffies: %lu\n", kobj->alloc_jiffies);
-	pr_info("\tfree jiffies: %lu\n", kobj->free_jiffies);
+	pr_info("\tfree jiffies:  %lu\n", kobj->free_jiffies);
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
 
@@ -372,11 +374,13 @@ static void print_stats(void)
 		atomic_long_read(&memorizer_caused_accesses));
 	pr_info("\tTotal:		\t%16ld\n",
 		atomic_long_read(&memorizer_num_accesses));
-	pr_info("------- Memory Allocations (kmalloc) -------\n");
-	pr_info("\tTracked:		%16ld\n",
+	pr_info("------- Memory Allocations -------\n");
+	pr_info("  \tTracked (kmalloc+kmem_cache):	%16ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs));
-	pr_info("\tUntracked:		%16ld\n",
+	pr_info("\tUntracked (kmalloc+kmem_cache):	%16ld\n",
 		atomic_long_read(&memorizer_num_untracked_allocs));
+	pr_info("\tPage Alloc (total):		%16ld\n",
+		atomic_long_read(&stats_num_page_allocs));
 }
 
 /**
@@ -857,6 +861,7 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		/* Update the free_jiffies for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_jiffies = jiffies;
+		kobj->free_ip = call_site;
 #if MEMORIZER_DEBUG >= 2
 		__print_memorizer_kobj(kobj, "Free'd kobject");
 #endif
@@ -1107,6 +1112,7 @@ int memorizer_init_from_driver(void)
 
 	print_stats();
 
+#if MEMORIZER_DEBUG > 1
 	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 
 	pr_info("The free'd Kobj list");
@@ -1116,6 +1122,7 @@ int memorizer_init_from_driver(void)
 	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
 
 	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+#endif
 
 	print_stats();
 

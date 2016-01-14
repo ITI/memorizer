@@ -640,7 +640,8 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
  * Memorize, ie. log, the particular data access by inserting it into a percpu
  * queue. 
  */
-void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
+void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
+					  write, uintptr_t ip)
 {
 	unsigned long flags;
 	struct memorizer_mem_access * ma;

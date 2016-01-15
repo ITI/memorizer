@@ -96,9 +96,11 @@
 #include <linux/err.h>
 #include <linux/export.h>
 #include <linux/jiffies.h>
+#include <linux/kallsyms.h>
 #include <linux/kernel.h>
 #include <linux/kmemleak.h>
 #include <linux/memorizer.h>
+#include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
@@ -200,6 +202,8 @@ struct memorizer_kobj {
 	unsigned long	free_jiffies;
 	pid_t		pid;
 	char		comm[TASK_COMM_LEN];
+	char		funcstr[KSYM_NAME_LEN];
+	char		*modsymb[KSYM_NAME_LEN];
 	struct list_head	freed_kobjs;
 	struct list_head	access_counts;
 };
@@ -313,6 +317,8 @@ static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 
 	pr_info("%s: \n", title);
 	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
+	pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
+	pr_info("\talloc_func:	%s\n", kobj->funcstr);
 	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
 	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
 	pr_info("\tva:		0x%p\n", (void*) kobj->va_ptr);
@@ -322,7 +328,6 @@ static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("\tfree jiffies:  %lu\n", kobj->free_jiffies);
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
-
 	list_for_each(listptr, &(kobj->access_counts)){
 		entry = list_entry(listptr, struct access_from_counts, list);
 		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
@@ -727,6 +732,8 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->freed_kobjs);
 	memset(kobj->comm, '\0', sizeof(kobj->comm));
+	kallsyms_lookup((unsigned long) call_site, NULL, NULL, &(kobj->modsymb),
+			kobj->funcstr);
 	/* task information */
 	if (in_irq()) {
 		kobj->pid = 0;
@@ -910,7 +917,9 @@ static void __memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	atomic_long_inc(&memorizer_num_tracked_allocs);
 
-#if MEMORIZER_DEBUG >= 3
+
+
+#if MEMORIZER_DEBUG >= 4
 	pr_info("alloca from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
 		(void*)call_site, ptr, bytes_alloc, (unsigned long long)
 		gfp_flags);
@@ -1119,7 +1128,6 @@ static int memorizer_late_init(void)
 	//__memorizer_print_events(10);
 	//dump_freed_kobjs();
 	//__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
-
 	__memorizer_exit();
 
 	return 0;
@@ -1161,7 +1169,6 @@ int memorizer_init_from_driver(void)
 	print_stats();
 
 	__memorizer_exit();
-
 	return 0;
 }
 EXPORT_SYMBOL(memorizer_init_from_driver);

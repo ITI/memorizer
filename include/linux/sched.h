@@ -1781,6 +1781,9 @@ struct task_struct {
 #ifdef CONFIG_KASAN
 	unsigned int kasan_depth;
 #endif
+#ifdef CONFIG_MEMORIZER
+	unsigned long memorizer_recursion;
+#endif
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 	/* Index of current stored address in ret_stack */
 	int curr_ret_stack;

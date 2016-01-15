@@ -26,17 +26,17 @@
  * Redistributions in binary form must reproduce the above copyright notice,
  * this list of conditions and the following disclaimers in the documentation
  * and/or other materials provided with the distribution.  Neither the names of
- * Sam King or the University of Illinois, nor the names of its contributors
- * may be used to endorse or promote products derived from this Software
- * without specific prior written permission. 
+ * Nathan Dautenhahn or the University of Illinois, nor the names of its
+ * contributors may be used to endorse or promote products derived from this
+ * Software without specific prior written permission. 
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
  * CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * WITH THE SOFTWARE. 
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH
+ * THE SOFTWARE. 
  *
  *===------------------------------------------------------------------------===
  *
@@ -59,17 +59,26 @@ void __init memorizer_init(void);
 int memorizer_init_from_driver(void);
 
 /* Memorize access */
-void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
+void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
 
 /* Allocation memorization */
-void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags);
-void memorize_kmalloc_node(unsigned long call_site, const void *ptr, size_t
+void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
 			   node);
-void memorize_kfree(unsigned long call_site, const void *ptr);
-void memorize_alloc_pages(struct page *page, unsigned int order);
-void memorize_free_pages(struct page *page, unsigned int order);
+void memorizer_kfree(unsigned long call_site, const void *ptr);
+void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
+			   int order);
+void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
+			  int order);
+
+void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
+				bytes_req, size_t bytes_alloc, gfp_t gfp_flags);
+void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
+				      size_t bytes_req, size_t bytes_alloc,
+				      gfp_t gfp_flags, int node);
+void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr);
 
 /* Temporary Debug and test code */
 int __memorizer_get_opsx(void);
@@ -81,19 +90,28 @@ void __memorizer_print_events(unsigned int num_events);
 int __init memorizer_init(void){}
 int memorizer_init_from_driver(void){}
 
-void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
+void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 	{}
 uint64_t __memorizer_get_opsx(void) {}
 void __memorizer_print_events(unsigned int num_events){}
 static __init void memorizer_init(void){}
-void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags){}
-void memorize_kmalloc_node(unsigned long call_site, const void *ptr, size_t
+void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
 			   node){}
-void memorize_kfree(unsigned long call_site, const void *ptr){}
-void memorize_alloc_pages(struct page *page, unsigned int order){}
-void memorize_free_pages(struct page *page, unsigned int order){}
+void memorizer_kfree(unsigned long call_site, const void *ptr){}
+void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
+			   int order){}
+void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
+			  int order){}
+void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
+				bytes_req, size_t bytes_alloc, gfp_t
+				gfp_flags){}
+void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
+				      size_t bytes_req, size_t bytes_alloc,
+				      gfp_t gfp_flags, int node){}
+void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr){}
 #endif /* CONFIG_MEMORIZER */
 
 #endif /* __MEMORIZER_H_ */

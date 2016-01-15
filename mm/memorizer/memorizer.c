@@ -26,25 +26,25 @@
  * Redistributions in binary form must reproduce the above copyright notice,
  * this list of conditions and the following disclaimers in the documentation
  * and/or other materials provided with the distribution.  Neither the names of
- * Sam King or the University of Illinois, nor the names of its contributors
- * may be used to endorse or promote products derived from this Software
- * without specific prior written permission. 
+ * Nathan Dautenhahn or the University of Illinois, nor the names of its
+ * contributors may be used to endorse or promote products derived from this
+ * Software without specific prior written permission. 
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
  * CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * WITH THE SOFTWARE. 
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH
+ * THE SOFTWARE.
  *
  *===-----------------------------------------------------------------------===
  *
  *       Filename:  memorizer.c
  *
  *    Description:  Memorizer is a memory tracing tool. It hooks into KASAN
- *                  events to record object allocation/frees and all
- *                  loads/stores. 
+ *		    events to record object allocation/frees and all
+ *		    loads/stores. 
  *
  *===-----------------------------------------------------------------------===
  *
@@ -52,9 +52,9 @@
  *
  *	Memorizer has two global and a percpu data structure:
  *	
- *		- global rbtree of active kernel objects 
- *		- queue for holding free'd objects that haven't logged 
- *		- A percpu event queue to track memory access events
+ *		- global rbtree of active kernel objects - queue for holding
+ *		  free'd objects that haven't logged - A percpu event queue to
+ *		  track memory access events
  *		    
  *     Therefore, we have the following locks:
  *
@@ -99,6 +99,7 @@
 #include <linux/kernel.h>
 #include <linux/kmemleak.h>
 #include <linux/memorizer.h>
+#include <linux/mm.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
 #include <linux/rbtree.h>
@@ -113,13 +114,7 @@
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
-
-/* 
- * If we have a bug in memorizer (like calling an external function from the
- * memorizer_mem_access function, then we will re-enter that function. This is
- * costly so disable most of the time.
- */
-#define PROTECT_MEM_ACCESS_REENTRY 1
+#define FIXME			0
 
 //==-- Prototype Declarations ---------------------------------------------==//
 static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
@@ -128,7 +123,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
-#define MEM_ACC_L_SIZE 100000
+#define MEM_ACC_L_SIZE 1
 
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
@@ -197,6 +192,7 @@ struct memorizer_kobj {
 	rwlock_t	rwlock;
 	long		obj_id;
 	uintptr_t	alloc_ip;
+	uintptr_t	free_ip;
 	uintptr_t	va_ptr;
 	uintptr_t	pa_ptr;
 	size_t		size;
@@ -231,10 +227,10 @@ struct code_region crypto_code_region = {
 DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 
 /* flag to keep track of whether or not to track writes */
-bool memorizer_enabled = false;
+static bool memorizer_enabled = false;
 
 /* flag enable/disable memory access logging */
-bool memorizer_log_access = false;
+static bool memorizer_log_access = false;
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
@@ -249,9 +245,7 @@ static struct rb_root active_kobj_rbtree_root = RB_ROOT;
 static LIST_HEAD(freed_kobjs);
 
 /* global object id reference counter */
-atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
-
-atomic_t in_ma = ATOMIC_INIT(0);
+static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
 
 //==-- Locks --=//
 /* RW Spinlock for access to rb tree */
@@ -270,22 +264,41 @@ DEFINE_RWLOCK(freed_kobjs_spinlock);
 					 | __GFP_NOTRACK	\
 				 )
 
-//==-- Debug and Output Code --==//
-atomic_long_t memorizer_num_stale_accesses = ATOMIC_INIT(0);
-atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
-int __memorizer_get_opsx(void)
+/**
+ * __memorizer_enter() - increment recursion counter for entry into memorizer
+ *
+ * The primary goal of this is to stop recursive handling of events. Memorizer
+ * by design tracks two types of events: allocations and accesses. Effectively,
+ * while tracking either type we do not want to re-enter and track memorizer
+ * events that are sources from within memorizer. Yes this means we may not
+ * track legitimate access of some types, but these are caused by memorizer and
+ * we want to ignore them. 
+ */
+static inline void __memorizer_enter(void)
 {
-    return atomic_long_read(&memorizer_num_accesses);
+	++current->memorizer_recursion;
 }
-EXPORT_SYMBOL(__memorizer_get_opsx);
 
-atomic_long_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
-atomic_long_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
-int __memorizer_get_allocs(void)
+static inline void __memorizer_exit(void)
 {
-    return atomic_long_read(&memorizer_num_tracked_allocs);
+	--current->memorizer_recursion;
 }
-EXPORT_SYMBOL(__memorizer_get_allocs);
+
+/**
+ * in_memorizer() - check if this thread has already entered memorizer
+ */
+static inline bool in_memorizer(void)
+{
+	return current->memorizer_recursion;
+}
+
+//==-- Debug and Stats Output Code --==//
+static atomic_long_t memorizer_num_untracked_accesses = ATOMIC_INIT(0);
+static atomic_long_t memorizer_caused_accesses = ATOMIC_INIT(0);
+static atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
+static atomic_long_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
+static atomic_long_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
+static atomic_long_t stats_num_page_allocs = ATOMIC_INIT(0);
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
@@ -299,20 +312,22 @@ static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	struct access_from_counts *entry;
 
 	pr_info("%s: \n", title);
-	pr_info("\tkobj_id: %ld\n", kobj->obj_id);
-	pr_info("\talloc_ip: 0x%p\n", (void*) kobj->alloc_ip);
-	pr_info("\tva: 0x%p\n", (void*) kobj->va_ptr);
-	pr_info("\tpa: 0x%p\n", (void*) kobj->pa_ptr);
-	pr_info("\tsize: %lu\n", kobj->size);
+	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
+	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
+	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
+	pr_info("\tva:		0x%p\n", (void*) kobj->va_ptr);
+	pr_info("\tpa:		0x%p\n", (void*) kobj->pa_ptr);
+	pr_info("\tsize:	%lu\n", kobj->size);
 	pr_info("\talloc jiffies: %lu\n", kobj->alloc_jiffies);
-	pr_info("\tfree jiffies: %lu\n", kobj->free_jiffies);
+	pr_info("\tfree jiffies:  %lu\n", kobj->free_jiffies);
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
 
 	list_for_each(listptr, &(kobj->access_counts)){
 		entry = list_entry(listptr, struct access_from_counts, list);
 		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
-			(void *) entry->ip, entry->pid, (unsigned long long) entry->writes,
+			(void *) entry->ip, entry->pid,
+			(unsigned long long) entry->writes,
 			(unsigned long long) entry->reads);
 	}
 }
@@ -320,8 +335,8 @@ static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 /**
  * read_locking_print_memorizer_kobj() - grap the reader spinlock then print
  */
-void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj, char *
-				       title)
+static void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj, char
+					      * title)
 {
 	unsigned long flags;
 	read_lock_irqsave(&kobj->rwlock, flags);
@@ -334,7 +349,7 @@ void read_locking_print_memorizer_kobj(struct memorizer_kobj * kobj, char *
  */
 static void __print_active_rb_tree(struct rb_node * rb)
 {
-	struct memorizer_kobj * kobj; 
+	struct memorizer_kobj * kobj;
 	if(rb){
 		kobj = rb_entry(rb, struct memorizer_kobj, rb_node);
 		read_locking_print_memorizer_kobj(kobj,"Kernel Object");
@@ -343,6 +358,32 @@ static void __print_active_rb_tree(struct rb_node * rb)
 		if(kobj->rb_node.rb_right)
 			__print_active_rb_tree(kobj->rb_node.rb_right);
 	}
+}
+
+/**
+ * print_stats() - print global stats from memorizer 
+ */
+static void print_stats(void)
+{
+	pr_info("------- Memory Accesses -------\n");
+	pr_info("\tTracked:		%16ld\n",
+		atomic_long_read(&memorizer_num_accesses) -
+		atomic_long_read(&memorizer_num_untracked_accesses) -
+		atomic_long_read(&memorizer_caused_accesses)
+		);
+	pr_info("\tNot-tracked:		%16ld\n",
+		atomic_long_read(&memorizer_num_untracked_accesses));
+	pr_info("\tMemorizer-Induced:	%16ld\n",
+		atomic_long_read(&memorizer_caused_accesses));
+	pr_info("\tTotal:		\t%16ld\n",
+		atomic_long_read(&memorizer_num_accesses));
+	pr_info("------- Memory Allocations -------\n");
+	pr_info("  \tTracked (kmalloc+kmem_cache):	%16ld\n",
+		atomic_long_read(&memorizer_num_tracked_allocs));
+	pr_info("\tUntracked (kmalloc+kmem_cache):	%16ld\n",
+		atomic_long_read(&memorizer_num_untracked_allocs));
+	pr_info("\tPage Alloc (total):		%16ld\n",
+		atomic_long_read(&stats_num_page_allocs));
 }
 
 /**
@@ -359,14 +400,9 @@ void __memorizer_print_events(unsigned int num_events)
 	struct mem_access_worklists * ma_wls;
 	struct memorizer_mem_access *mal, *ma; /* mal is the list ma is the
 						  instance */
+	__memorizer_enter();
 
-	pr_info("\n\n***Memorizer Num Accesses: %ld, Stale due to free: %ld\n",
-		atomic_long_read(&memorizer_num_accesses),
-		atomic_long_read(&memorizer_num_stale_accesses)
-		);
-	pr_info("***Memorizer Num Allocs Tracked: %ld Untracked: %ld\n",
-		atomic_long_read(&memorizer_num_tracked_allocs),
-		atomic_long_read(&memorizer_num_untracked_allocs));
+	print_stats();
 
 	/* Get data structure for the worklists and init the iterators */
 	ma_wls = &get_cpu_var(mem_access_wls);
@@ -409,6 +445,8 @@ void __memorizer_print_events(unsigned int num_events)
 			i = 0;
 	}
 	put_cpu_var(mem_access_wls);
+
+	__memorizer_exit();
 }
 EXPORT_SYMBOL(__memorizer_print_events);
 
@@ -416,7 +454,7 @@ EXPORT_SYMBOL(__memorizer_print_events);
 /**
  * dump_freed_kobjs() - print out the list of free'd objects
  */
-void dump_freed_kobjs(void)
+static void dump_freed_kobjs(void)
 {
 	unsigned long flags;
 	struct list_head *p;
@@ -463,12 +501,6 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
 }
 
 /**
- * add_to_access_count_list() - Add a new entry to the access count list
- * @src_ip:	the address of the instance
- * @list_head: 
- */
-
-/**
  * access_from_counts - search kobj's access_from for an entry from src_ip
  * @src_ip:	the ip to search for
  * @kobj:	the object to search within
@@ -481,7 +513,7 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
  */
 static inline struct access_from_counts *
 unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
-				memorizer_kobj *kobj) 
+				memorizer_kobj *kobj)
 {
 	struct list_head * listptr;
 	struct access_from_counts *entry;
@@ -511,7 +543,7 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
  * already operating with interrupts off and preemption disabled, and thus we
  * cannot sleep.
  */
-int find_and_update_kobj_access(struct memorizer_mem_access *ma)
+static int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 {
 	struct memorizer_kobj *kobj = NULL;
 	struct access_from_counts *afc = NULL;
@@ -522,18 +554,14 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 					   &active_kobj_rbtree_root);
 	read_unlock(&active_kobj_rbtree_spinlock);
 
-	/* 
-	 * If this is null then we didn't find it, for now just skip TODO: add
-	 * the second queue to find it after free.
-	 */
 	if(!kobj){
-		atomic_long_inc(&memorizer_num_stale_accesses);
+		atomic_long_inc(&memorizer_num_untracked_accesses);
 		return -1;
 	}
 
 	/* Grab the object lock here */
 	write_lock(&kobj->rwlock);
-	if(kobj->alloc_jiffies <= ma->jiffies)
+	if(likely(kobj->alloc_jiffies <= ma->jiffies))
 	{
 		/* Search access queue to the entry associated with src_ip */
 		afc = unlckd_insert_get_access_counts(ma->src_ip, ma->pid,
@@ -558,7 +586,8 @@ int find_and_update_kobj_access(struct memorizer_mem_access *ma)
  * accessed. Note that the kobj for this could be not found so we just ignore it
  * and move on if the update function failed.
  */
-void drain_and_process_access_queue(struct mem_access_worklists * ma_wls)
+static inline void drain_and_process_access_queue(struct mem_access_worklists *
+						  ma_wls) 
 {
 	while(ma_wls->head >= 0){
 		//pr_info("Head: %ld", ma_wls->head);
@@ -601,13 +630,15 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 		 */
 		comm = current->comm;
 	}
+#if 0 /* TODO: this is to make the testing faster */
 	for(i=0; i<sizeof(comm); i++)
 		ma->comm[i] = comm[i];
+#endif
 	ma->comm[i] = '\0';
 }
 
 /**
- * memorize_mem_access() - record associated data with the load or store
+ * memorizer_mem_access() - record associated data with the load or store
  * @addr:	The virtual address being accessed
  * @size:	The number of bits for the load/store
  * @write:	True if the memory access is a write (store)
@@ -616,51 +647,60 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
  * Memorize, ie. log, the particular data access by inserting it into a percpu
  * queue. 
  */
-void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
+void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
+					  write, uintptr_t ip)
 {
 	unsigned long flags;
-	struct memorizer_mem_access * ma;
+	struct memorizer_mem_access ma;
 	struct mem_access_worklists * ma_wls;
 
 	atomic_long_inc(&memorizer_num_accesses);
 
-	if(!memorizer_enabled || !memorizer_log_access)
+	if(!memorizer_log_access){
+		atomic_long_inc(&memorizer_num_untracked_accesses);
 		return;
+	}
 
-#if PROTECT_MEM_ACCESS_REENTRY
-	if(atomic_read(&in_ma))
+	/* Try to grab the lock and if not just returns */
+	if(in_memorizer()){
+		atomic_long_inc(&memorizer_caused_accesses);
 		return;
-	atomic_inc(&in_ma);
-#endif
+	} else {
+		__memorizer_enter();
+	}
+
 	local_irq_save(flags);
 
 	/* Get the local cpu data structure */
-	ma_wls = &get_cpu_var(mem_access_wls);
+	//ma_wls = &get_cpu_var(mem_access_wls);
 	/* Head points to the last inserted element, except for -1 on init */
-	if(ma_wls->head >= MEM_ACC_L_SIZE - 1){
-		drain_and_process_access_queue(ma_wls);
-	}
-	++ma_wls->head;
+	//if(ma_wls->head >= MEM_ACC_L_SIZE - 1){
+		//drain_and_process_access_queue(ma_wls);
+	//}
+	//++ma_wls->head;
+	//ma_wls->head = 0;
 
 	/* if producer caught consumer overwrite, losing the oldest events */
-	if(ma_wls->head == ma_wls->tail)
-		++ma_wls->tail;
-	ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
+	//if(ma_wls->head == ma_wls->tail)
+		//++ma_wls->tail;
+	//ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
 
 	/* Initialize the event data */
-	set_comm_and_pid(ma);
-	ma->access_type = write;
-	ma->access_addr = addr;
-	ma->access_size = size;
-	ma->src_ip = ip;
-	ma->jiffies = jiffies;
+	//set_comm_and_pid(ma);
+	ma.pid = task_pid_nr(current);
+	ma.access_type = write;
+	ma.access_addr = addr;
+	ma.access_size = size;
+	ma.src_ip = ip;
+	ma.jiffies = jiffies;
+
+	find_and_update_kobj_access(&ma);
 
 	/* put the cpu vars and reenable interrupts */
-	put_cpu_var(mem_access_wls);
+	//put_cpu_var(mem_access_wls);
 	local_irq_restore(flags);
-#if PROTECT_MEM_ACCESS_REENTRY
-	atomic_dec(&in_ma);
-#endif
+
+	__memorizer_exit();
 }
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
@@ -668,8 +708,8 @@ void memorize_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
 /**
  * init_kobj() - Initalize the metadata to track the recent allocation
  */
-void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
-	      ptr_to_kobj, size_t bytes_alloc)
+static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
+		      uintptr_t ptr_to_kobj, size_t bytes_alloc)
 {
 	rwlock_init(&kobj->rwlock);
 
@@ -719,9 +759,9 @@ void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site, uintptr_t
  * right, and if not that means we have an overlap and have a problem in
  * overlapping allocations. 
  */
-struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj *kobj,
-						    struct rb_root
-						    *kobj_rbtree_root)
+static struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj
+							   *kobj, struct rb_root
+							   *kobj_rbtree_root)
 {
 	struct memorizer_kobj *parent;
 	struct rb_node **link;
@@ -773,7 +813,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 	struct rb_node *rb = kobj_rbtree_root->rb_node;
 
 	while (rb) {
-		struct memorizer_kobj * kobj = 
+		struct memorizer_kobj * kobj =
 			rb_entry(rb, struct memorizer_kobj, rb_node);
 		/* Check if our pointer is less than the current node's ptr */
 		if (kobj_ptr < kobj->va_ptr)
@@ -801,7 +841,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
  * Maybe TODO: Do some processing here as opposed to later? This depends on when
  * we want to add our filtering.
  */
-static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
+void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 {
 	struct memorizer_kobj *kobj;
 
@@ -818,12 +858,14 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 	if(kobj){
 		/* remove from the active_kobj_rbtree */
 		write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+		/* External Memorizer Function: Must protect from re-entry */
 		rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
 		write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 		/* Update the free_jiffies for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_jiffies = jiffies;
+		kobj->free_ip = call_site;
 #if MEMORIZER_DEBUG >= 2
 		__print_memorizer_kobj(kobj, "Free'd kobject");
 #endif
@@ -834,7 +876,6 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		list_add(&kobj->freed_kobjs, &freed_kobjs);
 		write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
 	}
-
 }
 
 /**
@@ -843,15 +884,14 @@ static void move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
  * @kmemcache:	The cache to free from
  */
 
-
 /**
- * memorize_alloc() - record allocation event
+ * memorizer_alloc() - record allocation event
  * @object:	Pointer to the beginning of hte object
  * @size:	Size of the object
  *
  * Track the allocation and add the object to the set of active object tree.
  */
-void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+static void __memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
 	unsigned long flags;
@@ -885,25 +925,30 @@ void __memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	/* Grab the writer lock for the active_kobj_rbtree */
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	/* subcall to an non-memorizer function that re-enters ma code */
 	unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 }
 
 /*** HOOKS similar to the kmem points ***/
-void memorize_kmalloc(unsigned long call_site, const void *ptr, size_t
+void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
-	__memorize_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_enter();
+	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_exit();
 }
 
-void memorize_kmalloc_node(unsigned long call_site, const void *ptr, size_t
+void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
 			   node)
 {
-	__memorize_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_enter();
+	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_exit();
 }
 
-void memorize_kfree(unsigned long call_site, const void *ptr)
+void memorizer_kfree(unsigned long call_site, const void *ptr)
 {
 	/* 
 	 * Condition for ensuring free is from online cpu: see trace point
@@ -912,28 +957,86 @@ void memorize_kfree(unsigned long call_site, const void *ptr)
 	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
 		return;
 	}
-
+	__memorizer_enter();
 	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t) ptr);
+	__memorizer_exit();
 }
 
-#if 0
-void memorize_kmem_cache_alloc(_RET_IP_, ret, s->object_size, s->size,
-			       gfpflags);
-void memorize_kmem_cache_alloc_node(_RET_IP_, ret, s->object_size, s->size,
-				    gfpflags, node);
-void memorize_kmem_cache_free(_RET_IP_, x);
+void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
+				bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
+{
+	if(in_memorizer())
+		return;
+	__memorizer_enter();
+	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_exit();
+}
+
+void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
+				      size_t bytes_req, size_t bytes_alloc,
+				      gfp_t gfp_flags, int node)
+{
+	if(in_memorizer())
+		return;
+	__memorizer_enter();
+	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+	__memorizer_exit();
+}
+
+void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
+{
+	/* 
+	 * Condition for ensuring free is from online cpu: see trace point
+	 * condition from include/trace/events/kmem.h for reason
+	 */
+	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
+		return;
+	}
+	__memorizer_enter();
+	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t) ptr);
+	__memorizer_exit();
+}
+
+
+void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
+			   int order)
+{
+	if(in_memorizer())
+		return;
+	atomic_long_inc(&stats_num_page_allocs);
+#if FIXME
+	__memorizer_enter();
+	__memorizer_kmalloc(call_site, page_address(page),
+			    (uintptr_t) (PAGE_SIZE << order),
+			    (uintptr_t) (PAGE_SIZE << order), 0);
+	__memorizer_exit();
 #endif
+}
 
-
-void memorize_alloc_pages(struct page *page, unsigned int order) { }
-void memorize_free_pages(struct page *page, unsigned int order) { }
+void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
+			  int order)
+{
+#if FIXME
+	/* 
+	 * Condition for ensuring free is from online cpu: see trace point
+	 * condition from include/trace/events/kmem.h for reason
+	 */
+	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
+		return;
+	}
+	__memorizer_enter();
+	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t)
+			       page_address(page));
+	__memorizer_exit();
+#endif
+}
 
 //==-- Memorizer Initializtion --------------------------------------------==//
 
 /**
  * create_obj_kmem_cache() - create the kernel object kmem_cache
  */
-void create_obj_kmem_cache(void)
+static void create_obj_kmem_cache(void)
 {
 	kobj_cache = KMEM_CACHE(memorizer_kobj,
 				SLAB_PANIC
@@ -944,7 +1047,7 @@ void create_obj_kmem_cache(void)
 /**
  * create_access_counts_kmem_cache() - create the kmem_cache for access_counts
  */
-void create_access_counts_kmem_cache(void)
+static void create_access_counts_kmem_cache(void)
 {
 	access_from_counts_cache = KMEM_CACHE(access_from_counts,
 				SLAB_PANIC
@@ -979,13 +1082,15 @@ static void init_mem_access_wls(void)
 void __init memorizer_init(void)
 {
 	unsigned long flags;
-
+	__memorizer_enter();
 	init_mem_access_wls();
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 	local_irq_save(flags);
 	memorizer_enabled = true;
+	memorizer_log_access = true;
 	local_irq_restore(flags);
+	__memorizer_exit();
 }
 
 /*
@@ -1001,15 +1106,21 @@ static int memorizer_late_init(void)
 	//if (!dentry)
 		//pr_warning("Failed to create the debugfs kmemleak file\n");
 
+	__memorizer_enter();
+
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = true;
 	local_irq_restore(flags);
 
-	//__memorizer_print_events(10);
-	dump_freed_kobjs();
-
 	pr_info("Memorizer initialized\n");
+
+	print_stats();
+	//__memorizer_print_events(10);
+	//dump_freed_kobjs();
+	//__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
+
+	__memorizer_exit();
 
 	return 0;
 }
@@ -1024,6 +1135,8 @@ int memorizer_init_from_driver(void)
 {
 	unsigned long flags;
 
+	__memorizer_enter();
+
 	pr_info("Running test from driver...");
 
 	local_irq_save(flags);
@@ -1031,10 +1144,23 @@ int memorizer_init_from_driver(void)
 	memorizer_log_access = true;
 	local_irq_restore(flags);
 
+	print_stats();
+
+#if MEMORIZER_DEBUG > 1
 	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+
+	pr_info("The free'd Kobj list");
+	dump_freed_kobjs();
+
 	pr_info("The live kernel object tree now:");
 	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
+
 	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+#endif
+
+	print_stats();
+
+	__memorizer_exit();
 
 	return 0;
 }

@@ -68,8 +68,10 @@ void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
 			   node);
 void memorizer_kfree(unsigned long call_site, const void *ptr);
-void memorizer_alloc_pages(struct page *page, unsigned int order);
-void memorizer_free_pages(struct page *page, unsigned int order);
+void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
+			   int order);
+void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
+			  int order);
 
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
 				bytes_req, size_t bytes_alloc, gfp_t gfp_flags);
@@ -99,8 +101,10 @@ void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
 			   node){}
 void memorizer_kfree(unsigned long call_site, const void *ptr){}
-void memorizer_alloc_pages(struct page *page, unsigned int order){}
-void memorizer_free_pages(struct page *page, unsigned int order){}
+void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
+			   int order){}
+void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
+			  int order){}
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
 				bytes_req, size_t bytes_alloc, gfp_t
 				gfp_flags){}

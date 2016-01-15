@@ -99,6 +99,7 @@
 #include <linux/kernel.h>
 #include <linux/kmemleak.h>
 #include <linux/memorizer.h>
+#include <linux/mm.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
 #include <linux/rbtree.h>
@@ -113,6 +114,7 @@
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
+#define FIXME			0
 
 //==-- Prototype Declarations ---------------------------------------------==//
 static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
@@ -296,6 +298,7 @@ static atomic_long_t memorizer_caused_accesses = ATOMIC_INIT(0);
 static atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
 static atomic_long_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
 static atomic_long_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
+static atomic_long_t stats_num_page_allocs = ATOMIC_INIT(0);
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
@@ -755,9 +758,9 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
  * right, and if not that means we have an overlap and have a problem in
  * overlapping allocations. 
  */
-static struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj *kobj,
-						    struct rb_root
-						    *kobj_rbtree_root)
+static struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj
+							   *kobj, struct rb_root
+							   *kobj_rbtree_root)
 {
 	struct memorizer_kobj *parent;
 	struct rb_node **link;
@@ -994,8 +997,38 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 }
 
 
-//void memorizer_alloc_pages(struct page *page, unsigned int order) { }
-//void memorizer_free_pages(struct page *page, unsigned int order) { }
+void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
+			   int order)
+{
+	if(in_memorizer())
+		return;
+	atomic_long_inc(&stats_num_page_allocs);
+#if FIXME
+	__memorizer_enter();
+	__memorizer_kmalloc(call_site, page_address(page),
+			    (uintptr_t) (PAGE_SIZE << order),
+			    (uintptr_t) (PAGE_SIZE << order), 0);
+	__memorizer_exit();
+#endif
+}
+
+void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
+			  int order)
+{
+#if FIXME
+	/* 
+	 * Condition for ensuring free is from online cpu: see trace point
+	 * condition from include/trace/events/kmem.h for reason
+	 */
+	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
+		return;
+	}
+	__memorizer_enter();
+	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t)
+			       page_address(page));
+	__memorizer_exit();
+#endif
+}
 
 //==-- Memorizer Initializtion --------------------------------------------==//
 

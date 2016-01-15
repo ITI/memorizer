@@ -939,6 +939,7 @@ static bool free_pages_prepare(struct page *page, unsigned int order)
 	trace_mm_page_free(page, order);
 	kmemcheck_free_shadow(page, order);
 	kasan_free_pages(page, order);
+	memorizer_free_pages(0, page, order);
 
 	if (PageAnon(page))
 		page->mapping = NULL;
@@ -3267,6 +3268,8 @@ out:
 	 */
 	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))
 		goto retry_cpuset;
+
+	memorizer_alloc_pages(_RET_IP_, page, order);
 
 	return page;
 }

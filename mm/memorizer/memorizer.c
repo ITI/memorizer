@@ -651,12 +651,12 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 					  write, uintptr_t ip)
 {
 	unsigned long flags;
-	struct memorizer_mem_access * ma;
+	struct memorizer_mem_access ma;
 	struct mem_access_worklists * ma_wls;
 
 	atomic_long_inc(&memorizer_num_accesses);
 
-	if(!memorizer_enabled || !memorizer_log_access){
+	if(!memorizer_log_access){
 		atomic_long_inc(&memorizer_num_untracked_accesses);
 		return;
 	}
@@ -672,31 +672,32 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	local_irq_save(flags);
 
 	/* Get the local cpu data structure */
-	ma_wls = &get_cpu_var(mem_access_wls);
+	//ma_wls = &get_cpu_var(mem_access_wls);
 	/* Head points to the last inserted element, except for -1 on init */
 	//if(ma_wls->head >= MEM_ACC_L_SIZE - 1){
 		//drain_and_process_access_queue(ma_wls);
 	//}
 	//++ma_wls->head;
-	ma_wls->head = 0;
+	//ma_wls->head = 0;
 
 	/* if producer caught consumer overwrite, losing the oldest events */
-	if(ma_wls->head == ma_wls->tail)
-		++ma_wls->tail;
-	ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
+	//if(ma_wls->head == ma_wls->tail)
+		//++ma_wls->tail;
+	//ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
 
 	/* Initialize the event data */
-	set_comm_and_pid(ma);
-	ma->access_type = write;
-	ma->access_addr = addr;
-	ma->access_size = size;
-	ma->src_ip = ip;
-	ma->jiffies = jiffies;
+	//set_comm_and_pid(ma);
+	ma.pid = task_pid_nr(current);
+	ma.access_type = write;
+	ma.access_addr = addr;
+	ma.access_size = size;
+	ma.src_ip = ip;
+	ma.jiffies = jiffies;
 
-	find_and_update_kobj_access(ma);
+	find_and_update_kobj_access(&ma);
 
 	/* put the cpu vars and reenable interrupts */
-	put_cpu_var(mem_access_wls);
+	//put_cpu_var(mem_access_wls);
 	local_irq_restore(flags);
 
 	__memorizer_exit();

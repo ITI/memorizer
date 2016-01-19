@@ -366,6 +366,77 @@ static void __print_active_rb_tree(struct rb_node * rb)
 }
 
 /**
+ * access_degree() - for the specified access type count the degree of access
+ */
+void access_degree(struct list_head * acl, unsigned int * write_deg,
+		   unsigned int * read_deg)
+{
+	struct list_head * listptr;
+	struct access_from_counts * ac;
+	/* For each ld/st in the access counts entry add 1 */
+	list_for_each(listptr, acl) {
+		ac = list_entry(listptr, struct access_from_counts, list);
+		/* if the ac has at least one write then it counts */
+		if(ac->writes > 0)
+			*write_deg += 1;
+		if(ac->reads > 0)
+			*read_deg += 1;
+	}
+}
+
+/**
+ * __print_rb_tree() - print the tree
+ */
+static void print_rb_tree_access_counts(struct rb_node * rb)
+{
+	struct memorizer_kobj * kobj;
+	if(rb){
+		kobj = rb_entry(rb, struct memorizer_kobj, rb_node);
+
+		unsigned int write_deg = 0, read_deg = 0;
+
+		access_degree(&kobj->access_counts, &write_deg, &read_deg);
+
+		pr_info("%s %d %s %u %u\n", kobj->funcstr, kobj->pid, kobj->comm,
+			write_deg, read_deg);
+
+		if(kobj->rb_node.rb_left)
+			print_rb_tree_access_counts(kobj->rb_node.rb_left);
+		if(kobj->rb_node.rb_right)
+			print_rb_tree_access_counts(kobj->rb_node.rb_right);
+	}
+}
+
+/**
+ */
+static void print_pdf_table(void)
+{
+	unsigned long flags;
+
+	/* calculate stats and print the free'd objects */
+	struct list_head *p;
+	struct memorizer_kobj *kobj;
+
+	read_lock_irqsave(&freed_kobjs_spinlock, flags);
+
+	list_for_each(p, &freed_kobjs){
+		unsigned int write_deg = 0, read_deg = 0;
+
+		kobj = list_entry(p, struct memorizer_kobj, freed_kobjs);
+
+		access_degree(&kobj->access_counts, &write_deg, &read_deg);
+
+		pr_info("%s %d %s %u %u\n", kobj->funcstr, kobj->pid, kobj->comm,
+			write_deg, read_deg);
+
+	}
+	read_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+
+	/* same for live objects */
+	print_rb_tree_access_counts(active_kobj_rbtree_root.rb_node);
+}
+
+/**
  * print_stats() - print global stats from memorizer 
  */
 static void print_stats(void)
@@ -1128,6 +1199,8 @@ static int memorizer_late_init(void)
 	//__memorizer_print_events(10);
 	//dump_freed_kobjs();
 	//__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
+	//print_pdf_table();
+
 	__memorizer_exit();
 
 	return 0;

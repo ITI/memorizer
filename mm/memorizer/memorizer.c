@@ -666,6 +666,8 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		return;
 	}
 
+	local_irq_save(flags);
+
 	/* Try to grab the lock and if not just returns */
 	if(in_memorizer()){
 		atomic_long_inc(&memorizer_caused_accesses);
@@ -673,8 +675,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	} else {
 		__memorizer_enter();
 	}
-
-	local_irq_save(flags);
 
 	/* Get the local cpu data structure */
 	//ma_wls = &get_cpu_var(mem_access_wls);

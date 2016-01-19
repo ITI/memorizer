@@ -96,9 +96,11 @@
 #include <linux/err.h>
 #include <linux/export.h>
 #include <linux/jiffies.h>
+#include <linux/kallsyms.h>
 #include <linux/kernel.h>
 #include <linux/kmemleak.h>
 #include <linux/memorizer.h>
+#include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
@@ -200,6 +202,8 @@ struct memorizer_kobj {
 	unsigned long	free_jiffies;
 	pid_t		pid;
 	char		comm[TASK_COMM_LEN];
+	char		funcstr[KSYM_NAME_LEN];
+	char		*modsymb[KSYM_NAME_LEN];
 	struct list_head	freed_kobjs;
 	struct list_head	access_counts;
 };
@@ -313,6 +317,8 @@ static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 
 	pr_info("%s: \n", title);
 	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
+	pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
+	pr_info("\talloc_func:	%s\n", kobj->funcstr);
 	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
 	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
 	pr_info("\tva:		0x%p\n", (void*) kobj->va_ptr);
@@ -322,7 +328,6 @@ static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("\tfree jiffies:  %lu\n", kobj->free_jiffies);
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
-
 	list_for_each(listptr, &(kobj->access_counts)){
 		entry = list_entry(listptr, struct access_from_counts, list);
 		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
@@ -358,6 +363,77 @@ static void __print_active_rb_tree(struct rb_node * rb)
 		if(kobj->rb_node.rb_right)
 			__print_active_rb_tree(kobj->rb_node.rb_right);
 	}
+}
+
+/**
+ * access_degree() - for the specified access type count the degree of access
+ */
+void access_degree(struct list_head * acl, unsigned int * write_deg,
+		   unsigned int * read_deg)
+{
+	struct list_head * listptr;
+	struct access_from_counts * ac;
+	/* For each ld/st in the access counts entry add 1 */
+	list_for_each(listptr, acl) {
+		ac = list_entry(listptr, struct access_from_counts, list);
+		/* if the ac has at least one write then it counts */
+		if(ac->writes > 0)
+			*write_deg += 1;
+		if(ac->reads > 0)
+			*read_deg += 1;
+	}
+}
+
+/**
+ * __print_rb_tree() - print the tree
+ */
+static void print_rb_tree_access_counts(struct rb_node * rb)
+{
+	struct memorizer_kobj * kobj;
+	if(rb){
+		kobj = rb_entry(rb, struct memorizer_kobj, rb_node);
+
+		unsigned int write_deg = 0, read_deg = 0;
+
+		access_degree(&kobj->access_counts, &write_deg, &read_deg);
+
+		pr_info("%s %d %s %u %u\n", kobj->funcstr, kobj->pid, kobj->comm,
+			write_deg, read_deg);
+
+		if(kobj->rb_node.rb_left)
+			print_rb_tree_access_counts(kobj->rb_node.rb_left);
+		if(kobj->rb_node.rb_right)
+			print_rb_tree_access_counts(kobj->rb_node.rb_right);
+	}
+}
+
+/**
+ */
+static void print_pdf_table(void)
+{
+	unsigned long flags;
+
+	/* calculate stats and print the free'd objects */
+	struct list_head *p;
+	struct memorizer_kobj *kobj;
+
+	read_lock_irqsave(&freed_kobjs_spinlock, flags);
+
+	list_for_each(p, &freed_kobjs){
+		unsigned int write_deg = 0, read_deg = 0;
+
+		kobj = list_entry(p, struct memorizer_kobj, freed_kobjs);
+
+		access_degree(&kobj->access_counts, &write_deg, &read_deg);
+
+		pr_info("%s %d %s %u %u\n", kobj->funcstr, kobj->pid, kobj->comm,
+			write_deg, read_deg);
+
+	}
+	read_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+
+	/* same for live objects */
+	print_rb_tree_access_counts(active_kobj_rbtree_root.rb_node);
 }
 
 /**
@@ -661,6 +737,8 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		return;
 	}
 
+	local_irq_save(flags);
+
 	/* Try to grab the lock and if not just returns */
 	if(in_memorizer()){
 		atomic_long_inc(&memorizer_caused_accesses);
@@ -668,8 +746,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	} else {
 		__memorizer_enter();
 	}
-
-	local_irq_save(flags);
 
 	/* Get the local cpu data structure */
 	//ma_wls = &get_cpu_var(mem_access_wls);
@@ -727,6 +803,8 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->freed_kobjs);
 	memset(kobj->comm, '\0', sizeof(kobj->comm));
+	kallsyms_lookup((unsigned long) call_site, NULL, NULL, &(kobj->modsymb),
+			kobj->funcstr);
 	/* task information */
 	if (in_irq()) {
 		kobj->pid = 0;
@@ -910,7 +988,9 @@ static void __memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 
 	atomic_long_inc(&memorizer_num_tracked_allocs);
 
-#if MEMORIZER_DEBUG >= 3
+
+
+#if MEMORIZER_DEBUG >= 4
 	pr_info("alloca from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
 		(void*)call_site, ptr, bytes_alloc, (unsigned long long)
 		gfp_flags);
@@ -1119,6 +1199,7 @@ static int memorizer_late_init(void)
 	//__memorizer_print_events(10);
 	//dump_freed_kobjs();
 	//__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
+	//print_pdf_table();
 
 	__memorizer_exit();
 
@@ -1161,7 +1242,6 @@ int memorizer_init_from_driver(void)
 	print_stats();
 
 	__memorizer_exit();
-
 	return 0;
 }
 EXPORT_SYMBOL(memorizer_init_from_driver);

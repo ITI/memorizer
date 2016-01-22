@@ -709,8 +709,8 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 #if 0 /* TODO: this is to make the testing faster */
 	for(i=0; i<sizeof(comm); i++)
 		ma->comm[i] = comm[i];
-#endif
 	ma->comm[i] = '\0';
+#endif
 }
 
 /**

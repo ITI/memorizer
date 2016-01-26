@@ -1227,7 +1227,7 @@ int memorizer_init_from_driver(void)
 
 	print_stats();
 
-#if MEMORIZER_DEBUG > 1
+#if MEMORIZER_DEBUG >= 1
 	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 
 	pr_info("The free'd Kobj list");

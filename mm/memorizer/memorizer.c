@@ -1005,6 +1005,11 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		return;
 	}
 
+#if 0 // Prototype for filtering: static though so leave off
+	if(call_site < selinux.b || call_site >= crypto_code_region.e)
+		return;
+#endif
+
 	atomic_long_inc(&memorizer_num_tracked_allocs);
 
 	__memorizer_enter();

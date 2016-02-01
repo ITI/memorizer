@@ -79,6 +79,7 @@ void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
 				      size_t bytes_req, size_t bytes_alloc,
 				      gfp_t gfp_flags, int node);
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr);
+void memorizer_register_global(const void *ptr, size_t size);
 
 /* Temporary Debug and test code */
 int __memorizer_get_opsx(void);
@@ -112,6 +113,7 @@ void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
 				      size_t bytes_req, size_t bytes_alloc,
 				      gfp_t gfp_flags, int node){}
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr){}
+void memorizer_register_global(const void *ptr, size_t size){}
 #endif /* CONFIG_MEMORIZER */
 
 #endif /* __MEMORIZER_H_ */

@@ -303,6 +303,8 @@ static atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
 static atomic_long_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
 static atomic_long_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
 static atomic_long_t stats_num_page_allocs = ATOMIC_INIT(0);
+static atomic_long_t stats_num_globals = ATOMIC_INIT(0);
+static atomic_long_t stats_num_induced_allocs = ATOMIC_INIT(0);
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
@@ -442,24 +444,28 @@ static void print_pdf_table(void)
 static void print_stats(void)
 {
 	pr_info("------- Memory Accesses -------\n");
-	pr_info("\tTracked:		%16ld\n",
+	pr_info("    Tracked:			\t%16ld\n",
 		atomic_long_read(&memorizer_num_accesses) -
 		atomic_long_read(&memorizer_num_untracked_accesses) -
 		atomic_long_read(&memorizer_caused_accesses)
 		);
-	pr_info("\tNot-tracked:		%16ld\n",
+	pr_info("    Not-tracked:		\t%16ld\n",
 		atomic_long_read(&memorizer_num_untracked_accesses));
-	pr_info("\tMemorizer-Induced:	%16ld\n",
+	pr_info("    Memorizer-Induced:		%16ld\n",
 		atomic_long_read(&memorizer_caused_accesses));
-	pr_info("\tTotal:		\t%16ld\n",
+	pr_info("    Total:			\t%16ld\n",
 		atomic_long_read(&memorizer_num_accesses));
 	pr_info("------- Memory Allocations -------\n");
-	pr_info("  \tTracked (kmalloc+kmem_cache):	%16ld\n",
+	pr_info("    Tracked (kmalloc+kmem_cache):     %16ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs));
-	pr_info("\tUntracked (kmalloc+kmem_cache):	%16ld\n",
+	pr_info("    Untracked (kmalloc+kmem_cache):   %16ld\n",
 		atomic_long_read(&memorizer_num_untracked_allocs));
-	pr_info("\tPage Alloc (total):		%16ld\n",
+	pr_info("    Memorizer induced:                %16ld\n",
+		atomic_long_read(&memorizer_num_untracked_allocs));
+	pr_info("    Page Alloc (total):               %16ld\n",
 		atomic_long_read(&stats_num_page_allocs));
+	pr_info("    Global Var (total):               %16ld\n",
+		atomic_long_read(&stats_num_globals));
 }
 
 /**
@@ -1108,7 +1114,16 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t)
 			       page_address(page));
 	__memorizer_exit();
-#endif
+}
+
+void memorizer_register_global(const void *ptr, size_t size)
+{
+	static int once = 0;
+	atomic_long_inc(&stats_num_globals);
+	if(once>26300)
+		return;
+	++once;
+	__memorizer_kmalloc(0, ptr, size, size, 0);
 }
 
 //==-- Memorizer Initializtion --------------------------------------------==//

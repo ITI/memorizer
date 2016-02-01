@@ -458,6 +458,8 @@ static void register_global(struct kasan_global *global)
 	kasan_poison_shadow(global->beg + aligned_size,
 		global->size_with_redzone - aligned_size,
 		KASAN_GLOBAL_REDZONE);
+
+	memorizer_register_global(global->beg, global->size);
 }
 
 void __asan_register_globals(struct kasan_global *globals, size_t size)

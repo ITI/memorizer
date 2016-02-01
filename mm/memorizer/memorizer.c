@@ -809,8 +809,10 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->freed_kobjs);
 	memset(kobj->comm, '\0', sizeof(kobj->comm));
-	kallsyms_lookup((unsigned long) call_site, NULL, NULL, &(kobj->modsymb),
-			kobj->funcstr);
+	/* Some of the call sites are not tracked correctly so don't try */
+	if(call_site)
+		kallsyms_lookup((unsigned long) call_site, NULL, NULL,
+				&(kobj->modsymb), kobj->funcstr);
 	/* task information */
 	if (in_irq()) {
 		kobj->pid = 0;

@@ -983,15 +983,14 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
  *
  * Track the allocation and add the object to the set of active object tree.
  */
-static void __memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
-			 bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
+static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
+				       size_t bytes_req, size_t bytes_alloc,
+				       gfp_t gfp_flags)
 {
 	unsigned long flags;
 	struct memorizer_kobj *kobj;
 
-	//unlikely(IS_ERR(ptr)))
-	//if(object > crypto_code_region.b && object < crypto_code_region.e)
-	if(unlikely(ptr==NULL))
+	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
 		return;
 
 	if(unlikely(!memorizer_enabled))

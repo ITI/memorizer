@@ -999,9 +999,15 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		return;
 	}
 
+	if(in_memorizer())
+	{
+		atomic_long_inc(&stats_num_induced_allocs);
+		return;
+	}
+
 	atomic_long_inc(&memorizer_num_tracked_allocs);
 
-
+	__memorizer_enter();
 
 #if MEMORIZER_DEBUG >= 4
 	pr_info("alloca from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
@@ -1021,24 +1027,22 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	/* subcall to an non-memorizer function that re-enters ma code */
 	unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+
+	__memorizer_exit();
 }
 
 /*** HOOKS similar to the kmem points ***/
 void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
-	__memorizer_enter();
 	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
-	__memorizer_exit();
 }
 
 void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
 			   node)
 {
-	__memorizer_enter();
 	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
-	__memorizer_exit();
 }
 
 void memorizer_kfree(unsigned long call_site, const void *ptr)
@@ -1058,22 +1062,14 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
 				bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
-	if(in_memorizer())
-		return;
-	__memorizer_enter();
 	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
-	__memorizer_exit();
 }
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
 				      size_t bytes_req, size_t bytes_alloc,
 				      gfp_t gfp_flags, int node)
 {
-	if(in_memorizer())
-		return;
-	__memorizer_enter();
 	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
-	__memorizer_exit();
 }
 
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)

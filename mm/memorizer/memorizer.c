@@ -1095,22 +1095,21 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
 			   int order)
 {
-	if(in_memorizer())
-		return;
 	atomic_long_inc(&stats_num_page_allocs);
-#if FIXME
-	__memorizer_enter();
-	__memorizer_kmalloc(call_site, page_address(page),
-			    (uintptr_t) (PAGE_SIZE << order),
-			    (uintptr_t) (PAGE_SIZE << order), 0);
-	__memorizer_exit();
-#endif
+
+	static int once1 = 0;
+	if(once1>400)
+		return;
+	++once1;
+
+	//__memorizer_kmalloc(call_site, page_address(page),
+	//		    (uintptr_t) (PAGE_SIZE << order),
+	//		    (uintptr_t) (PAGE_SIZE << order), 0);
 }
 
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 			  int order)
 {
-#if FIXME
 	/* 
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason

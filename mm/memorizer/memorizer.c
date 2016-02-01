@@ -221,9 +221,15 @@ struct code_region audit_code_region = {
 	.e = 0xffffffff8116b550
 };
 
+struct code_region selinux = {
+	.b = 0xffffffff81475450,
+	.e = 0xffffffff814a3000
+};
+
+
 struct code_region crypto_code_region = {
-	.b = 0xffffffff814a3520,
-	.e = 0xffffffff814d61e0
+	.b = 0xffffffff814a3000,
+	.e = 0xffffffff814cee00
 };
 
 /* TODO make this dynamically allocated based upon free memory */

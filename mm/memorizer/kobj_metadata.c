@@ -54,72 +54,78 @@
 
 #include "kobj_metadata.h"
 
-struct lt_dir kobj_dir;
+/* allocate table and add to the dir */
+extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
+extern void *alloc_pages_exact(size_t size, gfp_t gfp_mask);
+
+//struct lt_l3_tbl kobj_l3_tbl;
+struct lt_l2_tbl kobj_l2_tbl;
+
+static struct lt_l1_tbl * lt_l1_alloc(void)
+{
+	struct lt_l1_tbl *l1_tbl;
+	int i = 0;
+
+	//l1ptr = alloc_pages(sizeof(struct lt_l1), GFP_ATOMIC);
+
+	l1_tbl = (struct lt_l1_tbl *)
+		//__get_free_pages(GFP_ATOMIC, sizeof(struct lt_l1_tbl) /
+		//		 PAGE_SIZE);
+		alloc_pages_exact(sizeof(struct lt_l1_tbl), GFP_ATOMIC);
+
+	if(!l1_tbl)
+	{
+		pr_err("failed to allocate table");
+		panic("help");
+		return 0;
+	}
+
+	/* Zero out the memory */
+	for(i = 0; i < LT_L1_ENTRIES; ++i)
+		l1_tbl->kobj_ptrs[i] = 0;
+
+	return l1_tbl;
+}
 
 int lt_insert_kobj(struct memorizer_kobj *kobj)
 {
-	struct lt_tbl *tbl;
-	uint64_t dir_i;
-	uint64_t tbl_i;
+	struct lt_l1_tbl **l2e;
+	uint64_t l1_i = 0;
 	uintptr_t va = kobj->va_ptr;
 	uintptr_t kobjend = kobj->va_ptr + kobj->size;
 
 	while(va < kobjend)
 	{
-		/* find the table from the directory and alloc if needed */
-		dir_i = lt_dir_index(va);
+		/* Pointer to the l2 entry for va */
+		l2e = lt_l2_entry(&kobj_l2_tbl, va);
 
-		if (dir_i >= LT_DIR_ENTRIES)
-		{
-			pr_info("Dir index out of bounds\n");
+		/* Table is not allocated yet so do it and set the entry in l2 */
+		if(!*l2e){
+			*l2e = lt_l1_alloc();
 		}
 
-		tbl = kobj_dir.tbl_ptrs[dir_i];
+		//entries = set_l1_entries(va, kobj);
 
-		if(!tbl){
-			/* allocate table and add to the dir */
-			//tbl = alloc_pages(sizeof(struct lt_tbl), GFP_ATOMIC);
-			extern unsigned long __get_free_pages(gfp_t gfp_mask,
-							      unsigned int
-							      order);
+		l1_i = lt_l1_tbl_index(va);
 
-			extern void *alloc_pages_exact(size_t size, gfp_t
-						       gfp_mask);
-			//tbl = (struct lt_tbl *) __get_free_pages(GFP_ATOMIC,
-							 //LT_TBL_SIZE/PAGE_SIZE);
-			tbl = alloc_pages_exact(sizeof(struct lt_tbl)/PAGE_SIZE,
-						GFP_ATOMIC);
-			if(!tbl)
-			{
-				pr_err("failed to allocate table");
-				panic("help");
-				return -1;
-			}
-			memset(tbl,0,sizeof(struct lt_tbl));
-			kobj_dir.tbl_ptrs[dir_i] = tbl;
-		}
-
-		tbl_i = lt_tbl_index(va);
-
-		while(tbl_i < LT_TBL_ENTRIES && va < kobjend)
+		while(l1_i < LT_L1_ENTRIES && va < kobjend)
 		{
-			/* get the pointer to the tbl_entry for this va byte */
-			struct memorizer_kobj **tbl_entry =
-				lt_tbl_entry_get(tbl,tbl_i);
+			/* get the pointer to the l1_entry for this va byte */
+			struct memorizer_kobj **l1e = lt_l1_entry(*l2e,va);
 
 			/* If it is not null then we are double allocating */
-			if(*tbl_entry){
+			if(*l1e){
 				pr_err("Cannot insert 0x%lx into lookup table"
 				       " (overlaps existing)\n", kobj->va_ptr);
 				return -1;
 			}
 
 			/* insert the object pointer in the table for byte va */
-			*tbl_entry = kobj;
+			*l1e = kobj;
 
 			/* Track the end of the table and the object tracking */
 			va += 1;
-			++tbl_i;
+			++l1_i;
 		}
 	}
 	return 0;
@@ -127,35 +133,39 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 
 void lt_remove_kobj(struct memorizer_kobj *kobj)
 {
+#if 0
 	uintptr_t va = kobj->va_ptr;
 	uintptr_t kobjend = kobj->va_ptr + kobj->size;
 	while(va<kobjend)
 	{
-		struct lt_tbl ** dir_entry = lt_dir_entry(&kobj_dir, va);
+		struct lt_l1 ** dir_entry = lt_dir_entry(&kobj_dir, va);
 		if(!*dir_entry)
 		{
 			pr_info("<free> No table entry");
 			return;
 		}
-		(*dir_entry)->kobj_ptrs[lt_tbl_index(va)] = NULL;
+		(*dir_entry)->kobj_ptrs[lt_l1_index(va)] = NULL;
 		va += 1;
 	}
+#endif
 }
 
 struct memorizer_kobj * lt_get_kobj(uintptr_t va)
 {
 	struct memorizer_kobj *kobj = NULL;
-	struct lt_tbl ** dir_entry = lt_dir_entry(&kobj_dir, va);
+#if 0
+	struct lt_l1 ** dir_entry = lt_dir_entry(&kobj_dir, va);
 	if(!*dir_entry)
 		return NULL;
 
-	kobj = (*dir_entry)->kobj_ptrs[lt_tbl_index(va)];
+	kobj = (*dir_entry)->kobj_ptrs[lt_l1_index(va)];
 
+#endif
 	return kobj;
 }
 
 void __init lt_init(void)
 {
 	/* Zero the page dir contents */
-	memset(&kobj_dir, 0, sizeof(kobj_dir));
+	memset(&kobj_l2_tbl, 0, sizeof(kobj_l2_tbl));
 }

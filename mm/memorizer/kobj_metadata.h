@@ -115,46 +115,59 @@ struct memorizer_kobj {
  * 2**23 entries * 8 Bytes per  =  67 MB directory table table
  * 2**24 tables * 8 bytes	= 134 MB Table Size to track 16 MB of VA space
  */
-#define LT_TBL_MASK_BITS	24
-#define LT_DIR_MASK_BITS	(47 - LT_TBL_MASK_BITS)
+#define LT_L1_SHIFT		24
+#define LT_L1_ENTRIES		(_AC(1,UL) << LT_L1_SHIFT)
+#define LT_L1_ENTRY_SIZE	(sizeof(void *))
+#define LT_L1_SIZE		(LT_L1_ENTRIES * LT_L1_ENTRY_SIZE)
+
+#define LT_L2_SHIFT		47
+#define LT_L2_ENTRIES		(_AC(1,UL) << (LT_L2_SHIFT - LT_L1_SHIFT))
+#define LT_L2_ENTRY_SIZE	(sizeof(void *))
+#define LT_L2_SIZE		(LT_L2_ENTRIES * LT_L2_ENTRY_SIZE)
+
+#define LT_L3_SHIFT		47
+#define LT_L3_ENTRIES		(_AC(1,UL) << (LT_L3_SHIFT - LT_L2_SHIFT))
+#define LT_L3_ENTRY_SIZE	(sizeof(void *))
+#define LT_L3_SIZE		(LT_L3_ENTRIES * LT_L3_ENTRY_SIZE)
 
 #define LT_KADDR_MASK \
-	(~((1UL << (LT_TBL_MASK_BITS + LT_DIR_MASK_BITS)) - 1))
+	(~((1UL << (LT_L1_SHIFT + LT_L2_SHIFT + LT_L3_SHIFT)) - 1))
 
-#define LT_TBL_ENTRIES	(_AC(1,UL) << LT_TBL_MASK_BITS)
-#define LT_DIR_ENTRIES	(_AC(1,UL) << LT_DIR_MASK_BITS)
-
-#define LT_TBL_ENTRY_SIZE	(sizeof(void *))
-#define LT_DIR_ENTRY_SIZE	(sizeof(void *))
-
-#define LT_TBL_SIZE	(LT_TBL_ENTRIES * LT_TBL_ENTRY_SIZE)
-#define LT_DIR_SIZE	(LT_DIR_ENTRIES * LT_DIR_ENTRY_SIZE)
-#define LT_PTR_SIZE	sizeof(void *)
-
-struct lt_tbl {
-	struct memorizer_kobj *kobj_ptrs[LT_TBL_SIZE];
+struct lt_l1_tbl {
+	struct memorizer_kobj *kobj_ptrs[LT_L1_ENTRIES];
 };
 
-struct lt_dir {
-	struct lt_tbl *tbl_ptrs[LT_DIR_ENTRIES];
+struct lt_l2_tbl {
+	struct lt_l1_tbl *l1_tbls[LT_L2_ENTRIES];
 };
 
-#define lt_dir_index(va) \
-	(va >> LT_TBL_MASK_BITS) & (LT_DIR_ENTRIES - 1)
+struct lt_l3_tbl {
+	struct lt_l2_tbl *l2_tbls[LT_L3_ENTRIES];
+};
 
-inline struct lt_tbl **lt_dir_entry(struct lt_dir *dir, uintptr_t va)
+#define lt_l1_tbl_index(va)	(va & (LT_L1_ENTRIES - 1))
+#define lt_l2_tbl_index(va)	((va >> LT_L1_SHIFT) & (LT_L2_ENTRIES - 1))
+#define lt_l3_tbl_index(va)	((va >> LT_L3_SHIFT) & (LT_L3_ENTRIES - 1))
+
+static inline struct memorizer_kobj **lt_l1_entry(struct lt_l1_tbl *l1_tbl,
+						  uintptr_t va)
 {
-	return &dir->tbl_ptrs[lt_dir_index(va)];
+	return &(l1_tbl->kobj_ptrs[lt_l1_tbl_index(va)]);
 }
 
-//inline struct lt_tbl *lt_dir_set(struct lt_dir *dir, uintptr_t va)
-//{
-	//return &(*dir[lt_dir_index(va)]);
-//}
+static inline struct lt_l1_tbl **lt_l2_entry(struct lt_l2_tbl *l2_tbl, uintptr_t
+					     va)
+{
+	return &l2_tbl->l1_tbls[lt_l2_tbl_index(va)];
+}
 
-#define lt_tbl_index(va)		va & (LT_TBL_ENTRIES - 1)
-#define lt_tbl_entry_get(tbl,index)	&(tbl->kobj_ptrs[index]);
+static inline struct lt_l2_tbl **lt_l3_entry(struct lt_l3_tbl *l3_tbl, uintptr_t
+					     va)
+{
+	return &l3_tbl->l2_tbls[lt_l3_tbl_index(va)];
+}
 
+//==-- External Interface -------------------------------------------------==//
 void lt_init(void);
 int lt_insert_kobj(struct memorizer_kobj *kobj);
 void lt_remove_kobj(struct memorizer_kobj *kobj);

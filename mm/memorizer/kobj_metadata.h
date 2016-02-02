@@ -95,25 +95,17 @@ struct memorizer_kobj {
  * Documentation/x86/x86_64/mm.txt. This means bit 43 is always set, which means
  * we can remove all bytes where it is unset: TODO Optimization.
  *
- * This value is analogous to PAGE_OFFSET
- *
- *  63             47 46                      24                      0
- * +-----------------+---*-------------------+------------------------+
- * |      ---        |       Directory       |         Table          |
+ *  63             47 46               30              15             0
+ * +-----------------+---*------------+---------------+---------------+
+ * |      ---        |       L3       |      L2       |       L1      |
  * +-----------------+-----------------------+------------------------+
  *
- * Right now I assume that all allocation are serviced from the direct mapped
- * region. This may not be the case as I'm not sure where module allocations
- * come from.
+ * The lookup table maps each byte of allocatable virtual address space to a
+ * pointer to kernel object metadata--> 8 byte pointer.
  *
- * So the table effectively maps each byte of allocatable virtual address space
- * to a pointer to kernel object metadata--> 8 byte pointer.
+ * I tried to do a 2 level table, but it was too big. Given knowledge about
+ * where the allocator services VAs from we could reduce this size a lot.
  *
- */
-
-/* 
- * 2**23 entries * 8 Bytes per  =  67 MB directory table table
- * 2**24 tables * 8 bytes	= 134 MB Table Size to track 16 MB of VA space
  */
 #define LT_L1_SHIFT		15
 #define LT_L1_ENTRIES		(_AC(1,UL) << LT_L1_SHIFT)

@@ -1071,15 +1071,9 @@ void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
 			   int order)
 {
 	atomic_long_inc(&stats_num_page_allocs);
-
-	static int once1 = 0;
-	if(once1>400)
-		return;
-	++once1;
-
-	//__memorizer_kmalloc(call_site, page_address(page),
-	//		    (uintptr_t) (PAGE_SIZE << order),
-	//		    (uintptr_t) (PAGE_SIZE << order), 0);
+	__memorizer_kmalloc(call_site, page_address(page),
+			    (uintptr_t) (PAGE_SIZE << order),
+			    (uintptr_t) (PAGE_SIZE << order), 0);
 }
 
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned

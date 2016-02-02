@@ -1102,9 +1102,6 @@ void memorizer_register_global(const void *ptr, size_t size)
 {
 	static int once = 0;
 	atomic_long_inc(&stats_num_globals);
-	if(once>26300)
-		return;
-	++once;
 	__memorizer_kmalloc(0, ptr, size, size, 0);
 }
 

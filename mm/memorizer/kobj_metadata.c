@@ -58,8 +58,35 @@
 extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
 extern void *alloc_pages_exact(size_t size, gfp_t gfp_mask);
 
-//struct lt_l3_tbl kobj_l3_tbl;
-struct lt_l2_tbl kobj_l2_tbl;
+struct lt_l3_tbl kobj_l3_tbl;
+
+static struct memorizer_kobj **tbl_get_l1_entry(uint64_t va)
+{
+	struct memorizer_kobj **l1e;
+	struct lt_l1_tbl **l2e;
+	struct lt_l2_tbl **l3e;
+
+	l3e = lt_l3_entry(&kobj_l3_tbl, va);
+	if(!*l3e)
+	{
+		//pr_info("<free> No table entry");
+		return NULL;
+	}
+
+	l2e = lt_l2_entry(*l3e, va);
+	if(!*l2e){
+		//pr_info("<free> No table entry");
+		return NULL;
+	}
+
+	l1e = lt_l1_entry(*l2e, va);
+	if(!*l1e){
+		//pr_info("<free> No table entry");
+		return NULL;
+	}
+	return l1e;
+}
+
 
 static struct lt_l1_tbl * lt_l1_alloc(void)
 {
@@ -70,7 +97,7 @@ static struct lt_l1_tbl * lt_l1_alloc(void)
 
 	l1_tbl = (struct lt_l1_tbl *)
 		//__get_free_pages(GFP_ATOMIC, sizeof(struct lt_l1_tbl) /
-		//		 PAGE_SIZE);
+				 //PAGE_SIZE);
 		alloc_pages_exact(sizeof(struct lt_l1_tbl), GFP_ATOMIC);
 
 	if(!l1_tbl)
@@ -87,19 +114,49 @@ static struct lt_l1_tbl * lt_l1_alloc(void)
 	return l1_tbl;
 }
 
+static struct lt_l2_tbl * lt_l2_alloc(void)
+{
+	struct lt_l2_tbl *l2_tbl;
+	int i = 0;
+
+	l2_tbl = (struct lt_l2_tbl *)
+		//__get_free_pages(GFP_ATOMIC, sizeof(struct lt_l2_tbl) /
+		//		 PAGE_SIZE);
+		alloc_pages_exact(sizeof(struct lt_l2_tbl), GFP_ATOMIC);
+
+	if(!l2_tbl)
+	{
+		pr_err("failed to allocate table");
+		panic("help");
+		return 0;
+	}
+
+	/* Zero out the memory */
+	for(i = 0; i < LT_L2_ENTRIES; ++i)
+		l2_tbl->l1_tbls[i] = 0;
+
+	return l2_tbl;
+}
+
 int lt_insert_kobj(struct memorizer_kobj *kobj)
 {
 	struct lt_l1_tbl **l2e;
+	struct lt_l2_tbl **l3e;
 	uint64_t l1_i = 0;
 	uintptr_t va = kobj->va_ptr;
 	uintptr_t kobjend = kobj->va_ptr + kobj->size;
 
 	while(va < kobjend)
 	{
-		/* Pointer to the l2 entry for va */
-		l2e = lt_l2_entry(&kobj_l2_tbl, va);
+		/* Pointer to the l2 entry for va and alloc if needed */
+		l3e = lt_l3_entry(&kobj_l3_tbl, va);
+		if(!*l3e)
+		{
+			*l3e = lt_l2_alloc();
+		}
 
-		/* Table is not allocated yet so do it and set the entry in l2 */
+		/* Pointer to the l2 entry for va  and alloc if needed */
+		l2e = lt_l2_entry(*l3e, va);
 		if(!*l2e){
 			*l2e = lt_l1_alloc();
 		}
@@ -115,9 +172,8 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 
 			/* If it is not null then we are double allocating */
 			if(*l1e){
-				pr_err("Cannot insert 0x%lx into lookup table"
+				pr_err("Inserting 0x%lx into lookup table"
 				       " (overlaps existing)\n", kobj->va_ptr);
-				return -1;
 			}
 
 			/* insert the object pointer in the table for byte va */
@@ -131,41 +187,46 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 	return 0;
 }
 
-void lt_remove_kobj(struct memorizer_kobj *kobj)
+struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
 {
-#if 0
-	uintptr_t va = kobj->va_ptr;
-	uintptr_t kobjend = kobj->va_ptr + kobj->size;
-	while(va<kobjend)
+	struct memorizer_kobj **l1e, *kobj;
+	uintptr_t kobjend;
+
+	l1e = tbl_get_l1_entry(va);
+	if(!l1e)
+		kobj = NULL;
+	else
+		kobj = *l1e;
+
+	if(kobj)
 	{
-		struct lt_l1 ** dir_entry = lt_dir_entry(&kobj_dir, va);
-		if(!*dir_entry)
+		kobjend = kobj->va_ptr + kobj->size;
+		while(va<kobjend)
 		{
-			pr_info("<free> No table entry");
-			return;
+			/*TODO Optimize this: can just use the indices on the l1
+			 * tbl instead of getting the entry from the top each
+			 * time.
+			 */
+			l1e = tbl_get_l1_entry(va);
+			if(l1e)
+				*l1e = NULL;
+			va += 1;
 		}
-		(*dir_entry)->kobj_ptrs[lt_l1_index(va)] = NULL;
-		va += 1;
 	}
-#endif
+	return kobj;
 }
 
 struct memorizer_kobj * lt_get_kobj(uintptr_t va)
 {
-	struct memorizer_kobj *kobj = NULL;
-#if 0
-	struct lt_l1 ** dir_entry = lt_dir_entry(&kobj_dir, va);
-	if(!*dir_entry)
+	struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
+	if(l1e)
+		return *l1e;
+	else
 		return NULL;
-
-	kobj = (*dir_entry)->kobj_ptrs[lt_l1_index(va)];
-
-#endif
-	return kobj;
 }
 
 void __init lt_init(void)
 {
 	/* Zero the page dir contents */
-	memset(&kobj_l2_tbl, 0, sizeof(kobj_l2_tbl));
+	memset(&kobj_l3_tbl, 0, sizeof(kobj_l3_tbl));
 }

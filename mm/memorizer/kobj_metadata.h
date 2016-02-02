@@ -115,12 +115,12 @@ struct memorizer_kobj {
  * 2**23 entries * 8 Bytes per  =  67 MB directory table table
  * 2**24 tables * 8 bytes	= 134 MB Table Size to track 16 MB of VA space
  */
-#define LT_L1_SHIFT		24
+#define LT_L1_SHIFT		15
 #define LT_L1_ENTRIES		(_AC(1,UL) << LT_L1_SHIFT)
 #define LT_L1_ENTRY_SIZE	(sizeof(void *))
 #define LT_L1_SIZE		(LT_L1_ENTRIES * LT_L1_ENTRY_SIZE)
 
-#define LT_L2_SHIFT		47
+#define LT_L2_SHIFT		30
 #define LT_L2_ENTRIES		(_AC(1,UL) << (LT_L2_SHIFT - LT_L1_SHIFT))
 #define LT_L2_ENTRY_SIZE	(sizeof(void *))
 #define LT_L2_SIZE		(LT_L2_ENTRIES * LT_L2_ENTRY_SIZE)
@@ -170,7 +170,7 @@ static inline struct lt_l2_tbl **lt_l3_entry(struct lt_l3_tbl *l3_tbl, uintptr_t
 //==-- External Interface -------------------------------------------------==//
 void lt_init(void);
 int lt_insert_kobj(struct memorizer_kobj *kobj);
-void lt_remove_kobj(struct memorizer_kobj *kobj);
+struct memorizer_kobj * lt_remove_kobj(uintptr_t va);
 struct memorizer_kobj * lt_get_kobj(uintptr_t va);
 
 #endif /* __KOBJ_METADATA_H_ */

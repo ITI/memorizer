@@ -98,7 +98,6 @@
 #include <linux/jiffies.h>
 #include <linux/kallsyms.h>
 #include <linux/kernel.h>
-#include <linux/kmemleak.h>
 #include <linux/memorizer.h>
 #include <linux/module.h>
 #include <linux/mm.h>
@@ -113,6 +112,8 @@
 
 #include <asm/atomic.h>
 #include <asm/percpu.h>
+
+#include "kobj_metadata.h"
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
@@ -173,40 +174,6 @@ struct mem_access_worklists {
 	 uint64_t writes;
 	 uint64_t reads;
  };
-
-/** 
- * struct memorizer_kobj - metadata for kernel objects 
- * @rb_node:		the red-black tree relations
- * @alloc_ip:		instruction that allocated the object
- * @va_ptr:		Virtual address of the beginning of the object
- * @pa_ptr:		Physical address of the beginning of object
- * @size:		Size of the object
- * @jiffies:		Time stamp of creation
- * @pid:		PID of the current task
- * @comm:		Executable name
- * @kobj_list:		List of all objects allocated
- * @access_counts:	List of memory access count structures
- *
- * This data structure captures the details of allocated objects
- */
-struct memorizer_kobj {
-	struct rb_node	rb_node;
-	rwlock_t	rwlock;
-	long		obj_id;
-	uintptr_t	alloc_ip;
-	uintptr_t	free_ip;
-	uintptr_t	va_ptr;
-	uintptr_t	pa_ptr;
-	size_t		size;
-	unsigned long	alloc_jiffies;
-	unsigned long	free_jiffies;
-	pid_t		pid;
-	char		comm[TASK_COMM_LEN];
-	char		funcstr[KSYM_NAME_LEN];
-	char		*modsymb[KSYM_NAME_LEN];
-	struct list_head	freed_kobjs;
-	struct list_head	access_counts;
-};
 
 /**
  * struct code_region - simple struct to capture begin and end of a code region
@@ -638,8 +605,9 @@ static int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 
 	/* Get the kernel object associated with this VA */
 	read_lock(&active_kobj_rbtree_spinlock);
-	kobj = unlocked_lookup_kobj_rbtree(ma->access_addr,
-					   &active_kobj_rbtree_root);
+	//kobj = unlocked_lookup_kobj_rbtree(ma->access_addr,
+					   //&active_kobj_rbtree_root);
+	kobj = lt_get_kobj(ma->access_addr);
 	read_unlock(&active_kobj_rbtree_spinlock);
 
 	if(!kobj){
@@ -940,7 +908,8 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 	unsigned long flags;
 
 	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
-	kobj = unlocked_lookup_kobj_rbtree(kobj_ptr, &active_kobj_rbtree_root);
+	//kobj = unlocked_lookup_kobj_rbtree(kobj_ptr, &active_kobj_rbtree_root);
+	kobj = lt_remove_kobj(kobj_ptr);
 	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 	/* 
@@ -951,7 +920,7 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		/* remove from the active_kobj_rbtree */
 		write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 		/* External Memorizer Function: Must protect from re-entry */
-		rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
+		//rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
 		write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 		/* Update the free_jiffies for the object */
@@ -1030,7 +999,13 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	/* Grab the writer lock for the active_kobj_rbtree */
 	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 	/* subcall to an non-memorizer function that re-enters ma code */
-	unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
+	//unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
+
+	if(lt_insert_kobj(kobj)){
+		//kmem_cache_free(kobj_cache, kobj);
+		//kobj = NULL;
+	}
+
 	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 	__memorizer_exit();
@@ -1188,6 +1163,7 @@ void __init memorizer_init(void)
 	init_mem_access_wls();
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
+	lt_init();
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = true;

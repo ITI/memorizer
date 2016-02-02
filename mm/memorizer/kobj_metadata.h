@@ -125,6 +125,13 @@ struct memorizer_kobj {
 #define LT_KADDR_MASK \
 	(~((1UL << (LT_L1_SHIFT + LT_L2_SHIFT + LT_L3_SHIFT)) - 1))
 
+//==-- Table data structures -----------------------------------------------==//
+
+/*
+ * Each structure contains an array of pointers to the next level of the lookup.
+ * So the lowest level L1 has an array of pointers to the kobjects, L2 has an
+ * array of pointers to structs of type l2_tbl.
+ */
 struct lt_l1_tbl {
 	struct memorizer_kobj *kobj_ptrs[LT_L1_ENTRIES];
 };
@@ -141,6 +148,12 @@ struct lt_l3_tbl {
 #define lt_l2_tbl_index(va)	((va >> LT_L1_SHIFT) & (LT_L2_ENTRIES - 1))
 #define lt_l3_tbl_index(va)	((va >> LT_L3_SHIFT) & (LT_L3_ENTRIES - 1))
 
+/*
+ * lt_l*_entry() --- get the table entry associated with the virtual address
+ *
+ * This uses ** because the value returned is a pointer to the table entry, but
+ * also can be dereferenced to point to the next level down.
+ */
 static inline struct memorizer_kobj **lt_l1_entry(struct lt_l1_tbl *l1_tbl,
 						  uintptr_t va)
 {

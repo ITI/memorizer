@@ -146,7 +146,7 @@ struct lt_l3_tbl {
 
 #define lt_l1_tbl_index(va)	(va & (LT_L1_ENTRIES - 1))
 #define lt_l2_tbl_index(va)	((va >> LT_L1_SHIFT) & (LT_L2_ENTRIES - 1))
-#define lt_l3_tbl_index(va)	((va >> LT_L3_SHIFT) & (LT_L3_ENTRIES - 1))
+#define lt_l3_tbl_index(va)	((va >> LT_L2_SHIFT) & (LT_L3_ENTRIES - 1))
 
 /*
  * lt_l*_entry() --- get the table entry associated with the virtual address

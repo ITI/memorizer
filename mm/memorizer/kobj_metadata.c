@@ -57,48 +57,51 @@
 /* allocate table and add to the dir */
 extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
 extern void *alloc_pages_exact(size_t size, gfp_t gfp_mask);
+extern void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title);
 
 struct lt_l3_tbl kobj_l3_tbl;
 
+static struct lt_l3_tbl kobj_l3_tbl;
+
+/**
+ * tbl_get_l1_entry() --- get the l1 entry
+ * @va:	The virtual address to lookup
+ *
+ * Typical table walk starting from top to bottom. 
+ *
+ * Return: the return value is a pointer to the entry in the table, which means
+ * it is a double pointer to the object pointed to by the region. To simplify
+ * lookup and setting this returns a double pointer so access to both the entry
+ * and the object in the entry can easily be obtained.
+ */
 static struct memorizer_kobj **tbl_get_l1_entry(uint64_t va)
 {
 	struct memorizer_kobj **l1e;
 	struct lt_l1_tbl **l2e;
 	struct lt_l2_tbl **l3e;
 
+	/* Do the lookup starting from the top */
 	l3e = lt_l3_entry(&kobj_l3_tbl, va);
 	if(!*l3e)
-	{
-		//pr_info("<free> No table entry");
 		return NULL;
-	}
-
 	l2e = lt_l2_entry(*l3e, va);
-	if(!*l2e){
-		//pr_info("<free> No table entry");
+	if(!*l2e)
 		return NULL;
-	}
-
 	l1e = lt_l1_entry(*l2e, va);
-	if(!*l1e){
-		//pr_info("<free> No table entry");
+	if(!*l1e)
 		return NULL;
-	}
 	return l1e;
 }
 
-
-static struct lt_l1_tbl * lt_l1_alloc(void)
+/**
+ * l1_alloc() --- allocate an l1 table
+ */
+static struct lt_l1_tbl * l1_alloc(void)
 {
 	struct lt_l1_tbl *l1_tbl;
 	int i = 0;
 
-	//l1ptr = alloc_pages(sizeof(struct lt_l1), GFP_ATOMIC);
-
-	l1_tbl = (struct lt_l1_tbl *)
-		//__get_free_pages(GFP_ATOMIC, sizeof(struct lt_l1_tbl) /
-				 //PAGE_SIZE);
-		alloc_pages_exact(sizeof(struct lt_l1_tbl), GFP_ATOMIC);
+	l1_tbl = alloc_pages_exact(sizeof(struct lt_l1_tbl), GFP_ATOMIC);
 
 	if(!l1_tbl)
 	{
@@ -172,8 +175,30 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 
 			/* If it is not null then we are double allocating */
 			if(*l1e){
+				/* 
+				 * There is some missing free's currently, it
+				 * isn't clear what is causing them; however, if
+				 * we assume objets are allocated before use
+				 * then the most recent allocation will be
+				 * vialbe for an writes to these regions so we
+				 * just leave it alone. Need to solve though.
+				 * XXX:TODO
+				 */
 				pr_err("Inserting 0x%lx into lookup table"
-				       " (overlaps existing)\n", kobj->va_ptr);
+				       " (overlaps existing)\n", va);
+#if 0 // Debug code
+				__print_memorizer_kobj(*l1e, "Orig Kobj:");
+				__print_memorizer_kobj(kobj, "New Kobj:");
+				pr_info("L3 Entry Index: %p\n",
+					lt_l3_tbl_index(va));
+				pr_info("L2 Entry Index: %p\n",
+					lt_l2_tbl_index(va));
+				pr_info("L1 Entry Index: %p\n",
+					lt_l1_tbl_index(va));
+#endif
+				/* TODO: to be safe move the kobj to the free
+				 * list.
+				 */
 			}
 
 			/* insert the object pointer in the table for byte va */
@@ -187,23 +212,34 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 	return 0;
 }
 
+/**
+ * lt_remove_kobj() --- remove object from the table
+ * @va: pointer to the beginning of the object
+ */
 struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
 {
 	struct memorizer_kobj **l1e, *kobj;
 	uintptr_t kobjend;
 
+	/* 
+	 * Get the l1 entry for the va, if there is not entry then we not only
+	 * haven't tracked the object, but we also haven't allocated a l1 page
+	 * for the particular address
+	 */
 	l1e = tbl_get_l1_entry(va);
 	if(!l1e)
-		kobj = NULL;
-	else
-		kobj = *l1e;
+		return NULL;
 
-	if(kobj)
-	{
+	kobj = *l1e;
+
+	//if(strcmp(kobj->funcstr,"__kernfs_new_node") == 0)
+		//__print_memorizer_kobj(kobj,"Freeing the bad one");
+
+	if(kobj){
+		/* For each byte in the object set the l1 entry to NULL */
 		kobjend = kobj->va_ptr + kobj->size;
-		while(va<kobjend)
-		{
-			/*TODO Optimize this: can just use the indices on the l1
+		while(va<kobjend){
+			/* TODO Optimize this: can just use the indices on the l1
 			 * tbl instead of getting the entry from the top each
 			 * time.
 			 */
@@ -216,7 +252,7 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
 	return kobj;
 }
 
-struct memorizer_kobj * lt_get_kobj(uintptr_t va)
+inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
 {
 	struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
 	if(l1e)

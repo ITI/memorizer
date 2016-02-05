@@ -1353,8 +1353,11 @@ static int memorizer_late_init(void)
 	dentryMemDir = debugfs_create_dir("memorizer", NULL);
 	dentry = debugfs_create_file("memorizer_log", S_IRUGO, dentryMemDir,
 				     NULL, &memorizer_fops);
+	// Add a memorizer debug log function
 	dentry = debugfs_create_bool("memorizer_enabled", 644, dentryMemDir,
 				     &memorizer_enabled);
+	dentry = debugfs_create_bool("memorizer_enabled", 644, dentryMemDir,
+				     &memorizer_log_access);
 	if (!dentry)
 		pr_warning("Failed to create the debugfs memorizer file\n");
 

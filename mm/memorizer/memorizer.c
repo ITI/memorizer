@@ -93,6 +93,7 @@
 
 #include <linux/bug.h>
 #include <linux/cpumask.h>
+#include <linux/debugfs.h>
 #include <linux/err.h>
 #include <linux/export.h>
 #include <linux/jiffies.h>
@@ -1100,6 +1101,161 @@ void memorizer_register_global(const void *ptr, size_t size)
 	__memorizer_kmalloc(0, ptr, size, size, 0);
 }
 
+//==-- Memorizer Data Export ----------------------------------------------==//
+
+/*
+ * Iterate over the object_list and return the first valid object at or after
+ * the required position with its use_count incremented. The function triggers
+ * a memory scanning when the pos argument points to the first position.
+ */
+static void *memorizer_seq_start(struct seq_file *seq, loff_t *pos)
+{
+	//loff_t n = *pos;
+
+	if(list_empty(&freed_kobjs))
+	   return NULL;
+
+	return list_first_entry(&freed_kobjs, struct memorizer_kobj,
+				freed_kobjs);
+	//err = mutex_lock_interruptible(&scan_mutex);
+	//if (err < 0)
+		//return ERR_PTR(err);
+
+	//rcu_read_lock();
+	//list_for_each_entry_rcu(object, &object_list, object_list) {
+		//if (n-- > 0)
+			//continue;
+		//if (get_object(object))
+			//goto out;
+	//}
+	//object = NULL;
+//out:
+	//return object;
+}
+
+/*
+ */
+static void *memorizer_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+{
+	unsigned long flags;
+	struct memorizer_kobj *prev_kobj = v;
+	struct memorizer_kobj *next_kobj = NULL;
+	//struct memorizer_object *kobj = prev_kobj;
+
+	++(*pos);
+
+	write_lock_irqsave(&freed_kobjs_spinlock, flags);
+
+	/* Get the next kobj */
+	next_kobj = list_entry(prev_kobj->freed_kobjs.next, struct
+			       memorizer_kobj, freed_kobjs);
+
+	/* Remove the previous from the list */
+	list_del(&prev_kobj->freed_kobjs);
+
+
+	/* TODO: free the memory */
+
+	if(list_empty(&next_kobj->freed_kobjs))
+		next_kobj = NULL;
+
+	write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+
+	return next_kobj;
+
+	//list_for_each_entry_continue_rcu(obj, &object_list, object_list) {
+		//if (get_object(obj)) {
+			//next_obj = obj;
+			//break;
+		//}
+	//}
+
+	//put_object(prev_obj);
+	//return next_obj;
+}
+
+/*
+ */
+static void memorizer_seq_stop(struct seq_file *seq, void *v)
+{
+	/* do nothing */
+}
+
+/*
+ * Print the information for an unreferenced object to the seq file.
+ */
+static int memorizer_seq_show(struct seq_file *seq, void *v)
+{
+	struct memorizer_kobj *kobj = v;
+	struct list_head * listptr;
+	struct access_from_counts *entry;
+	unsigned long flags;
+
+	read_lock_irqsave(&kobj->rwlock, flags);
+
+	seq_printf(seq,"%p,%p,%p,%lu,%d,%s\n",
+		   (void*) kobj->alloc_ip, (void*) kobj->free_ip, (void*)
+		   kobj->va_ptr, kobj->size, kobj->pid, kobj->comm);
+
+	list_for_each(listptr, &(kobj->access_counts)){
+		entry = list_entry(listptr, struct access_from_counts, list);
+		//seq_printf(seq, "  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
+		seq_printf(seq, "  %p,%d,%llu,%llu\n",
+			(void *) entry->ip, entry->pid,
+			(unsigned long long) entry->writes,
+			(unsigned long long) entry->reads);
+	}
+
+	read_unlock_irqrestore(&kobj->rwlock, flags);
+	return 0;
+}
+
+static const struct seq_operations memorizer_seq_ops = {
+	.start = memorizer_seq_start,
+	.next  = memorizer_seq_next,
+	.stop  = memorizer_seq_stop,
+	.show  = memorizer_seq_show,
+};
+
+static int memorizer_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &memorizer_seq_ops);
+}
+
+static ssize_t memorizer_write(struct file *file, const char __user *user_buf,
+			       size_t size, loff_t *ppos)
+{
+	char buf[64];
+	int buf_size;
+	int ret;
+
+#if 0
+	buf_size = min(size, (sizeof(buf) - 1));
+	if (strncpy_from_user(buf, user_buf, buf_size) < 0)
+		return -EFAULT;
+	buf[buf_size] = 0;
+
+	if (strncmp(buf, "clear", 5) == 0) {
+		if (kmemleak_enabled)
+			kmemleak_clear();
+		else
+			__kmemleak_do_cleanup();
+		goto out;
+	}
+#endif
+
+	return 0;
+}
+
+static const struct file_operations memorizer_fops = {
+	.owner		= THIS_MODULE,
+	.open		= memorizer_open,
+	.read		= seq_read,
+	.write		= memorizer_write,
+	.llseek		= seq_lseek,
+	.release	= seq_release,
+};
+
 //==-- Memorizer Initializtion --------------------------------------------==//
 
 /**
@@ -1169,14 +1325,17 @@ void __init memorizer_init(void)
 static int memorizer_late_init(void)
 {
 	unsigned long flags;
-	//struct dentry *dentry;
-
-	//dentry = debugfs_create_file("memorizer", S_IRUGO, NULL, NULL,
-				     //&kmemleak_fops);
-	//if (!dentry)
-		//pr_warning("Failed to create the debugfs kmemleak file\n");
+	struct dentry *dentry, *dentryMemDir;
 
 	__memorizer_enter();
+
+	dentryMemDir = debugfs_create_dir("memorizer", NULL);
+	dentry = debugfs_create_file("memorizer_log", S_IRUGO, dentryMemDir,
+				     NULL, &memorizer_fops);
+	dentry = debugfs_create_bool("memorizer_enabled", 644, dentryMemDir,
+				     &memorizer_enabled);
+	if (!dentry)
+		pr_warning("Failed to create the debugfs memorizer file\n");
 
 	local_irq_save(flags);
 	memorizer_enabled = true;

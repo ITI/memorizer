@@ -285,7 +285,7 @@ static atomic_long_t stats_num_induced_allocs = ATOMIC_INIT(0);
  * Grab reader lock if you want to  make sure things don't get modified while we
  * are printing
  */
-static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
+void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 {
 	struct list_head * listptr;
 	struct access_from_counts *entry;
@@ -311,6 +311,7 @@ static void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 			(unsigned long long) entry->reads);
 	}
 }
+EXPORT_SYMBOL(__print_memorizer_kobj);
 
 /**
  * read_locking_print_memorizer_kobj() - grap the reader spinlock then print
@@ -434,7 +435,7 @@ static void print_stats(void)
 	pr_info("    Untracked (kmalloc+kmem_cache):   %16ld\n",
 		atomic_long_read(&memorizer_num_untracked_allocs));
 	pr_info("    Memorizer induced:                %16ld\n",
-		atomic_long_read(&memorizer_num_untracked_allocs));
+		atomic_long_read(&stats_num_induced_allocs));
 	pr_info("    Page Alloc (total):               %16ld\n",
 		atomic_long_read(&stats_num_page_allocs));
 	pr_info("    Global Var (total):               %16ld\n",

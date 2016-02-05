@@ -206,9 +206,11 @@ DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 
 /* flag to keep track of whether or not to track writes */
 static bool memorizer_enabled = false;
+module_param(memorizer_enabled, bool, 0644);
 
 /* flag enable/disable memory access logging */
 static bool memorizer_log_access = false;
+module_param(memorizer_log_access, bool, 0644);
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;

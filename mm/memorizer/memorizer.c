@@ -1094,9 +1094,9 @@ void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
 			   int order)
 {
 	atomic_long_inc(&stats_num_page_allocs);
-	__memorizer_kmalloc(call_site, page_address(page),
-			    (uintptr_t) (PAGE_SIZE << order),
-			    (uintptr_t) (PAGE_SIZE << order), 0);
+	//__memorizer_kmalloc(call_site, page_address(page),
+			    //(uintptr_t) (PAGE_SIZE << order),
+			    //(uintptr_t) (PAGE_SIZE << order), 0);
 }
 
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
@@ -1397,8 +1397,8 @@ int memorizer_init_from_driver(void)
 
 	print_stats();
 
-#if MEMORIZER_DEBUG >= 1
-	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+#if MEMORIZER_DEBUG >= 5
+	//read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 
 	pr_info("The free'd Kobj list");
 	dump_freed_kobjs();
@@ -1406,7 +1406,7 @@ int memorizer_init_from_driver(void)
 	pr_info("The live kernel object tree now:");
 	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
 
-	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+	//read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 #endif
 
 	print_stats();

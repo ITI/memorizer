@@ -59,7 +59,8 @@ extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
 extern void *alloc_pages_exact(size_t size, gfp_t gfp_mask);
 extern void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title);
 
-struct lt_l3_tbl kobj_l3_tbl;
+/* RW Spinlock for access to rb tree */
+DEFINE_RWLOCK(lookup_tbl_rw_lock);
 
 static struct lt_l3_tbl kobj_l3_tbl;
 
@@ -104,11 +105,7 @@ static struct lt_l1_tbl * l1_alloc(void)
 	l1_tbl = alloc_pages_exact(sizeof(struct lt_l1_tbl), GFP_ATOMIC);
 
 	if(!l1_tbl)
-	{
-		pr_err("failed to allocate table");
-		panic("help");
-		return 0;
-	}
+		panic("Failed to allocate table for memorizer kobj\n");
 
 	/* Zero out the memory */
 	for(i = 0; i < LT_L1_ENTRIES; ++i)
@@ -117,22 +114,18 @@ static struct lt_l1_tbl * l1_alloc(void)
 	return l1_tbl;
 }
 
-static struct lt_l2_tbl * lt_l2_alloc(void)
+/** 
+ * l2_alloc() - alloc level 2 table
+ */
+static struct lt_l2_tbl * l2_alloc(void)
 {
 	struct lt_l2_tbl *l2_tbl;
 	int i = 0;
 
-	l2_tbl = (struct lt_l2_tbl *)
-		//__get_free_pages(GFP_ATOMIC, sizeof(struct lt_l2_tbl) /
-		//		 PAGE_SIZE);
-		alloc_pages_exact(sizeof(struct lt_l2_tbl), GFP_ATOMIC);
+	l2_tbl = alloc_pages_exact(sizeof(struct lt_l2_tbl), GFP_ATOMIC);
 
 	if(!l2_tbl)
-	{
-		pr_err("failed to allocate table");
-		panic("help");
-		return 0;
-	}
+		panic("Failed to allocate table for memorizer kobj\n");
 
 	/* Zero out the memory */
 	for(i = 0; i < LT_L2_ENTRIES; ++i)
@@ -141,6 +134,58 @@ static struct lt_l2_tbl * lt_l2_alloc(void)
 	return l2_tbl;
 }
 
+/**
+ * l2_entry_may_alloc() - get the l2 entry and alloc if needed
+ * @l2_tbl:	pointer to the l2 table to look into
+ * @va:		Pointer of the va to index into the table
+ *
+ * Check if the l1 table exists, if not allocate. Lock this update so that we
+ * don't get double allocations for the entry.
+ */
+static struct lt_l1_tbl **l2_entry_may_alloc(struct lt_l2_tbl *l2_tbl, uintptr_t
+					     va)
+{
+	unsigned long flags;
+	struct lt_l1_tbl **l2e;
+	write_lock_irqsave(&lookup_tbl_rw_lock, flags);
+	l2e = lt_l2_entry(l2_tbl, va);
+	if(unlikely(!*l2e))
+		*l2e = l1_alloc();
+	write_unlock_irqrestore(&lookup_tbl_rw_lock, flags);
+	return l2e;
+}
+
+/**
+ * l3_entry_may_alloc() - get the l3 entry and alloc if needed
+ * @va:		Pointer of the va to index into the table
+ *
+ * Check if the l2 table exists, if not allocate. Lock this update so that we
+ * don't get double allocations for the entry.
+ */
+static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t va)
+{
+	unsigned long flags;
+	struct lt_l2_tbl **l3e;
+	write_lock_irqsave(&lookup_tbl_rw_lock, flags);
+	l3e = lt_l3_entry(&kobj_l3_tbl, va);
+	if(unlikely(!*l3e))
+		*l3e = l2_alloc();
+	write_unlock_irqrestore(&lookup_tbl_rw_lock, flags);
+	return l3e;
+}
+
+/**
+ * lt_insert_kobj() - insert kobject into the lookup table
+ * @kobj:	pointer to the kobj to insert
+ *
+ * For each virtual address in the range of the kobj allocation set the l1 table
+ * entry mapping for the virtual address to the kobj pointer. The function
+ * starts by getting the l2 table from the global l3 table. If it doesn't exist
+ * then allocates the table. The same goes for looking up the l1 table for the
+ * given va. Once the particular l1 table is obtained for the start va of the
+ * object, iterate through the table setting each entry of the object to the
+ * given kobj pointer. 
+ */
 int lt_insert_kobj(struct memorizer_kobj *kobj)
 {
 	struct lt_l1_tbl **l2e;
@@ -151,21 +196,19 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 
 	while(va < kobjend)
 	{
+		/* Pointer to the l3 entry for va and alloc if needed */
+		l3e = l3_entry_may_alloc(va);
+
 		/* Pointer to the l2 entry for va and alloc if needed */
-		l3e = lt_l3_entry(&kobj_l3_tbl, va);
-		if(!*l3e)
-		{
-			*l3e = lt_l2_alloc();
-		}
+		l2e = l2_entry_may_alloc(*l3e, va);
 
-		/* Pointer to the l2 entry for va  and alloc if needed */
-		l2e = lt_l2_entry(*l3e, va);
-		if(!*l2e){
-			*l2e = lt_l1_alloc();
-		}
-
-		//entries = set_l1_entries(va, kobj);
-
+		/* 
+		 * Get the index for this va for boundary on this l1 table;
+		 * however, TODO, this might not be needed as our table indices
+		 * are page aligned and it might be unlikely allocations are
+		 * page aligned and will not traverse the boundary of an l1
+		 * table. Note taht I have not tested this condition yet. 
+		 */
 		l1_i = lt_l1_tbl_index(va);
 
 		while(l1_i < LT_L1_ENTRIES && va < kobjend)

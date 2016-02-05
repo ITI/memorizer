@@ -120,6 +120,8 @@
 #define MEMORIZER_DEBUG		1
 #define FIXME			0
 
+#define MEMORIZER_STATS		1
+
 //==-- Prototype Declarations ---------------------------------------------==//
 static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 							   struct rb_root *
@@ -602,17 +604,17 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
  * already operating with interrupts off and preemption disabled, and thus we
  * cannot sleep.
  */
-static int find_and_update_kobj_access(struct memorizer_mem_access *ma)
+static inline int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 {
 	struct memorizer_kobj *kobj = NULL;
 	struct access_from_counts *afc = NULL;
 
 	/* Get the kernel object associated with this VA */
-	read_lock(&active_kobj_rbtree_spinlock);
+	//read_lock(&active_kobj_rbtree_spinlock);
 	//kobj = unlocked_lookup_kobj_rbtree(ma->access_addr,
 					   //&active_kobj_rbtree_root);
 	kobj = lt_get_kobj(ma->access_addr);
-	read_unlock(&active_kobj_rbtree_spinlock);
+	//read_unlock(&active_kobj_rbtree_spinlock);
 
 	if(!kobj){
 		atomic_long_inc(&memorizer_num_untracked_accesses);
@@ -714,7 +716,14 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	struct memorizer_mem_access ma;
 	struct mem_access_worklists * ma_wls;
 
+#if MEMORIZER_STATS // Stats take time per access
 	atomic_long_inc(&memorizer_num_accesses);
+
+	if(!(lt_get_kobj(addr)))
+	{
+		atomic_long_inc(&memorizer_num_untracked_accesses);
+		return;
+	}
 
 	if(!memorizer_log_access){
 		atomic_long_inc(&memorizer_num_untracked_accesses);
@@ -725,9 +734,17 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	if(in_memorizer()){
 		atomic_long_inc(&memorizer_caused_accesses);
 		return;
-	} else {
-		__memorizer_enter();
 	}
+#else
+	if(!(lt_get_kobj(addr)))
+		return;
+	if(!memorizer_log_access)
+		return;
+	if(in_memorizer())
+		return;
+#endif
+
+	__memorizer_enter();
 
 	local_irq_save(flags);
 
@@ -911,10 +928,11 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 
 	unsigned long flags;
 
-	read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	//read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 	//kobj = unlocked_lookup_kobj_rbtree(kobj_ptr, &active_kobj_rbtree_root);
 	kobj = lt_remove_kobj(kobj_ptr);
-	read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+	//kobj = lt_get_kobj(kobj_ptr);
+	//read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 	/* 
 	 * If this is null it means we are freeing something we did not insert
@@ -922,10 +940,11 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 	 */
 	if(kobj){
 		/* remove from the active_kobj_rbtree */
-		write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+		//write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 		/* External Memorizer Function: Must protect from re-entry */
 		//rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
-		write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+		//lt_remove_kobj(kobj_ptr);
+		//write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 		/* Update the free_jiffies for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
@@ -1001,7 +1020,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
 
 	/* Grab the writer lock for the active_kobj_rbtree */
-	write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	//write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 	/* subcall to an non-memorizer function that re-enters ma code */
 	//unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
 
@@ -1010,7 +1029,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		//kobj = NULL;
 	}
 
-	write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+	//write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 	__memorizer_exit();
 }

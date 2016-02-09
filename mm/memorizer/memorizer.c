@@ -902,7 +902,7 @@ static struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj
 			pr_err("Cannot insert 0x%lx into the object search tree"
 			       " (overlaps existing)\n", kobj->va_ptr);
 			__print_memorizer_kobj(parent, "");
-			kmem_cache_free(kobj_cache, kobj);
+			kmem_cache_free(&kobj_cache, kobj);
 			kobj = NULL;
 			break;
 		}
@@ -1062,7 +1062,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	//unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
 
 	if(lt_insert_kobj(kobj)){
-		//kmem_cache_free(kobj_cache, kobj);
+		//kmem_cache_free(&kobj_cache, kobj);
 		//kobj = NULL;
 	}
 

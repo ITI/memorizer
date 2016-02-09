@@ -832,6 +832,43 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 }
 
 /**
+ * clear_free_list() --- remove entries from free list and free kobjs
+ */
+static void clear_free_list(void)
+{
+	struct memorizer_kobj *kobj;
+	struct access_from_counts *afc;
+	unsigned long flags;
+
+	pr_info("Clearing the free'd list\n");
+
+	__memorizer_enter();
+	write_lock_irqsave(&freed_kobjs_spinlock, flags);
+	/* free each kobj */
+	while(!list_empty(&freed_kobjs))
+	{
+		kobj = list_first_entry(&freed_kobjs, struct memorizer_kobj,
+					freed_kobjs);
+		/* remove the kobj from the free-list */
+		list_del(&kobj->freed_kobjs);
+
+		/* Free each memory_access object */
+		read_lock(&kobj->rwlock);
+		while(!list_empty(&kobj->access_counts)){
+			afc = list_first_entry(&kobj->access_counts, struct
+					       access_from_counts, list);
+			list_del(&afc->list);
+			kmem_cache_free(&access_from_counts_cache, afc);
+		}
+		read_unlock(&kobj->rwlock);
+		/* free the kobj */
+		kmem_cache_free(&kobj_cache, kobj);
+	}
+	write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+	__memorizer_exit();
+}
+
+/**
  * add_kobj_to_rb_tree - add the object to the tree
  * @kobj:	Pointer to the object to add to the tree
  *

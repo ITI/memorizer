@@ -107,6 +107,7 @@
 #include <linux/rbtree.h>
 #include <linux/rwlock.h>
 #include <linux/sched.h>
+#include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/smp.h>
@@ -1162,64 +1163,103 @@ void memorizer_register_global(const void *ptr, size_t size)
 //==-- Memorizer Data Export ----------------------------------------------==//
 
 /*
- * Iterate over the object_list and return the first valid object at or after
- * the required position with its use_count incremented. The function triggers
- * a memory scanning when the pos argument points to the first position.
+ * memorizer_seq_start() --- get the head of the free'd kobj list
+ *
+ * Grab the lock here and give back on close. There is an interesting
+ * problem here in that when the data gets to the page size limit for
+ * printing the sequence file will close the file and open up again
+ * coming to the start location having processed a subset of the list
+ * already. The problem with this is that without having
+ * __memorizer_enter() it will add objects to the list, opening the
+ * potential for an infinite loop. I think though the number of objects
+ * created on the last iteration will be less than a page and therefore
+ * allow it to conclude. FIXME if not the case.
+ *
+ * Note that this printout consumes the list.
+ *
+ * TODO: ADD live kobject tree
+ *
+ * Also note in this instance we don't care if we start in the middle because we
+ * always start at the first node and move on. 
  */
+static unsigned long seq_flags;
+static bool sequence_done = false;
+extern struct list_head *seq_list_start(struct list_head *head, loff_t pos);
 static void *memorizer_seq_start(struct seq_file *seq, loff_t *pos)
 {
-	//loff_t n = *pos;
+	struct list_head *lh;
+	__memorizer_enter();
+	write_lock_irqsave(&freed_kobjs_spinlock, seq_flags);
 
-	if(list_empty(&freed_kobjs))
-	   return NULL;
+	//pr_info("Sequence start pos: %d\n", *pos);
+	if(*pos == 0){
+		//pr_info("List Head ptr: %p\n", &freed_kobjs);
+		sequence_done = false;
+		return freed_kobjs.next;
+	}
 
-	return list_first_entry(&freed_kobjs, struct memorizer_kobj,
-				freed_kobjs);
-	//err = mutex_lock_interruptible(&scan_mutex);
-	//if (err < 0)
-		//return ERR_PTR(err);
+	/* 
+	 * For some reason the start is called every time after a done, which
+	 * allows more entries to be added to the list. So we add this flag so
+	 * that any entries added after won't make the sequence continue forever
+	 * in an infinite loop.
+	 */
+	if(sequence_done == true)
+		return NULL;
 
-	//rcu_read_lock();
-	//list_for_each_entry_rcu(object, &object_list, object_list) {
-		//if (n-- > 0)
-			//continue;
-		//if (get_object(object))
-			//goto out;
-	//}
-	//object = NULL;
-//out:
-	//return object;
+	//pr_info("After: List Head ptr: %p\n", &freed_kobjs);
+	//++*pos;
+	lh = seq_list_start(&freed_kobjs, *pos);
+	//pr_info("entry list_head ptr: %p\n", lh);
+	if(lh == NULL)
+		return NULL;
+	//__print_memorizer_kobj(list_entry(lh, struct memorizer_kobj,
+					  //freed_kobjs), "Seq Start");
+#if 0 
+	if(*pos >= 20)
+		return NULL;
+	BUG();
+#endif
+	return lh == &freed_kobjs ? NULL : lh;
 }
 
 /*
  */
+extern struct list_head *seq_list_next(void *v, struct list_head *head, loff_t
+				       *ppos);
 static void *memorizer_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
-	unsigned long flags;
-	struct memorizer_kobj *prev_kobj = v;
-	struct memorizer_kobj *next_kobj = NULL;
-	//struct memorizer_object *kobj = prev_kobj;
+	//pr_info("Seq next curr pos %d: entry_list_head: %p, nexthead: %p\n", *pos, v,
+		//((struct list_head *)v)->next);
+	return seq_list_next(v, &freed_kobjs, pos);
 
-	++(*pos);
-
-	write_lock_irqsave(&freed_kobjs_spinlock, flags);
-
-	/* Get the next kobj */
-	next_kobj = list_entry(prev_kobj->freed_kobjs.next, struct
-			       memorizer_kobj, freed_kobjs);
-
-	/* Remove the previous from the list */
+#if 0
+	/* remove the kobj from the tree, we should have the lock */
 	list_del(&prev_kobj->freed_kobjs);
 
+	/* free the kobj TODO: disentangle print from free */
+	kmem_cache_free(kobj_cache, prev_kobj);
 
-	/* TODO: free the memory */
+	return list_first_entry_or_null(&freed_kobjs, struct memorizer_kobj,
+					freed_kobjs);
+#endif
+	/* Get the next kobj */
+	//next_kobj = list_entry(prev_kobj->freed_kobjs.next, struct
+			       //memorizer_kobj, freed_kobjs);
 
-	if(list_empty(&next_kobj->freed_kobjs))
-		next_kobj = NULL;
+	/* Remove the previous from the list */
+	//list_del(&prev_kobj->freed_kobjs);
 
-	write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
 
-	return next_kobj;
+	/* TODO: free the kobj */
+
+	//if(list_empty(&next_kobj->freed_kobjs))
+		//next_kobj = NULL;
+
+	//write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+
+	//return next_kobj;
+	//return NULL;
 
 	//list_for_each_entry_continue_rcu(obj, &object_list, object_list) {
 		//if (get_object(obj)) {
@@ -1233,39 +1273,52 @@ static void *memorizer_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 }
 
 /*
- */
-static void memorizer_seq_stop(struct seq_file *seq, void *v)
-{
-	/* do nothing */
-}
-
-/*
  * Print the information for an unreferenced object to the seq file.
  */
 static int memorizer_seq_show(struct seq_file *seq, void *v)
 {
-	struct memorizer_kobj *kobj = v;
-	struct list_head * listptr;
-	struct access_from_counts *entry;
+	struct list_head *listptr;
+	struct list_head *p;
+	struct access_from_counts *afc;
 	unsigned long flags;
+	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
+						 freed_kobjs);
+	read_lock(&kobj->rwlock);
 
-	read_lock_irqsave(&kobj->rwlock, flags);
+	//__print_memorizer_kobj(list_entry(v, struct memorizer_kobj,
+					  //freed_kobjs), "Seq Show");
+	/* Print object allocation info */
+	seq_printf(seq,"%ld,%p,%p,%p,%lu,%d,%s\n", kobj->obj_id,
+		   (void*) kobj->alloc_ip, (void*) kobj->free_ip,
+		   (void*) kobj->va_ptr, kobj->size, kobj->pid,
+		   kobj->comm);
 
-	seq_printf(seq,"%p,%p,%p,%lu,%d,%s\n",
-		   (void*) kobj->alloc_ip, (void*) kobj->free_ip, (void*)
-		   kobj->va_ptr, kobj->size, kobj->pid, kobj->comm);
-
-	list_for_each(listptr, &(kobj->access_counts)){
-		entry = list_entry(listptr, struct access_from_counts, list);
-		//seq_printf(seq, "  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
+	/* print each access IP with counts and remove from list */
+	while(!list_empty(&kobj->access_counts)){
+		afc = list_first_entry(&kobj->access_counts, struct
+				       access_from_counts, list);
+		//seq_printf(seq, "  Access IP: %p, PID: %d, Writes:
+		//%llu, Reads: %llu\n",
 		seq_printf(seq, "  %p,%d,%llu,%llu\n",
-			(void *) entry->ip, entry->pid,
-			(unsigned long long) entry->writes,
-			(unsigned long long) entry->reads);
+			   (void *) afc->ip, afc->pid,
+			   (unsigned long long) afc->writes,
+			   (unsigned long long) afc->reads);
 	}
 
-	read_unlock_irqrestore(&kobj->rwlock, flags);
+	read_unlock(&kobj->rwlock);
 	return 0;
+}
+
+/*
+ */
+static void memorizer_seq_stop(struct seq_file *seq, void *v)
+{
+	//pr_info("Sequence stop: current head: %p\n", v);
+	if(!v){
+		sequence_done = true;
+	}
+	write_unlock_irqrestore(&freed_kobjs_spinlock, seq_flags);
+	__memorizer_exit();
 }
 
 static const struct seq_operations memorizer_seq_ops = {

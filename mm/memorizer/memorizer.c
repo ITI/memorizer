@@ -208,12 +208,13 @@ struct code_region crypto_code_region = {
 DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 
 /* flag to keep track of whether or not to track writes */
-static bool memorizer_enabled = false;
-module_param(memorizer_enabled, bool, 0644);
+//static bool memorizer_enabled = false;
+static uint32_t memorizer_enabled = false;
+//module_param(memorizer_enabled, bool, 0644);
 
 /* flag enable/disable memory access logging */
-static bool memorizer_log_access = false;
-module_param(memorizer_log_access, bool, 0644);
+static uint32_t memorizer_log_access = false;
+//module_param(memorizer_log_access, bool, 0644);
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
@@ -1443,7 +1444,7 @@ static int memorizer_late_init(void)
 	// Add a memorizer debug log function
 	dentry = debugfs_create_bool("memorizer_enabled", 644, dentryMemDir,
 				     &memorizer_enabled);
-	dentry = debugfs_create_bool("memorizer_enabled", 644, dentryMemDir,
+	dentry = debugfs_create_bool("memorizer_log_access", 644, dentryMemDir,
 				     &memorizer_log_access);
 	if (!dentry)
 		pr_warning("Failed to create the debugfs memorizer file\n");

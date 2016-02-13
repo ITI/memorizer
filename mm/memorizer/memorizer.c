@@ -841,7 +841,7 @@ static void clear_free_list(void)
 	struct access_from_counts *afc;
 	unsigned long flags;
 
-	pr_info("Clearing the free'd list\n");
+	pr_info("Clearing the free'd objects\n");
 
 	__memorizer_enter();
 	write_lock_irqsave(&freed_kobjs_spinlock, flags);

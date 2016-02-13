@@ -720,8 +720,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 #if MEMORIZER_STATS // Stats take time per access
 	atomic_long_inc(&memorizer_num_accesses);
 
-	if(!(lt_get_kobj(addr)))
-	{
+	if(!(lt_get_kobj(addr))){
 		atomic_long_inc(&memorizer_num_untracked_accesses);
 		return;
 	}

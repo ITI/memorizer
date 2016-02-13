@@ -994,7 +994,7 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 
 		/* Insert into the process queue */
 		write_lock_irqsave(&freed_kobjs_spinlock, flags);
-		list_add(&kobj->freed_kobjs, &freed_kobjs);
+		//list_add(&kobj->freed_kobjs, &freed_kobjs);
 		write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
 	}
 }
@@ -1058,16 +1058,18 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	/* Grab the writer lock for the active_kobj_rbtree */
 	//write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	write_lock_irqsave(&freed_kobjs_spinlock, flags);
 	/* subcall to an non-memorizer function that re-enters ma code */
 	//unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
 
 	if(lt_insert_kobj(kobj)){
-		//kmem_cache_free(&kobj_cache, kobj);
+		//kmem_cache_free(kobj_cache, kobj);
 		//kobj = NULL;
 	}
+	list_add_tail(&kobj->freed_kobjs, &freed_kobjs);
 
-	//write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
-
+	//write_unlock_irqrestore(&freed_kobjs, flags);
+	write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
 	__memorizer_exit();
 }
 

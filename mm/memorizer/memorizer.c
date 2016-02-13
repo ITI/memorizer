@@ -859,11 +859,11 @@ static void clear_free_list(void)
 			afc = list_first_entry(&kobj->access_counts, struct
 					       access_from_counts, list);
 			list_del(&afc->list);
-			kmem_cache_free(&access_from_counts_cache, afc);
+			kmem_cache_free(access_from_counts_cache, afc);
 		}
 		read_unlock(&kobj->rwlock);
 		/* free the kobj */
-		kmem_cache_free(&kobj_cache, kobj);
+		kmem_cache_free(kobj_cache, kobj);
 	}
 	write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
 	__memorizer_exit();
@@ -903,7 +903,7 @@ static struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj
 			pr_err("Cannot insert 0x%lx into the object search tree"
 			       " (overlaps existing)\n", kobj->va_ptr);
 			__print_memorizer_kobj(parent, "");
-			kmem_cache_free(&kobj_cache, kobj);
+			kmem_cache_free(kobj_cache, kobj);
 			kobj = NULL;
 			break;
 		}
@@ -1374,10 +1374,8 @@ static const struct file_operations memorizer_fops = {
  */
 static void create_obj_kmem_cache(void)
 {
-	kobj_cache = KMEM_CACHE(memorizer_kobj,
-				SLAB_PANIC
-				//| SLAB_TRACE | SLAB_NOLEAKTRACE
-			       );
+	/* TODO: Investigate these flags SLAB_TRACE | SLAB_NOLEAKTRACE */
+	kobj_cache = KMEM_CACHE(memorizer_kobj, SLAB_PANIC);
 }
 
 /**
@@ -1385,11 +1383,9 @@ static void create_obj_kmem_cache(void)
  */
 static void create_access_counts_kmem_cache(void)
 {
-	access_from_counts_cache = KMEM_CACHE(access_from_counts,
-				SLAB_PANIC
-				//| SLAB_TRACE | SLAB_NOLEAKTRACE
-			       );
-	pr_info("Just created kmem_cache object\n");
+	/* TODO: Investigate these flags SLAB_TRACE | SLAB_NOLEAKTRACE */
+	access_from_counts_cache = KMEM_CACHE(access_from_counts, SLAB_PANIC);
+	pr_info("Just created kmem_cache for access_from_counts\n");
 }
 
 /**

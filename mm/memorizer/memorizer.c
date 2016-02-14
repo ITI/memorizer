@@ -1316,6 +1316,48 @@ static const struct file_operations memorizer_fops = {
 	.release	= seq_release,
 };
 
+
+static int stats_seq_show(struct seq_file *seq, void *v)
+{
+	seq_printf(seq,"------- Memory Accesses -------\n");
+	seq_printf(seq,"    Tracked:			\t%16ld\n",
+		atomic_long_read(&memorizer_num_accesses) -
+		atomic_long_read(&memorizer_num_untracked_accesses) -
+		atomic_long_read(&memorizer_caused_accesses)
+		);
+	seq_printf(seq,"    Not-tracked:		\t%16ld\n",
+		atomic_long_read(&memorizer_num_untracked_accesses));
+	seq_printf(seq,"    Memorizer-Induced:		\t%16ld\n",
+		atomic_long_read(&memorizer_caused_accesses));
+	seq_printf(seq,"    Total:			\t%16ld\n",
+		atomic_long_read(&memorizer_num_accesses));
+	seq_printf(seq,"------- Memory Allocations -------\n");
+	seq_printf(seq,"    Tracked (kmalloc+kmem_cache):     %16ld\n",
+		atomic_long_read(&memorizer_num_tracked_allocs));
+	seq_printf(seq,"    Untracked (kmalloc+kmem_cache):   %16ld\n",
+		atomic_long_read(&memorizer_num_untracked_allocs));
+	seq_printf(seq,"    Memorizer induced:                %16ld\n",
+		atomic_long_read(&stats_num_induced_allocs));
+	seq_printf(seq,"    Page Alloc (total):               %16ld\n",
+		atomic_long_read(&stats_num_page_allocs));
+	seq_printf(seq,"    Global Var (total):               %16ld\n",
+		atomic_long_read(&stats_num_globals));
+	return 0;
+}
+
+static int show_stats_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, &stats_seq_show, NULL);
+}
+
+static const struct file_operations show_stats_fops = {
+	.owner		= THIS_MODULE,
+	.open		= show_stats_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 //==-- Memorizer Initializtion --------------------------------------------==//
 
 /**

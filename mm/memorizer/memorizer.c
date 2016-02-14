@@ -620,11 +620,7 @@ static inline int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 	struct access_from_counts *afc = NULL;
 
 	/* Get the kernel object associated with this VA */
-	//read_lock(&active_kobj_rbtree_spinlock);
-	//kobj = unlocked_lookup_kobj_rbtree(ma->access_addr,
-					   //&active_kobj_rbtree_root);
 	kobj = lt_get_kobj(ma->access_addr);
-	//read_unlock(&active_kobj_rbtree_spinlock);
 
 	if(!kobj){
 		atomic_long_inc(&memorizer_num_untracked_accesses);
@@ -633,19 +629,14 @@ static inline int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 
 	/* Grab the object lock here */
 	write_lock(&kobj->rwlock);
-	if(likely(kobj->alloc_jiffies <= ma->jiffies))
-	{
-		/* Search access queue to the entry associated with src_ip */
-		afc = unlckd_insert_get_access_counts(ma->src_ip, ma->pid,
-						      kobj);
-		/* increment teh counter associated with the access type */
-		if(afc)
-			ma->access_type ? ++afc->writes : ++afc->reads;
 
-#if MEMORIZER_DEBUG >= 2
-		__print_memorizer_kobj(kobj, "New Object Access Update");
-#endif
-	}
+	/* Search access queue to the entry associated with src_ip */
+	afc = unlckd_insert_get_access_counts(ma->src_ip, ma->pid,
+					      kobj);
+	/* increment the counter associated with the access type */
+	if(afc)
+		ma->access_type ? ++afc->writes : ++afc->reads;
+
 	write_unlock(&kobj->rwlock);
 	return afc ? 0 : -1;
 }

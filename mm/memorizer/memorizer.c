@@ -650,7 +650,7 @@ static inline int find_and_update_kobj_access(struct memorizer_mem_access *ma)
  * and move on if the update function failed.
  */
 static inline void drain_and_process_access_queue(struct mem_access_worklists *
-						  ma_wls) 
+						  ma_wls)
 {
 	while(ma_wls->head >= 0){
 		//pr_info("Head: %ld", ma_wls->head);

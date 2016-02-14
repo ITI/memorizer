@@ -843,7 +843,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 /**
  * clear_free_list() --- remove entries from free list and free kobjs
  */
-static void clear_free_list(void)
+static void clear_free_kobjs(void)
 {
 	struct memorizer_kobj *kobj;
 	struct access_from_counts *afc;
@@ -1177,7 +1177,7 @@ extern struct list_head *seq_list_next(void *v, struct list_head *head, loff_t
 				       *ppos);
 
 /*
- * memorizer_seq_start() --- get the head of the free'd kobj list
+ * kmap_seq_start() --- get the head of the free'd kobj list
  *
  * Grab the lock here and give back on close. There is an interesting problem
  * here in that when the data gets to the page size limit for printing, the
@@ -1193,7 +1193,7 @@ extern struct list_head *seq_list_next(void *v, struct list_head *head, loff_t
  * any entries added after won't make the sequence continue forever in an
  * infinite loop.
  */
-static void *memorizer_seq_start(struct seq_file *seq, loff_t *pos)
+static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
 {
 	struct list_head *lh;
 	__memorizer_enter();
@@ -1220,17 +1220,17 @@ static void *memorizer_seq_start(struct seq_file *seq, loff_t *pos)
 }
 
 /*
- * memorizer_seq_next() --- move the head pointer in the list or return null
+ * kmap_seq_next() --- move the head pointer in the list or return null
  */
-static void *memorizer_seq_next(struct seq_file *seq, void *v, loff_t *pos)
+static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	return seq_list_next(v, &freed_kobjs, pos);
 }
 
 /*
- * memorizer_seq_show() - print out the object including access info
+ * kmap_seq_show() - print out the object including access info
  */
-static int memorizer_seq_show(struct seq_file *seq, void *v)
+static int kmap_seq_show(struct seq_file *seq, void *v)
 {
 	struct access_from_counts *afc;
 	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
@@ -1257,14 +1257,14 @@ static int memorizer_seq_show(struct seq_file *seq, void *v)
 }
 
 /*
- * memorizer_seq_stop() --- clean up on sequence file stopping
+ * kmap_seq_stop() --- clean up on sequence file stopping
  *
  * Must release locks and ensure that we can re-enter. Also must set the
  * sequence_done flag to avoid an infinit loop, which is required so that we
  * guarantee completions without reentering due to extra allocations between
  * this invocation of stop and the start that happens.
  */
-static void memorizer_seq_stop(struct seq_file *seq, void *v)
+static void kmap_seq_stop(struct seq_file *seq, void *v)
 {
 	if(!v)
 		sequence_done = true;
@@ -1272,26 +1272,26 @@ static void memorizer_seq_stop(struct seq_file *seq, void *v)
 	__memorizer_exit();
 }
 
-static const struct seq_operations memorizer_seq_ops = {
-	.start = memorizer_seq_start,
-	.next  = memorizer_seq_next,
-	.stop  = memorizer_seq_stop,
-	.show  = memorizer_seq_show,
+static const struct seq_operations kmap_seq_ops = {
+	.start = kmap_seq_start,
+	.next  = kmap_seq_next,
+	.stop  = kmap_seq_stop,
+	.show  = kmap_seq_show,
 };
 
-static int memorizer_open(struct inode *inode, struct file *file)
+static int kmap_open(struct inode *inode, struct file *file)
 {
-	return seq_open(file, &memorizer_seq_ops);
+	return seq_open(file, &kmap_seq_ops);
 }
 
-static ssize_t memorizer_write(struct file *file, const char __user *user_buf,
+static ssize_t kmap_write(struct file *file, const char __user *user_buf,
 			       size_t size, loff_t *ppos)
 {
+#if 0
 	char buf[64];
 	int buf_size;
 	int ret;
 
-#if 0
 	buf_size = min(size, (sizeof(buf) - 1));
 	if (strncpy_from_user(buf, user_buf, buf_size) < 0)
 		return -EFAULT;
@@ -1309,15 +1309,30 @@ static ssize_t memorizer_write(struct file *file, const char __user *user_buf,
 	return 0;
 }
 
-static const struct file_operations memorizer_fops = {
+static const struct file_operations kmap_fops = {
 	.owner		= THIS_MODULE,
-	.open		= memorizer_open,
+	.open		= kmap_open,
+	.write		= kmap_write,
 	.read		= seq_read,
-	.write		= memorizer_write,
 	.llseek		= seq_lseek,
 	.release	= seq_release,
 };
 
+/* 
+ * clear_free_list_write() - call the function to clear the free'd kobjs
+ */
+static ssize_t clear_free_kobjs_write(struct file *file, const char __user
+				   *user_buf, size_t size, loff_t *ppos)
+{
+	clear_free_kobjs();
+	*ppos += size;
+	return size;
+}
+
+static const struct file_operations clear_free_kobjs_fops = {
+	.owner		= THIS_MODULE,
+	.write		= clear_free_kobjs_write,
+};
 
 static int stats_seq_show(struct seq_file *seq, void *v)
 {
@@ -1430,9 +1445,15 @@ static int memorizer_late_init(void)
 	__memorizer_enter();
 
 	dentryMemDir = debugfs_create_dir("memorizer", NULL);
-	dentry = debugfs_create_file("memorizer_log", S_IRUGO, dentryMemDir,
-				     NULL, &memorizer_fops);
-	// Add a memorizer debug log function
+	dentry = debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
+				     NULL, &kmap_fops);
+	dentry = debugfs_create_file("clear_free_list", S_IRUGO, dentryMemDir,
+				     NULL, &clear_free_kobjs_fops);
+	dentry = debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
+				     NULL, &show_stats_fops);
+	// TODO: Add a memorizer debug log function
+	//dentry = debugfs_create_file("memorizer_log_debug", S_IRUGO, dentryMemDir,
+	//			     NULL, &memorizer_fops_debug);
 	dentry = debugfs_create_bool("memorizer_enabled", 644, dentryMemDir,
 				     &memorizer_enabled);
 	dentry = debugfs_create_bool("memorizer_log_access", 644, dentryMemDir,

@@ -65,7 +65,7 @@
  *			currently. The code must take this lock prior to
  *			inserting into the rbtree.  
  * 
- *		- freed_kobjs_spinlock: 
+ *		- object_list_spinlock: 
  *			
  *			Lock for the list of all objects. This list is added to
  *			on each kobj free. On log this queue should collect any
@@ -228,7 +228,7 @@ static struct kmem_cache *access_from_counts_cache;
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
 
 /* full list of freed kobjs */
-static LIST_HEAD(freed_kobjs);
+static LIST_HEAD(object_list);
 
 /* global object id reference counter */
 static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
@@ -238,7 +238,7 @@ static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
 DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
 
 /* RW Spinlock for access to freed kobject list */
-DEFINE_RWLOCK(freed_kobjs_spinlock);
+DEFINE_RWLOCK(object_list_spinlock);
 
 /* mask to apply to memorizer allocations TODO: verify the list */
 #define gfp_memorizer_mask(gfp)	(((gfp) & (		\
@@ -402,12 +402,12 @@ static void print_pdf_table(void)
 	struct list_head *p;
 	struct memorizer_kobj *kobj;
 
-	read_lock_irqsave(&freed_kobjs_spinlock, flags);
+	read_lock_irqsave(&object_list_spinlock, flags);
 
-	list_for_each(p, &freed_kobjs){
+	list_for_each(p, &object_list){
 		unsigned int write_deg = 0, read_deg = 0;
 
-		kobj = list_entry(p, struct memorizer_kobj, freed_kobjs);
+		kobj = list_entry(p, struct memorizer_kobj, object_list);
 
 		access_degree(&kobj->access_counts, &write_deg, &read_deg);
 
@@ -415,7 +415,7 @@ static void print_pdf_table(void)
 			write_deg, read_deg);
 
 	}
-	read_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+	read_unlock_irqrestore(&object_list_spinlock, flags);
 
 	/* same for live objects */
 	print_rb_tree_access_counts(active_kobj_rbtree_root.rb_node);
@@ -517,19 +517,19 @@ EXPORT_SYMBOL(__memorizer_print_events);
 
 
 /**
- * dump_freed_kobjs() - print out the list of free'd objects
+ * dump_object_list() - print out the list of free'd objects
  */
-static void dump_freed_kobjs(void)
+static void dump_object_list(void)
 {
 	unsigned long flags;
 	struct list_head *p;
 	struct memorizer_kobj *kobj;
-	read_lock_irqsave(&freed_kobjs_spinlock, flags);
-	list_for_each(p, &freed_kobjs){
-		kobj = list_entry(p, struct memorizer_kobj, freed_kobjs);
+	read_lock_irqsave(&object_list_spinlock, flags);
+	list_for_each(p, &object_list){
+		kobj = list_entry(p, struct memorizer_kobj, object_list);
 		read_locking_print_memorizer_kobj(kobj, "Dump Free'd kobj");
 	}
-	read_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+	read_unlock_irqrestore(&object_list_spinlock, flags);
 }
 
 //----
@@ -811,7 +811,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->free_jiffies = 0;
 	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
 	INIT_LIST_HEAD(&kobj->access_counts);
-	INIT_LIST_HEAD(&kobj->freed_kobjs);
+	INIT_LIST_HEAD(&kobj->object_list);
 	memset(kobj->comm, '\0', sizeof(kobj->comm));
 	/* Some of the call sites are not tracked correctly so don't try */
 	if(call_site)
@@ -885,7 +885,7 @@ static void free_kobj(struct memorizer_kobj * kobj)
 /**
  * clear_free_list() --- remove entries from free list and free kobjs
  */
-static void clear_freed_kobjs(void)
+static void clear_object_list(void)
 {
 	struct memorizer_kobj *kobj;
 	struct list_head *p;
@@ -893,19 +893,19 @@ static void clear_freed_kobjs(void)
 	unsigned long flags;
 	pr_info("Clearing the free'd kernel objects\n");
 	__memorizer_enter();
-	write_lock_irqsave(&freed_kobjs_spinlock, flags);
-	list_for_each_safe(p, tmp, &freed_kobjs)
+	write_lock_irqsave(&object_list_spinlock, flags);
+	list_for_each_safe(p, tmp, &object_list)
 	{
-		kobj = list_entry(p, struct memorizer_kobj, freed_kobjs);
+		kobj = list_entry(p, struct memorizer_kobj, object_list);
 		/* If free_jiffies is 0 then this object is live */
 		if(kobj->free_jiffies > 0) {
 			/* remove the kobj from the free-list */
-			list_del(&kobj->freed_kobjs);
+			list_del(&kobj->object_list);
 			/* Free the object data */
 			free_kobj(kobj);
 		}
 	}
-	write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 	__memorizer_exit();
 }
 
@@ -1034,9 +1034,9 @@ void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
 		write_unlock_irqrestore(&kobj->rwlock, flags);
 
 		/* Insert into the process queue */
-		write_lock_irqsave(&freed_kobjs_spinlock, flags);
-		//list_add(&kobj->freed_kobjs, &freed_kobjs);
-		write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+		write_lock_irqsave(&object_list_spinlock, flags);
+		//list_add(&kobj->object_list, &object_list);
+		write_unlock_irqrestore(&object_list_spinlock, flags);
 	}
 }
 
@@ -1099,7 +1099,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	/* Grab the writer lock for the active_kobj_rbtree */
 	//write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
-	write_lock_irqsave(&freed_kobjs_spinlock, flags);
+	write_lock_irqsave(&object_list_spinlock, flags);
 	/* subcall to an non-memorizer function that re-enters ma code */
 	//unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
 
@@ -1107,10 +1107,10 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		//kmem_cache_free(kobj_cache, kobj);
 		//kobj = NULL;
 	}
-	list_add_tail(&kobj->freed_kobjs, &freed_kobjs);
+	list_add_tail(&kobj->object_list, &object_list);
 
-	//write_unlock_irqrestore(&freed_kobjs, flags);
-	write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
+	//write_unlock_irqrestore(&object_list, flags);
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 	__memorizer_exit();
 }
 
@@ -1229,14 +1229,14 @@ static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
 {
 	struct list_head *lh;
 	__memorizer_enter();
-	write_lock_irqsave(&freed_kobjs_spinlock, seq_flags);
+	write_lock_irqsave(&object_list_spinlock, seq_flags);
 
-	if(list_empty(&freed_kobjs))
+	if(list_empty(&object_list))
 		return NULL;
 
 	if(*pos == 0){
 		sequence_done = false;
-		return freed_kobjs.next;
+		return object_list.next;
 	}
 
 	/* 
@@ -1248,7 +1248,7 @@ static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
 	if(sequence_done == true)
 		return NULL;
 
-	return seq_list_start(&freed_kobjs, *pos);
+	return seq_list_start(&object_list, *pos);
 }
 
 /*
@@ -1256,7 +1256,7 @@ static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
  */
 static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
-	return seq_list_next(v, &freed_kobjs, pos);
+	return seq_list_next(v, &object_list, pos);
 }
 
 /*
@@ -1266,7 +1266,7 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 {
 	struct access_from_counts *afc;
 	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
-						 freed_kobjs);
+						 object_list);
 	read_lock(&kobj->rwlock);
 
 	/* Print object allocation info */
@@ -1300,7 +1300,7 @@ static void kmap_seq_stop(struct seq_file *seq, void *v)
 {
 	if(!v)
 		sequence_done = true;
-	write_unlock_irqrestore(&freed_kobjs_spinlock, seq_flags);
+	write_unlock_irqrestore(&object_list_spinlock, seq_flags);
 	__memorizer_exit();
 }
 
@@ -1353,17 +1353,17 @@ static const struct file_operations kmap_fops = {
 /* 
  * clear_free_list_write() - call the function to clear the free'd kobjs
  */
-static ssize_t clear_freed_kobjs_write(struct file *file, const char __user
+static ssize_t clear_object_list_write(struct file *file, const char __user
 				   *user_buf, size_t size, loff_t *ppos)
 {
-	clear_freed_kobjs();
+	clear_object_list();
 	*ppos += size;
 	return size;
 }
 
-static const struct file_operations clear_freed_kobjs_fops = {
+static const struct file_operations clear_object_list_fops = {
 	.owner		= THIS_MODULE,
-	.write		= clear_freed_kobjs_write,
+	.write		= clear_object_list_write,
 };
 
 static int stats_seq_show(struct seq_file *seq, void *v)
@@ -1479,8 +1479,8 @@ static int memorizer_late_init(void)
 	dentryMemDir = debugfs_create_dir("memorizer", NULL);
 	dentry = debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
 				     NULL, &kmap_fops);
-	dentry = debugfs_create_file("clear_freed_kobjs", S_IRUGO, dentryMemDir,
-				     NULL, &clear_freed_kobjs_fops);
+	dentry = debugfs_create_file("clear_object_list", S_IRUGO, dentryMemDir,
+				     NULL, &clear_object_list_fops);
 	dentry = debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
 				     NULL, &show_stats_fops);
 	// TODO: Add a memorizer debug log function
@@ -1502,7 +1502,7 @@ static int memorizer_late_init(void)
 
 	print_stats();
 	//__memorizer_print_events(10);
-	//dump_freed_kobjs();
+	//dump_object_list();
 	//__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
 	//print_pdf_table();
 
@@ -1536,7 +1536,7 @@ int memorizer_init_from_driver(void)
 	//read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 
 	pr_info("The free'd Kobj list");
-	dump_freed_kobjs();
+	dump_object_list();
 
 	pr_info("The live kernel object tree now:");
 	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);

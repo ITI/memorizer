@@ -841,37 +841,69 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 }
 
 /**
+ * free_access_from_entry() --- free the entry from the kmem_cache
+ */
+static void free_access_from_entry(struct access_from_counts *afc)
+{
+	kmem_cache_free(access_from_counts_cache, afc);
+}
+
+/**
+ * free_access_from_list() --- for each element remove from list and free
+ */
+static void free_access_from_list(struct list_head *afc_lh)
+{
+	struct access_from_counts *afc;
+	struct list_head *p;
+	struct list_head *tmp;
+	list_for_each_safe(p, tmp, afc_lh)
+	{
+		afc = list_entry(p, struct access_from_counts, list);
+		list_del(&afc->list);
+		free_access_from_entry(afc);
+	}
+}
+
+/**
+ * free_kobj() --- free the kobj from the kmem_cache
+ * @kobj:	The memorizer kernel object metadata
+ *
+ * FIXME: there might be a small race here between the write unlock and the
+ * kmem_cache_free. If another thread is trying to read the kobj and is waiting
+ * for the lock, then it could get it. I suppose the whole *free_kobj operation
+ * needs to be atomic, which might be proivded by locking the list in general.
+ */
+static void free_kobj(struct memorizer_kobj * kobj)
+{
+	write_lock(&kobj->rwlock);
+	free_access_from_list(&kobj->access_counts);
+	write_unlock(&kobj->rwlock);
+	kmem_cache_free(kobj_cache, kobj);
+}
+
+
+/**
  * clear_free_list() --- remove entries from free list and free kobjs
  */
-static void clear_free_kobjs(void)
+static void clear_freed_kobjs(void)
 {
 	struct memorizer_kobj *kobj;
-	struct access_from_counts *afc;
+	struct list_head *p;
+	struct list_head *tmp;
 	unsigned long flags;
-
-	pr_info("Clearing the free'd objects\n");
-
+	pr_info("Clearing the free'd kernel objects\n");
 	__memorizer_enter();
 	write_lock_irqsave(&freed_kobjs_spinlock, flags);
-	/* free each kobj */
-	while(!list_empty(&freed_kobjs))
+	list_for_each_safe(p, tmp, &freed_kobjs)
 	{
-		kobj = list_first_entry(&freed_kobjs, struct memorizer_kobj,
-					freed_kobjs);
-		/* remove the kobj from the free-list */
-		list_del(&kobj->freed_kobjs);
-
-		/* Free each memory_access object */
-		read_lock(&kobj->rwlock);
-		while(!list_empty(&kobj->access_counts)){
-			afc = list_first_entry(&kobj->access_counts, struct
-					       access_from_counts, list);
-			list_del(&afc->list);
-			kmem_cache_free(access_from_counts_cache, afc);
+		kobj = list_entry(p, struct memorizer_kobj, freed_kobjs);
+		/* If free_jiffies is 0 then this object is live */
+		if(kobj->free_jiffies > 0) {
+			/* remove the kobj from the free-list */
+			list_del(&kobj->freed_kobjs);
+			/* Free the object data */
+			free_kobj(kobj);
 		}
-		read_unlock(&kobj->rwlock);
-		/* free the kobj */
-		kmem_cache_free(kobj_cache, kobj);
 	}
 	write_unlock_irqrestore(&freed_kobjs_spinlock, flags);
 	__memorizer_exit();
@@ -1321,17 +1353,17 @@ static const struct file_operations kmap_fops = {
 /* 
  * clear_free_list_write() - call the function to clear the free'd kobjs
  */
-static ssize_t clear_free_kobjs_write(struct file *file, const char __user
+static ssize_t clear_freed_kobjs_write(struct file *file, const char __user
 				   *user_buf, size_t size, loff_t *ppos)
 {
-	clear_free_kobjs();
+	clear_freed_kobjs();
 	*ppos += size;
 	return size;
 }
 
-static const struct file_operations clear_free_kobjs_fops = {
+static const struct file_operations clear_freed_kobjs_fops = {
 	.owner		= THIS_MODULE,
-	.write		= clear_free_kobjs_write,
+	.write		= clear_freed_kobjs_write,
 };
 
 static int stats_seq_show(struct seq_file *seq, void *v)
@@ -1447,8 +1479,8 @@ static int memorizer_late_init(void)
 	dentryMemDir = debugfs_create_dir("memorizer", NULL);
 	dentry = debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
 				     NULL, &kmap_fops);
-	dentry = debugfs_create_file("clear_free_list", S_IRUGO, dentryMemDir,
-				     NULL, &clear_free_kobjs_fops);
+	dentry = debugfs_create_file("clear_freed_kobjs", S_IRUGO, dentryMemDir,
+				     NULL, &clear_freed_kobjs_fops);
 	dentry = debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
 				     NULL, &show_stats_fops);
 	// TODO: Add a memorizer debug log function

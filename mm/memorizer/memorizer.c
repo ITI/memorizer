@@ -573,6 +573,8 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
  * given that it will occur a lot we will be searching the list for a given
  * object, therefore we can easily do insertion if we don't find it, keeping a
  * linearly monotonic sorted list.
+ *
+ * Here we insert a new entry for each (ip,threadid) tuple. 
  */
 static inline struct access_from_counts *
 unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
@@ -583,10 +585,14 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
 	struct access_from_counts * afc = NULL;
 	list_for_each(listptr, &(kobj->access_counts)){
 		entry = list_entry(listptr, struct access_from_counts, list);
-		if(src_ip == entry->ip)
-			return entry;
-		else if(src_ip < entry->ip)
+		if(src_ip == entry->ip){
+			if(pid == entry->pid)
+				return entry;
+			else if(pid < entry->pid)
+				break;
+		} else if(src_ip < entry->ip){
 			break;
+		}
 	}
 	/* allocate the new one and initialize the count none in list */
 	afc = alloc_and_init_access_counts(src_ip, pid);

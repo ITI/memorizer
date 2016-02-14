@@ -115,6 +115,8 @@
 #include <asm/atomic.h>
 #include <asm/percpu.h>
 
+#include <asm-generic/bug.h>
+
 #include "kobj_metadata.h"
 
 //==-- Debugging and print information ------------------------------------==//

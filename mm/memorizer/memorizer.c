@@ -794,6 +794,8 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 		pr_warn("Global kernel object counter overlapped...");
 	}
 
+	/* Zero out the whole object including the comm */
+	memset(kobj, '\0', sizeof(kobj));
 	kobj->alloc_ip = call_site;
 	kobj->va_ptr = ptr_to_kobj;
 	kobj->pa_ptr = __pa(ptr_to_kobj);
@@ -804,7 +806,6 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->object_list);
-	memset(kobj->comm, '\0', sizeof(kobj->comm));
 	/* Some of the call sites are not tracked correctly so don't try */
 	if(call_site)
 		kallsyms_lookup((unsigned long) call_site, NULL, NULL,

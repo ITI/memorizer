@@ -800,6 +800,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->size = bytes_alloc;
 	kobj->alloc_jiffies = jiffies;
 	kobj->free_jiffies = 0;
+	kobj->free_ip = 0;
 	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->object_list);

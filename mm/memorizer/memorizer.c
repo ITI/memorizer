@@ -979,7 +979,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 }
 
 /**
- * move_kobj_to_free_list - move the specified objec to free list
+ * memorizer_free_kobj - move the specified objec to free list
  * @call_site:	Call site requesting the original free
  * @ptr:	Address of the object to be freed
  *
@@ -991,43 +991,25 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
  * Maybe TODO: Do some processing here as opposed to later? This depends on when
  * we want to add our filtering.
  */
-void static move_kobj_to_free_list(uintptr_t call_site, uintptr_t kobj_ptr)
+void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
 	struct memorizer_kobj *kobj;
-
 	unsigned long flags;
 
-	//read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
-	//kobj = unlocked_lookup_kobj_rbtree(kobj_ptr, &active_kobj_rbtree_root);
+	/* find and remove the kobj from the lookup table and return the kobj */
 	kobj = lt_remove_kobj(kobj_ptr);
-	//kobj = lt_get_kobj(kobj_ptr);
-	//read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 
 	/* 
 	 * If this is null it means we are freeing something we did not insert
-	 * into our tree and we have a missed alloc track
+	 * into our tree and we have a missed alloc track, otherwise we update
+	 * some of the metadata for free.
 	 */
 	if(kobj){
-		/* remove from the active_kobj_rbtree */
-		//write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
-		/* External Memorizer Function: Must protect from re-entry */
-		//rb_erase(&(kobj->rb_node), &active_kobj_rbtree_root);
-		//lt_remove_kobj(kobj_ptr);
-		//write_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
-
 		/* Update the free_jiffies for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_jiffies = jiffies;
 		kobj->free_ip = call_site;
-#if MEMORIZER_DEBUG >= 2
-		__print_memorizer_kobj(kobj, "Free'd kobject");
-#endif
 		write_unlock_irqrestore(&kobj->rwlock, flags);
-
-		/* Insert into the process queue */
-		write_lock_irqsave(&object_list_spinlock, flags);
-		//list_add(&kobj->object_list, &object_list);
-		write_unlock_irqrestore(&object_list_spinlock, flags);
 	}
 }
 
@@ -1129,7 +1111,7 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 		return;
 	}
 	__memorizer_enter();
-	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t) ptr);
+	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 	__memorizer_exit();
 }
 
@@ -1156,7 +1138,7 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 		return;
 	}
 	__memorizer_enter();
-	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t) ptr);
+	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 	__memorizer_exit();
 }
 
@@ -1181,7 +1163,7 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 		return;
 	}
 	__memorizer_enter();
-	move_kobj_to_free_list((uintptr_t) call_site, (uintptr_t)
+	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)
 			       page_address(page));
 	__memorizer_exit();
 }

@@ -1270,10 +1270,10 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	read_lock(&kobj->rwlock);
 
 	/* Print object allocation info */
-	seq_printf(seq,"%p,%p,%p,%lu,%d,%s\n",
-		   (void*) kobj->alloc_ip, (void*) kobj->free_ip,
-		   (void*) kobj->va_ptr, kobj->size, kobj->pid,
-		   kobj->comm);
+	seq_printf(seq,"%p,%d,%p,%lu,%lu,%lu,%p,%s\n",
+		   (void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
+		   kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
+		   kobj->free_ip, kobj->comm);
 
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list)

@@ -109,6 +109,7 @@
 #include <linux/sched.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/stat.h>
 #include <linux/string.h>
 #include <linux/smp.h>
 
@@ -1435,21 +1436,28 @@ static int memorizer_late_init(void)
 	__memorizer_enter();
 
 	dentryMemDir = debugfs_create_dir("memorizer", NULL);
+	if (!dentryMemDir)
+		pr_warning("Failed to create debugfs memorizer dir\n");
 	dentry = debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
 				     NULL, &kmap_fops);
-	dentry = debugfs_create_file("clear_object_list", S_IRUGO, dentryMemDir,
-				     NULL, &clear_object_list_fops);
+	if (!dentry)
+		pr_warning("Failed to create debugfs kmap file\n");
 	dentry = debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
 				     NULL, &show_stats_fops);
-	// TODO: Add a memorizer debug log function
-	//dentry = debugfs_create_file("memorizer_log_debug", S_IRUGO, dentryMemDir,
-	//			     NULL, &memorizer_fops_debug);
-	dentry = debugfs_create_bool("memorizer_enabled", 644, dentryMemDir,
-				     &memorizer_enabled);
-	dentry = debugfs_create_bool("memorizer_log_access", 644, dentryMemDir,
-				     &memorizer_log_access);
 	if (!dentry)
-		pr_warning("Failed to create the debugfs memorizer file\n");
+		pr_warning("Failed to create debugfs show stats\n");
+	dentry = debugfs_create_file("clear_object_list", S_IWUGO, dentryMemDir,
+				     NULL, &clear_object_list_fops);
+	if (!dentry)
+		pr_warning("Failed to create debugfs clear_object_list\n");
+	dentry = debugfs_create_bool("memorizer_enabled", S_IRUGO|S_IWUGO,
+				     dentryMemDir, &memorizer_enabled);
+	if (!dentry)
+		pr_warning("Failed to create debugfs memorizer_enabled\n");
+	dentry = debugfs_create_bool("memorizer_log_access", S_IRUGO|S_IWUGO,
+				     dentryMemDir, &memorizer_log_access);
+	if (!dentry)
+		pr_warning("Failed to create debugfs memorizer_log_access\n");
 
 	local_irq_save(flags);
 	memorizer_enabled = true;

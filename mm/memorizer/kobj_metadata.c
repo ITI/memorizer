@@ -247,6 +247,8 @@ inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
  */
 static void handle_overlapping_insert(uintptr_t va, struct memorizer_kobj **l1e)
 {
+	unsigned long flags;
+	struct memorizer_kobj *obj = lt_remove_kobj(va);
 	pr_err("Inserting 0x%lx into lookup table"
 	       " (overlaps existing) removing\n", va);
 	/* 
@@ -254,8 +256,6 @@ static void handle_overlapping_insert(uintptr_t va, struct memorizer_kobj **l1e)
 	 * is in the free list and will get expunged
 	 * later.
 	 */
-	unsigned long flags;
-	struct memorizer_kobj *obj = lt_remove_kobj(va);
 	write_lock_irqsave(&obj->rwlock, flags);
 	obj->free_jiffies = jiffies;
 	obj->free_ip = 0xDEADBEEF;

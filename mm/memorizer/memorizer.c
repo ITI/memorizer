@@ -1191,7 +1191,6 @@ extern struct list_head *seq_list_next(void *v, struct list_head *head, loff_t
  */
 static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
 {
-	struct list_head *lh;
 	__memorizer_enter();
 	write_lock_irqsave(&object_list_spinlock, seq_flags);
 

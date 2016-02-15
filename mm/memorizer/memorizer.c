@@ -1345,16 +1345,18 @@ static int stats_seq_show(struct seq_file *seq, void *v)
 	seq_printf(seq,"    Total:			\t%16ld\n",
 		atomic_long_read(&memorizer_num_accesses));
 	seq_printf(seq,"------- Memory Allocations -------\n");
-	seq_printf(seq,"    Tracked (kmalloc+kmem_cache):     %16ld\n",
+	seq_printf(seq,"    Tracked (globals,cache,kmalloc):	%16ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs));
-	seq_printf(seq,"    Untracked (kmalloc+kmem_cache):   %16ld\n",
+	seq_printf(seq,"    Untracked (page,percpu,preinit):	%16ld\n",
 		atomic_long_read(&memorizer_num_untracked_allocs));
-	seq_printf(seq,"    Memorizer induced:                %16ld\n",
+	seq_printf(seq,"    Memorizer induced:			%16ld\n",
 		atomic_long_read(&stats_num_induced_allocs));
-	seq_printf(seq,"    Page Alloc (total):               %16ld\n",
+	seq_printf(seq,"    Page Alloc (total):			%16ld\n",
 		atomic_long_read(&stats_num_page_allocs));
-	seq_printf(seq,"    Global Var (total):               %16ld\n",
+	seq_printf(seq,"    Global Var (total):			%16ld\n",
 		atomic_long_read(&stats_num_globals));
+	seq_printf(seq,"    Live Objects:			%16ld\n",
+		atomic_long_read(&stats_live_objs));
 	return 0;
 }
 

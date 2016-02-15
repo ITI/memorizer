@@ -288,6 +288,7 @@ static atomic_long_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
 static atomic_long_t stats_num_page_allocs = ATOMIC_INIT(0);
 static atomic_long_t stats_num_globals = ATOMIC_INIT(0);
 static atomic_long_t stats_num_induced_allocs = ATOMIC_INIT(0);
+static atomic_long_t stats_live_objs = ATOMIC_INIT(0);
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
@@ -440,16 +441,18 @@ static void print_stats(void)
 	pr_info("    Total:			\t%16ld\n",
 		atomic_long_read(&memorizer_num_accesses));
 	pr_info("------- Memory Allocations -------\n");
-	pr_info("    Tracked (kmalloc+kmem_cache):     %16ld\n",
+	pr_info("    Tracked (globals,cache,kmalloc):	%16ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs));
-	pr_info("    Untracked (kmalloc+kmem_cache):   %16ld\n",
+	pr_info("    Untracked (page,percpu):		%16ld\n",
 		atomic_long_read(&memorizer_num_untracked_allocs));
-	pr_info("    Memorizer induced:                %16ld\n",
+	pr_info("    Memorizer induced:			%16ld\n",
 		atomic_long_read(&stats_num_induced_allocs));
-	pr_info("    Page Alloc (total):               %16ld\n",
+	pr_info("    Page Alloc (total):		%16ld\n",
 		atomic_long_read(&stats_num_page_allocs));
-	pr_info("    Global Var (total):               %16ld\n",
+	pr_info("    Global Var (total):		%16ld\n",
 		atomic_long_read(&stats_num_globals));
+	pr_info("    Live Objects:			%16ld\n",
+		atomic_long_read(&stats_live_objs));
 }
 
 /**
@@ -1014,6 +1017,7 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		kobj->free_ip = call_site;
 		write_unlock_irqrestore(&kobj->rwlock, flags);
 	}
+	atomic_long_dec(&stats_live_objs);
 }
 
 /**
@@ -1070,6 +1074,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	lt_insert_kobj(kobj);
 	list_add_tail(&kobj->object_list, &object_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
+	atomic_long_inc(&stats_live_objs);
 	__memorizer_exit();
 }
 

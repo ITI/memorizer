@@ -1427,7 +1427,7 @@ void __init memorizer_init(void)
 	lt_init();
 	local_irq_save(flags);
 	memorizer_enabled = true;
-	memorizer_log_access = true;
+	memorizer_log_access = false;
 	local_irq_restore(flags);
 	__memorizer_exit();
 }

@@ -476,7 +476,7 @@ void __asan_unregister_globals(struct kasan_global *globals, size_t size)
 }
 EXPORT_SYMBOL(__asan_unregister_globals);
 
-#define DEFINE_ASAN_LOAD_STORE(size)					\
+#define DEFINE_ASAN_LOAD_STORE_ORIG(size)					\
 	void __asan_load##size(unsigned long addr)			\
 	{								\
 		check_memory_region(addr, size, false);			\
@@ -496,6 +496,24 @@ EXPORT_SYMBOL(__asan_unregister_globals);
 	void __asan_store##size##_noabort(unsigned long);		\
 	EXPORT_SYMBOL(__asan_store##size##_noabort)
 
+#define DEFINE_ASAN_LOAD_STORE(size)					\
+	void __asan_load##size(unsigned long addr)			\
+	{								\
+		memorizer_mem_access(addr, size, false, _RET_IP_);	\
+	}								\
+	EXPORT_SYMBOL(__asan_load##size);				\
+	__alias(__asan_load##size)					\
+	void __asan_load##size##_noabort(unsigned long);		\
+	EXPORT_SYMBOL(__asan_load##size##_noabort);			\
+	void __asan_store##size(unsigned long addr)			\
+	{								\
+		memorizer_mem_access(addr, size, true, _RET_IP_);	\
+	}								\
+	EXPORT_SYMBOL(__asan_store##size);				\
+	__alias(__asan_store##size)					\
+	void __asan_store##size##_noabort(unsigned long);		\
+	EXPORT_SYMBOL(__asan_store##size##_noabort)
+
 DEFINE_ASAN_LOAD_STORE(1);
 DEFINE_ASAN_LOAD_STORE(2);
 DEFINE_ASAN_LOAD_STORE(4);
@@ -504,7 +522,7 @@ DEFINE_ASAN_LOAD_STORE(16);
 
 void __asan_loadN(unsigned long addr, size_t size)
 {
-	check_memory_region(addr, size, false);
+	//check_memory_region(addr, size, false);
 	memorizer_mem_access(addr, size, false, _RET_IP_);
 }
 EXPORT_SYMBOL(__asan_loadN);
@@ -515,7 +533,7 @@ EXPORT_SYMBOL(__asan_loadN_noabort);
 
 void __asan_storeN(unsigned long addr, size_t size)
 {
-	check_memory_region(addr, size, true);
+	//check_memory_region(addr, size, true);
 	memorizer_mem_access(addr, size, true, _RET_IP_);
 }
 EXPORT_SYMBOL(__asan_storeN);

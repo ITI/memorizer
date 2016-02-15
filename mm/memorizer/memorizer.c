@@ -549,10 +549,9 @@ static inline void
 init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 			  pid)
 {
+	memset(afc, 0, sizeof(struct access_from_counts));
 	afc->ip = ip;
 	afc->pid = pid;
-	afc->writes = 0;
-	afc->reads = 0;
 }
 
 /**
@@ -635,8 +634,8 @@ static inline int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 	write_lock(&kobj->rwlock);
 
 	/* Search access queue to the entry associated with src_ip */
-	afc = unlckd_insert_get_access_counts(ma->src_ip, ma->pid,
-					      kobj);
+	afc = unlckd_insert_get_access_counts(ma->src_ip, ma->pid, kobj);
+
 	/* increment the counter associated with the access type */
 	if(afc)
 		ma->access_type ? ++afc->writes : ++afc->reads;
@@ -799,7 +798,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	}
 
 	/* Zero out the whole object including the comm */
-	memset(kobj, '\0', sizeof(kobj));
+	memset(kobj, 0, sizeof(struct memorizer_kobj));
 	kobj->alloc_ip = call_site;
 	kobj->va_ptr = ptr_to_kobj;
 	kobj->pa_ptr = __pa(ptr_to_kobj);

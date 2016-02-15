@@ -303,7 +303,7 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 
 	pr_info("%s: \n", title);
 	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
-	pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
+	//pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
 	pr_info("\talloc_func:	%s\n", kobj->funcstr);
 	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
 	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
@@ -812,7 +812,8 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	/* Some of the call sites are not tracked correctly so don't try */
 	if(call_site)
 		kallsyms_lookup((unsigned long) call_site, NULL, NULL,
-				&(kobj->modsymb), kobj->funcstr);
+				//&(kobj->modsymb), kobj->funcstr);
+				NULL, kobj->funcstr);
 	/* task information */
 	if (in_irq()) {
 		kobj->pid = 0;
@@ -1470,6 +1471,8 @@ static int memorizer_late_init(void)
 	local_irq_restore(flags);
 
 	pr_info("Memorizer initialized\n");
+
+	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
 
 	print_stats();
 	//__memorizer_print_events(10);

@@ -1466,7 +1466,7 @@ static int memorizer_late_init(void)
 
 	local_irq_save(flags);
 	memorizer_enabled = true;
-	memorizer_log_access = true;
+	memorizer_log_access = false;
 	local_irq_restore(flags);
 
 	pr_info("Memorizer initialized\n");

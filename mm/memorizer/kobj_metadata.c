@@ -53,6 +53,7 @@
 
 #include <linux/gfp.h>
 #include <linux/slab.h>
+#include <linux/jiffies.h>
 
 #include "kobj_metadata.h"
 
@@ -177,6 +178,101 @@ static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t va)
 }
 
 /**
+ * lt_remove_kobj() --- remove object from the table
+ * @va: pointer to the beginning of the object
+ *
+ * This code assumes that it will only ever get a remove from the beginning of
+ * the kobj. TODO: check the beginning of the kobj to make sure.
+ *
+ * Return: the object at the location that was removed. 
+ */
+struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
+{
+	struct memorizer_kobj **l1e, *kobj;
+	uintptr_t kobjend;
+
+	/* 
+	 * Get the l1 entry for the va, if there is not entry then we not only
+	 * haven't tracked the object, but we also haven't allocated a l1 page
+	 * for the particular address
+	 */
+	l1e = tbl_get_l1_entry(va);
+	if(!l1e)
+		return NULL;
+
+	kobj = *l1e;
+
+	/* 
+	 * get the beginning VA entry for this object in case we called free
+	 * from within the object at some offset 
+	 */
+	//kobj = tbl_get_l1_entry(va);
+
+	if(kobj){
+		/* For each byte in the object set the l1 entry to NULL */
+		kobjend = kobj->va_ptr + kobj->size;
+		while(va<kobjend){
+			/* TODO Optimize this: can just use the indices on the l1
+			 * tbl instead of getting the entry from the top each
+			 * time.
+			 */
+			l1e = tbl_get_l1_entry(va);
+			if(l1e)
+				*l1e = NULL;
+			va += 1;
+		}
+	}
+	return kobj;
+}
+
+inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
+{
+	struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
+	if(l1e)
+		return *l1e;
+	else
+		return NULL;
+}
+
+/* 
+ * handle_overalpping_insert() -- hanlde the overlapping insert case
+ * @va:		the virtual address that is currently not vacant
+ * @l1e:	the l1 entry pointer for the va
+ *
+ * There is some missing free's currently, it isn't clear what is causing them;
+ * however, if we assume objects are allocated before use then the most recent
+ * allocation will be viable for any writes to these regions so we remove the
+ * previous entry and set up its free times with a special code denoting it was
+ * evicted from the table in an erroneous fasion.
+ */
+static void handle_overlapping_insert(uintptr_t va, struct memorizer_kobj **l1e)
+{
+	pr_err("Inserting 0x%lx into lookup table"
+	       " (overlaps existing) removing\n", va);
+	/* 
+	 * Note we don't need to free because the object
+	 * is in the free list and will get expunged
+	 * later.
+	 */
+	unsigned long flags;
+	struct memorizer_kobj *obj = lt_remove_kobj(va);
+	write_lock_irqsave(&obj->rwlock, flags);
+	obj->free_jiffies = jiffies;
+	obj->free_ip = 0xDEADBEEF;
+	write_unlock_irqrestore(&obj->rwlock, flags);
+#if 0 // Debug code
+	__print_memorizer_kobj(*l1e, "Orig Kobj:");
+	__print_memorizer_kobj(kobj, "New Kobj:");
+	pr_info("L3 Entry Index: %p\n",
+		lt_l3_tbl_index(va));
+	pr_info("L2 Entry Index: %p\n",
+		lt_l2_tbl_index(va));
+	pr_info("L1 Entry Index: %p\n",
+		lt_l1_tbl_index(va));
+#endif
+}
+
+/**
  * lt_insert_kobj() - insert kobject into the lookup table
  * @kobj:	pointer to the kobj to insert
  *
@@ -219,32 +315,8 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 			struct memorizer_kobj **l1e = lt_l1_entry(*l2e,va);
 
 			/* If it is not null then we are double allocating */
-			if(*l1e){
-				/* 
-				 * There is some missing free's currently, it
-				 * isn't clear what is causing them; however, if
-				 * we assume objets are allocated before use
-				 * then the most recent allocation will be
-				 * vialbe for an writes to these regions so we
-				 * just leave it alone. Need to solve though.
-				 * XXX:TODO
-				 */
-				pr_err("Inserting 0x%lx into lookup table"
-				       " (overlaps existing)\n", va);
-#if 0 // Debug code
-				__print_memorizer_kobj(*l1e, "Orig Kobj:");
-				__print_memorizer_kobj(kobj, "New Kobj:");
-				pr_info("L3 Entry Index: %p\n",
-					lt_l3_tbl_index(va));
-				pr_info("L2 Entry Index: %p\n",
-					lt_l2_tbl_index(va));
-				pr_info("L1 Entry Index: %p\n",
-					lt_l1_tbl_index(va));
-#endif
-				/* TODO: to be safe move the kobj to the free
-				 * list.
-				 */
-			}
+			if(*l1e)
+				handle_overlapping_insert(va, l1e);
 
 			/* insert the object pointer in the table for byte va */
 			*l1e = kobj;
@@ -255,55 +327,6 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 		}
 	}
 	return 0;
-}
-
-/**
- * lt_remove_kobj() --- remove object from the table
- * @va: pointer to the beginning of the object
- */
-struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
-{
-	struct memorizer_kobj **l1e, *kobj;
-	uintptr_t kobjend;
-
-	/* 
-	 * Get the l1 entry for the va, if there is not entry then we not only
-	 * haven't tracked the object, but we also haven't allocated a l1 page
-	 * for the particular address
-	 */
-	l1e = tbl_get_l1_entry(va);
-	if(!l1e)
-		return NULL;
-
-	kobj = *l1e;
-
-	//if(strcmp(kobj->funcstr,"__kernfs_new_node") == 0)
-		//__print_memorizer_kobj(kobj,"Freeing the bad one");
-
-	if(kobj){
-		/* For each byte in the object set the l1 entry to NULL */
-		kobjend = kobj->va_ptr + kobj->size;
-		while(va<kobjend){
-			/* TODO Optimize this: can just use the indices on the l1
-			 * tbl instead of getting the entry from the top each
-			 * time.
-			 */
-			l1e = tbl_get_l1_entry(va);
-			if(l1e)
-				*l1e = NULL;
-			va += 1;
-		}
-	}
-	return kobj;
-}
-
-inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
-{
-	struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
-	if(l1e)
-		return *l1e;
-	else
-		return NULL;
 }
 
 void __init lt_init(void)

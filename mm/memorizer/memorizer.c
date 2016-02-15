@@ -1038,14 +1038,12 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
 		return;
 
-	if(unlikely(!memorizer_enabled))
-	{
+	if(unlikely(!memorizer_enabled)) {
 		atomic_long_inc(&memorizer_num_untracked_allocs);
 		return;
 	}
 
-	if(in_memorizer())
-	{
+	if(in_memorizer()) {
 		atomic_long_inc(&stats_num_induced_allocs);
 		return;
 	}
@@ -1059,12 +1057,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	__memorizer_enter();
 
-#if MEMORIZER_DEBUG >= 4
-	pr_info("alloca from %p @ %p of size: %lu. GFP-Flags: 0x%lx\n",
-		(void*)call_site, ptr, bytes_alloc, (unsigned long long)
-		gfp_flags);
-#endif
-
 	kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
 	if(!kobj){
 		pr_info("Cannot allocate a memorizer_kobj structure\n");
@@ -1072,19 +1064,10 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
 
-	/* Grab the writer lock for the active_kobj_rbtree */
-	//write_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+	/* Grab the writer lock for the object_list */
 	write_lock_irqsave(&object_list_spinlock, flags);
-	/* subcall to an non-memorizer function that re-enters ma code */
-	//unlocked_insert_kobj_rbtree(kobj, &active_kobj_rbtree_root);
-
-	if(lt_insert_kobj(kobj)){
-		//kmem_cache_free(kobj_cache, kobj);
-		//kobj = NULL;
-	}
+	lt_insert_kobj(kobj);
 	list_add_tail(&kobj->object_list, &object_list);
-
-	//write_unlock_irqrestore(&object_list, flags);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
 	__memorizer_exit();
 }

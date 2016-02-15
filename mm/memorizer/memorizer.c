@@ -283,7 +283,7 @@ static inline bool in_memorizer(void)
 static atomic_long_t memorizer_num_untracked_accesses = ATOMIC_INIT(0);
 static atomic_long_t memorizer_caused_accesses = ATOMIC_INIT(0);
 static atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
-static atomic_long_t memorizer_num_untracked_allocs = ATOMIC_INIT(0);
+static atomic_long_t stats_num_allocs_while_disabled = ATOMIC_INIT(0);
 static atomic_long_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
 static atomic_long_t stats_num_page_allocs = ATOMIC_INIT(0);
 static atomic_long_t stats_num_globals = ATOMIC_INIT(0);
@@ -443,8 +443,8 @@ static void print_stats(void)
 	pr_info("------- Memory Allocations -------\n");
 	pr_info("    Tracked (globals,cache,kmalloc):	%16ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs));
-	pr_info("    Untracked (page,percpu):		%16ld\n",
-		atomic_long_read(&memorizer_num_untracked_allocs));
+	pr_info("    Untracked (memorizer disabled):	%16ld\n",
+		atomic_long_read(&stats_num_allocs_while_disabled));
 	pr_info("    Memorizer induced:			%16ld\n",
 		atomic_long_read(&stats_num_induced_allocs));
 	pr_info("    Page Alloc (total):		%16ld\n",
@@ -675,7 +675,6 @@ static inline void drain_and_process_access_queue(struct mem_access_worklists *
  */
 static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 {
-	int i;
 	char *comm;
 	char *hardirq = "hardirq";
 	char *softirq = "softirq";
@@ -698,6 +697,7 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 		comm = current->comm;
 	}
 #if 0 /* TODO: this is to make the testing faster */
+	int i;
 	for(i=0; i<sizeof(comm); i++)
 		ma->comm[i] = comm[i];
 	ma->comm[i] = '\0';
@@ -1016,8 +1016,8 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		kobj->free_jiffies = jiffies;
 		kobj->free_ip = call_site;
 		write_unlock_irqrestore(&kobj->rwlock, flags);
+		atomic_long_dec(&stats_live_objs);
 	}
-	atomic_long_dec(&stats_live_objs);
 }
 
 /**
@@ -1044,7 +1044,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		return;
 
 	if(unlikely(!memorizer_enabled)) {
-		atomic_long_inc(&memorizer_num_untracked_allocs);
+		atomic_long_inc(&stats_num_allocs_while_disabled);
 		return;
 	}
 
@@ -1346,8 +1346,8 @@ static int stats_seq_show(struct seq_file *seq, void *v)
 	seq_printf(seq,"------- Memory Allocations -------\n");
 	seq_printf(seq,"    Tracked (globals,cache,kmalloc):	%16ld\n",
 		atomic_long_read(&memorizer_num_tracked_allocs));
-	seq_printf(seq,"    Untracked (page,percpu,preinit):	%16ld\n",
-		atomic_long_read(&memorizer_num_untracked_allocs));
+	seq_printf(seq,"    Untracked (memorizer disabled):	%16ld\n",
+		atomic_long_read(&stats_num_allocs_while_disabled));
 	seq_printf(seq,"    Memorizer induced:			%16ld\n",
 		atomic_long_read(&stats_num_induced_allocs));
 	seq_printf(seq,"    Page Alloc (total):			%16ld\n",

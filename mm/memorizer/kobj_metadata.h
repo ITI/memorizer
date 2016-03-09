@@ -84,7 +84,7 @@ struct memorizer_kobj {
 	pid_t		pid;
 	char		comm[TASK_COMM_LEN];
 	char		funcstr[KSYM_NAME_LEN];
-	char		*modsymb[KSYM_NAME_LEN];
+	//char		*modsymb[KSYM_NAME_LEN];
 	struct list_head	object_list;
 	struct list_head	access_counts;
 };

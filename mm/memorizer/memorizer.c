@@ -212,11 +212,11 @@ DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 
 /* flag to keep track of whether or not to track writes */
 //static bool memorizer_enabled = false;
-static uint32_t memorizer_enabled = false;
+static bool memorizer_enabled = false;
 //module_param(memorizer_enabled, bool, 0644);
 
 /* flag enable/disable memory access logging */
-static uint32_t memorizer_log_access = false;
+static bool memorizer_log_access = false;
 //module_param(memorizer_log_access, bool, 0644);
 
 /* object cache for memorizer kobjects */

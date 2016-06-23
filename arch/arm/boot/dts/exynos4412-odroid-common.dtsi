@@ -11,6 +11,8 @@
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/clock/maxim,max77686.h>
 #include "exynos4412.dtsi"
+#include "exynos4412-ppmu-common.dtsi"
+#include <dt-bindings/gpio/gpio.h>
 
 / {
 	chosen {
@@ -30,11 +32,11 @@
 		power_key {
 			interrupt-parent = <&gpx1>;
 			interrupts = <3 0>;
-			gpios = <&gpx1 3 1>;
+			gpios = <&gpx1 3 GPIO_ACTIVE_LOW>;
 			linux,code = <KEY_POWER>;
 			label = "power key";
 			debounce-interval = <10>;
-			gpio-key,wakeup;
+			wakeup-source;
 		};
 	};
 
@@ -70,7 +72,7 @@
 		pinctrl-0 = <&sd1_cd>;
 		pinctrl-names = "default";
 		compatible = "mmc-pwrseq-emmc";
-		reset-gpios = <&gpk1 2 1>;
+		reset-gpios = <&gpk1 2 GPIO_ACTIVE_LOW>;
 	};
 
 	camera {
@@ -105,6 +107,53 @@
 		       };
 		};
 	};
+};
+
+&bus_dmc {
+	devfreq-events = <&ppmu_dmc0_3>, <&ppmu_dmc1_3>;
+	vdd-supply = <&buck1_reg>;
+	status = "okay";
+};
+
+&bus_acp {
+	devfreq = <&bus_dmc>;
+	status = "okay";
+};
+
+&bus_c2c {
+	devfreq = <&bus_dmc>;
+	status = "okay";
+};
+
+&bus_leftbus {
+	devfreq-events = <&ppmu_leftbus_3>, <&ppmu_rightbus_3>;
+	vdd-supply = <&buck3_reg>;
+	status = "okay";
+};
+
+&bus_rightbus {
+	devfreq = <&bus_leftbus>;
+	status = "okay";
+};
+
+&bus_display {
+	devfreq = <&bus_leftbus>;
+	status = "okay";
+};
+
+&bus_fsys {
+	devfreq = <&bus_leftbus>;
+	status = "okay";
+};
+
+&bus_peri {
+	devfreq = <&bus_leftbus>;
+	status = "okay";
+};
+
+&bus_mfc {
+	devfreq = <&bus_leftbus>;
+	status = "okay";
 };
 
 &cpu0 {
@@ -176,18 +225,18 @@
 	assigned-clock-rates = <0>, <176000000>;
 };
 
-&g2d {
-	status = "okay";
-};
-
 &hdmi {
-	hpd-gpio = <&gpx3 7 0>;
+	hpd-gpio = <&gpx3 7 GPIO_ACTIVE_HIGH>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&hdmi_hpd>;
 	vdd-supply = <&ldo8_reg>;
 	vdd_osc-supply = <&ldo10_reg>;
 	vdd_pll-supply = <&ldo8_reg>;
 	ddc = <&i2c_2>;
+	status = "okay";
+};
+
+&hdmicec {
 	status = "okay";
 };
 
@@ -199,8 +248,6 @@
 };
 
 &i2c_0 {
-	pinctrl-0 = <&i2c0_bus>;
-	pinctrl-names = "default";
 	samsung,i2c-sda-delay = <100>;
 	samsung,i2c-max-bus-freq = <400000>;
 	status = "okay";
@@ -209,9 +256,9 @@
 		compatible = "smsc,usb3503";
 		reg = <0x08>;
 
-		intn-gpios = <&gpx3 0 0>;
-		connect-gpios = <&gpx3 4 0>;
-		reset-gpios = <&gpx3 5 0>;
+		intn-gpios = <&gpx3 0 GPIO_ACTIVE_HIGH>;
+		connect-gpios = <&gpx3 4 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpx3 5 GPIO_ACTIVE_HIGH>;
 		initial-mode = <1>;
 	};
 
@@ -276,15 +323,13 @@
 				regulator-always-on;
 			};
 
-			ldo8_reg: ldo@8 {
-				regulator-compatible = "LDO8";
+			ldo8_reg: LDO8 {
 				regulator-name = "VDD10_HDMI_1.0V";
 				regulator-min-microvolt = <1000000>;
 				regulator-max-microvolt = <1000000>;
 			};
 
-			ldo10_reg: ldo@10 {
-				regulator-compatible = "LDO10";
+			ldo10_reg: LDO10 {
 				regulator-name = "VDDQ_MIPIHSI_1.8V";
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
@@ -362,8 +407,8 @@
 
 			buck1_reg: BUCK1 {
 				regulator-name = "vdd_mif";
-				regulator-min-microvolt = <1000000>;
-				regulator-max-microvolt = <1000000>;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <1100000>;
 				regulator-always-on;
 				regulator-boot-on;
 			};
@@ -378,8 +423,8 @@
 
 			buck3_reg: BUCK3 {
 				regulator-name = "vdd_int";
-				regulator-min-microvolt = <1000000>;
-				regulator-max-microvolt = <1000000>;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <1050000>;
 				regulator-always-on;
 				regulator-boot-on;
 			};
@@ -424,8 +469,6 @@
 };
 
 &i2c_1 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&i2c1_bus>;
 	status = "okay";
 	max98090: max98090@10 {
 		compatible = "maxim,max98090";
@@ -440,8 +483,6 @@
 
 &i2c_2 {
 	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&i2c2_bus>;
 };
 
 &i2c_8 {
@@ -490,7 +531,7 @@
 	pinctrl-0 = <&sd2_clk &sd2_cmd &sd2_cd &sd2_bus4>;
 	pinctrl-names = "default";
 	vmmc-supply = <&ldo4_reg &ldo21_reg>;
-	cd-gpios = <&gpk2 2 0>;
+	cd-gpios = <&gpk2 2 GPIO_ACTIVE_HIGH>;
 	cd-inverted;
 	status = "okay";
 };

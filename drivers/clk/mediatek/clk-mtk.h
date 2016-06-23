@@ -26,6 +26,23 @@ struct clk;
 
 #define MHZ (1000 * 1000)
 
+struct mtk_fixed_clk {
+	int id;
+	const char *name;
+	const char *parent;
+	unsigned long rate;
+};
+
+#define FIXED_CLK(_id, _name, _parent, _rate) {		\
+		.id = _id,				\
+		.name = _name,				\
+		.parent = _parent,			\
+		.rate = _rate,				\
+	}
+
+void mtk_clk_register_fixed_clks(const struct mtk_fixed_clk *clks,
+		int num, struct clk_onecell_data *clk_data);
+
 struct mtk_fixed_factor {
 	int id;
 	const char *name;
@@ -42,7 +59,7 @@ struct mtk_fixed_factor {
 		.div = _div,				\
 	}
 
-extern void mtk_clk_register_factors(const struct mtk_fixed_factor *clks,
+void mtk_clk_register_factors(const struct mtk_fixed_factor *clks,
 		int num, struct clk_onecell_data *clk_data);
 
 struct mtk_composite {
@@ -66,7 +83,11 @@ struct mtk_composite {
 	signed char num_parents;
 };
 
-#define MUX_GATE(_id, _name, _parents, _reg, _shift, _width, _gate) {	\
+/*
+ * In case the rate change propagation to parent clocks is undesirable,
+ * this macro allows to specify the clock flags manually.
+ */
+#define MUX_GATE_FLAGS(_id, _name, _parents, _reg, _shift, _width, _gate, _flags) {	\
 		.id = _id,						\
 		.name = _name,						\
 		.mux_reg = _reg,					\
@@ -77,8 +98,15 @@ struct mtk_composite {
 		.divider_shift = -1,					\
 		.parent_names = _parents,				\
 		.num_parents = ARRAY_SIZE(_parents),			\
-		.flags = CLK_SET_RATE_PARENT,				\
+		.flags = _flags,					\
 	}
+
+/*
+ * Unless necessary, all MUX_GATE clocks propagate rate changes to their
+ * parent clock by default.
+ */
+#define MUX_GATE(_id, _name, _parents, _reg, _shift, _width, _gate)	\
+	MUX_GATE_FLAGS(_id, _name, _parents, _reg, _shift, _width, _gate, CLK_SET_RATE_PARENT)
 
 #define MUX(_id, _name, _parents, _reg, _shift, _width) {		\
 		.id = _id,						\
@@ -159,9 +187,12 @@ struct mtk_pll_data {
 	const struct mtk_pll_div_table *div_table;
 };
 
-void __init mtk_clk_register_plls(struct device_node *node,
+void mtk_clk_register_plls(struct device_node *node,
 		const struct mtk_pll_data *plls, int num_plls,
 		struct clk_onecell_data *clk_data);
+
+struct clk *mtk_clk_register_ref2usb_tx(const char *name,
+			const char *parent_name, void __iomem *reg);
 
 #ifdef CONFIG_RESET_CONTROLLER
 void mtk_register_reset_controller(struct device_node *np,

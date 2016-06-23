@@ -20,6 +20,12 @@
 #define IGU_PF_CONF_ATTN_BIT_EN   (0x1 << 3)    /* attention enable       */
 #define IGU_PF_CONF_SINGLE_ISR_EN (0x1 << 4)    /* single ISR mode enable */
 #define IGU_PF_CONF_SIMD_MODE     (0x1 << 5)    /* simd all ones mode     */
+/* Fields of IGU VF CONFIGRATION REGISTER */
+#define IGU_VF_CONF_FUNC_EN        (0x1 << 0)	/* function enable        */
+#define IGU_VF_CONF_MSI_MSIX_EN    (0x1 << 1)	/* MSI/MSIX enable        */
+#define IGU_VF_CONF_SINGLE_ISR_EN  (0x1 << 4)	/* single ISR mode enable */
+#define IGU_VF_CONF_PARENT_MASK    (0xF)	/* Parent PF              */
+#define IGU_VF_CONF_PARENT_SHIFT   5		/* Parent PF              */
 
 /* Igu control commands
  */
@@ -161,18 +167,22 @@ void qed_int_sp_dpc(unsigned long hwfn_cookie);
  *        blocks configured for this funciton in the igu.
  *
  * @param p_hwfn
- * @param p_iov_blks - configured free blks for vfs
+ * @param p_sb_cnt_info
  *
  * @return int - number of status blocks configured
  */
-int qed_int_get_num_sbs(struct qed_hwfn *p_hwfn,
-			int *p_iov_blks);
+void qed_int_get_num_sbs(struct qed_hwfn	*p_hwfn,
+			 struct qed_sb_cnt_info *p_sb_cnt_info);
 
 /**
- * @file
+ * @brief qed_int_disable_post_isr_release - performs the cleanup post ISR
+ *        release. The API need to be called after releasing all slowpath IRQs
+ *        of the device.
  *
- * @brief Interrupt handler
+ * @param cdev
+ *
  */
+void qed_int_disable_post_isr_release(struct qed_dev *cdev);
 
 #define QED_CAU_DEF_RX_TIMER_RES 0
 #define QED_CAU_DEF_TX_TIMER_RES 0
@@ -288,26 +298,8 @@ u16 qed_int_get_sp_sb_id(struct qed_hwfn *p_hwfn);
  * @param p_hwfn
  * @param p_ptt
  * @param sb_id		- igu status block id
- * @param cleanup_set	- set(1) / clear(0)
- * @param opaque_fid    - the function for which to perform
- *			cleanup, for example a PF on behalf of
- *			its VFs.
- */
-void qed_int_igu_cleanup_sb(struct qed_hwfn *p_hwfn,
-			    struct qed_ptt *p_ptt,
-			    u32 sb_id,
-			    bool cleanup_set,
-			    u16 opaque_fid);
-
-/**
- * @brief Status block cleanup. Should be called for each status
- *        block that will be used -> both PF / VF
- *
- * @param p_hwfn
- * @param p_ptt
- * @param sb_id		- igu status block id
  * @param opaque	- opaque fid of the sb owner.
- * @param cleanup_set	- set(1) / clear(0)
+ * @param b_set		- set(1) / clear(0)
  */
 void qed_int_igu_init_pure_rt_single(struct qed_hwfn *p_hwfn,
 				     struct qed_ptt *p_ptt,
@@ -361,15 +353,26 @@ void qed_int_setup(struct qed_hwfn *p_hwfn,
 		   struct qed_ptt *p_ptt);
 
 /**
+ * @brief - Returns an Rx queue index appropriate for usage with given SB.
+ *
+ * @param p_hwfn
+ * @param sb_id - absolute index of SB
+ *
+ * @return index of Rx queue
+ */
+u16 qed_int_queue_id_from_sb_id(struct qed_hwfn *p_hwfn, u16 sb_id);
+
+/**
  * @brief - Enable Interrupt & Attention for hw function
  *
  * @param p_hwfn
  * @param p_ptt
  * @param int_mode
+ *
+ * @return int
  */
-void qed_int_igu_enable(struct qed_hwfn *p_hwfn,
-			struct qed_ptt *p_ptt,
-			enum qed_int_mode int_mode);
+int qed_int_igu_enable(struct qed_hwfn *p_hwfn, struct qed_ptt *p_ptt,
+		       enum qed_int_mode int_mode);
 
 /**
  * @brief - Initialize CAU status block entry

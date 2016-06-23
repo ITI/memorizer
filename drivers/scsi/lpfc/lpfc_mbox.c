@@ -1,7 +1,7 @@
 /*******************************************************************
  * This file is part of the Emulex Linux Device Driver for         *
  * Fibre Channel Host Bus Adapters.                                *
- * Copyright (C) 2004-2015 Emulex.  All rights reserved.           *
+ * Copyright (C) 2004-2016 Emulex.  All rights reserved.           *
  * EMULEX and SLI are trademarks of Emulex.                        *
  * www.emulex.com                                                  *
  * Portions Copyright (C) 2004-2005 Christoph Hellwig              *
@@ -289,9 +289,7 @@ lpfc_read_topology(struct lpfc_hba *phba, LPFC_MBOXQ_t *pmb,
 		   struct lpfc_dmabuf *mp)
 {
 	MAILBOX_t *mb;
-	struct lpfc_sli *psli;
 
-	psli = &phba->sli;
 	mb = &pmb->u.mb;
 	memset(pmb, 0, sizeof (LPFC_MBOXQ_t));
 
@@ -483,13 +481,11 @@ lpfc_init_link(struct lpfc_hba * phba,
 	       LPFC_MBOXQ_t * pmb, uint32_t topology, uint32_t linkspeed)
 {
 	lpfc_vpd_t *vpd;
-	struct lpfc_sli *psli;
 	MAILBOX_t *mb;
 
 	mb = &pmb->u.mb;
 	memset(pmb, 0, sizeof (LPFC_MBOXQ_t));
 
-	psli = &phba->sli;
 	switch (topology) {
 	case FLAGS_TOPOLOGY_MODE_LOOP_PT:
 		mb->un.varInitLnk.link_flags = FLAGS_TOPOLOGY_MODE_LOOP;
@@ -508,6 +504,13 @@ lpfc_init_link(struct lpfc_hba * phba,
 	case FLAGS_LOCAL_LB:
 		mb->un.varInitLnk.link_flags = FLAGS_LOCAL_LB;
 		break;
+	}
+
+	if (phba->pcidev->device == PCI_DEVICE_ID_LANCER_G6_FC &&
+		mb->un.varInitLnk.link_flags & FLAGS_TOPOLOGY_MODE_LOOP) {
+		/* Failover is not tried for Lancer G6 */
+		mb->un.varInitLnk.link_flags = FLAGS_TOPOLOGY_MODE_PT_PT;
+		phba->cfg_topology = FLAGS_TOPOLOGY_MODE_PT_PT;
 	}
 
 	/* Enable asynchronous ABTS responses from firmware */
@@ -542,6 +545,10 @@ lpfc_init_link(struct lpfc_hba * phba,
 		case LPFC_USER_LINK_SPEED_16G:
 			mb->un.varInitLnk.link_flags |=	FLAGS_LINK_SPEED;
 			mb->un.varInitLnk.link_speed = LINK_SPEED_16G;
+			break;
+		case LPFC_USER_LINK_SPEED_32G:
+			mb->un.varInitLnk.link_flags |= FLAGS_LINK_SPEED;
+			mb->un.varInitLnk.link_speed = LINK_SPEED_32G;
 			break;
 		case LPFC_USER_LINK_SPEED_AUTO:
 		default:
@@ -585,9 +592,7 @@ lpfc_read_sparam(struct lpfc_hba *phba, LPFC_MBOXQ_t *pmb, int vpi)
 {
 	struct lpfc_dmabuf *mp;
 	MAILBOX_t *mb;
-	struct lpfc_sli *psli;
 
-	psli = &phba->sli;
 	mb = &pmb->u.mb;
 	memset(pmb, 0, sizeof (LPFC_MBOXQ_t));
 
@@ -2010,7 +2015,6 @@ lpfc_sli4_mbx_read_fcf_rec(struct lpfc_hba *phba,
 			   uint16_t fcf_index)
 {
 	void *virt_addr;
-	dma_addr_t phys_addr;
 	uint8_t *bytep;
 	struct lpfc_mbx_sge sge;
 	uint32_t alloc_len, req_len;
@@ -2039,7 +2043,6 @@ lpfc_sli4_mbx_read_fcf_rec(struct lpfc_hba *phba,
 	 * routine only uses a single SGE.
 	 */
 	lpfc_sli4_mbx_sge_get(mboxq, 0, &sge);
-	phys_addr = getPaddr(sge.pa_hi, sge.pa_lo);
 	virt_addr = mboxq->sge_array->addr[0];
 	read_fcf = (struct lpfc_mbx_read_fcf_tbl *)virt_addr;
 
@@ -2142,10 +2145,12 @@ lpfc_reg_vfi(struct lpfcMboxq *mbox, struct lpfc_vport *vport, dma_addr_t phys)
 	reg_vfi->wwn[1] = cpu_to_le32(reg_vfi->wwn[1]);
 	reg_vfi->e_d_tov = phba->fc_edtov;
 	reg_vfi->r_a_tov = phba->fc_ratov;
-	reg_vfi->bde.addrHigh = putPaddrHigh(phys);
-	reg_vfi->bde.addrLow = putPaddrLow(phys);
-	reg_vfi->bde.tus.f.bdeSize = sizeof(vport->fc_sparam);
-	reg_vfi->bde.tus.f.bdeFlags = BUFF_TYPE_BDE_64;
+	if (phys) {
+		reg_vfi->bde.addrHigh = putPaddrHigh(phys);
+		reg_vfi->bde.addrLow = putPaddrLow(phys);
+		reg_vfi->bde.tus.f.bdeSize = sizeof(vport->fc_sparam);
+		reg_vfi->bde.tus.f.bdeFlags = BUFF_TYPE_BDE_64;
+	}
 	bf_set(lpfc_reg_vfi_nport_id, reg_vfi, vport->fc_myDID);
 
 	/* Only FC supports upd bit */

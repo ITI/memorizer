@@ -80,8 +80,8 @@ struct qca_data {
 	spinlock_t hci_ibs_lock;	/* HCI_IBS state lock	*/
 	u8 tx_ibs_state;	/* HCI_IBS transmit side power state*/
 	u8 rx_ibs_state;	/* HCI_IBS receive side power state */
-	u32 tx_vote;		/* Clock must be on for TX */
-	u32 rx_vote;		/* Clock must be on for RX */
+	bool tx_vote;		/* Clock must be on for TX */
+	bool rx_vote;		/* Clock must be on for RX */
 	struct timer_list tx_idle_timer;
 	u32 tx_idle_delay;
 	struct timer_list wake_retrans_timer;
@@ -678,7 +678,7 @@ static int qca_enqueue(struct hci_uart *hu, struct sk_buff *skb)
 	       qca->tx_ibs_state);
 
 	/* Prepend skb with frame type */
-	memcpy(skb_push(skb, 1), &bt_cb(skb)->pkt_type, 1);
+	memcpy(skb_push(skb, 1), &hci_skb_pkt_type(skb), 1);
 
 	/* Don't go to sleep in middle of patch download or
 	 * Out-Of-Band(GPIOs control) sleep is selected.
@@ -873,7 +873,7 @@ static int qca_set_baudrate(struct hci_dev *hdev, uint8_t baudrate)
 
 	/* Assign commands to change baudrate and packet type. */
 	memcpy(skb_put(skb, sizeof(cmd)), cmd, sizeof(cmd));
-	bt_cb(skb)->pkt_type = HCI_COMMAND_PKT;
+	hci_skb_pkt_type(skb) = HCI_COMMAND_PKT;
 
 	skb_queue_tail(&qca->txq, skb);
 	hci_uart_tx_wakeup(hu);

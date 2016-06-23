@@ -55,12 +55,12 @@ static struct bfin_timer iio_bfin_timer_code[MAX_BLACKFIN_GPTIMERS] = {
 };
 
 struct bfin_tmr_state {
-	struct iio_trigger *trig;
-	struct bfin_timer *t;
-	unsigned timer_num;
-	bool output_enable;
-	unsigned int duty;
-	int irq;
+	struct iio_trigger	*trig;
+	struct bfin_timer	*t;
+	unsigned int		timer_num;
+	bool			output_enable;
+	unsigned int		duty;
+	int			irq;
 };
 
 static int iio_bfin_tmr_set_state(struct iio_trigger *trig, bool state)
@@ -100,7 +100,7 @@ static ssize_t iio_bfin_tmr_frequency_store(struct device *dev,
 	if (enabled)
 		disable_gptimers(st->t->bit);
 
-	if (val == 0)
+	if (!val)
 		return count;
 
 	val = get_sclk() / val;
@@ -125,7 +125,7 @@ static ssize_t iio_bfin_tmr_frequency_show(struct device *dev,
 	unsigned int period = get_gptimer_period(st->t->id);
 	unsigned long val;
 
-	if (period == 0)
+	if (!period)
 		val = 0;
 	else
 		val = get_sclk() / get_gptimer_period(st->t->id);
@@ -178,7 +178,7 @@ static const struct iio_trigger_ops iio_bfin_tmr_trigger_ops = {
 
 static int iio_bfin_tmr_trigger_probe(struct platform_device *pdev)
 {
-	struct iio_bfin_timer_trigger_pdata *pdata = pdev->dev.platform_data;
+	struct iio_bfin_timer_trigger_pdata *pdata;
 	struct bfin_tmr_state *st;
 	unsigned int config;
 	int ret;
@@ -221,6 +221,7 @@ static int iio_bfin_tmr_trigger_probe(struct platform_device *pdev)
 
 	config = PWM_OUT | PERIOD_CNT | IRQ_ENA;
 
+	pdata =	dev_get_platdata(&pdev->dev);
 	if (pdata && pdata->output_enable) {
 		unsigned long long val;
 

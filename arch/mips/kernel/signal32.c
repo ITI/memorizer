@@ -31,7 +31,6 @@
 #include <asm/ucontext.h>
 #include <asm/fpu.h>
 #include <asm/war.h>
-#include <asm/vdso.h>
 #include <asm/dsp.h>
 
 #include "signal-common.h"
@@ -228,6 +227,12 @@ int copy_siginfo_to_user32(compat_siginfo_t __user *to, const siginfo_t *from)
 			err |= __put_user(from->si_uid, &to->si_uid);
 			err |= __put_user(from->si_int, &to->si_int);
 			break;
+		case __SI_SYS >> 16:
+			err |= __copy_to_user(&to->si_call_addr, &from->si_call_addr,
+					      sizeof(compat_uptr_t));
+			err |= __put_user(from->si_syscall, &to->si_syscall);
+			err |= __put_user(from->si_arch, &to->si_arch);
+			break;
 		}
 	}
 	return err;
@@ -406,14 +411,12 @@ static int setup_rt_frame_32(void *sig_return, struct ksignal *ksig,
  */
 struct mips_abi mips_abi_32 = {
 	.setup_frame	= setup_frame_32,
-	.signal_return_offset =
-		offsetof(struct mips_vdso, o32_signal_trampoline),
 	.setup_rt_frame = setup_rt_frame_32,
-	.rt_signal_return_offset =
-		offsetof(struct mips_vdso, o32_rt_signal_trampoline),
 	.restart	= __NR_O32_restart_syscall,
 
 	.off_sc_fpregs = offsetof(struct sigcontext32, sc_fpregs),
 	.off_sc_fpc_csr = offsetof(struct sigcontext32, sc_fpc_csr),
 	.off_sc_used_math = offsetof(struct sigcontext32, sc_used_math),
+
+	.vdso		= &vdso_image_o32,
 };

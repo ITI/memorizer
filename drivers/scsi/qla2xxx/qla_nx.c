@@ -433,7 +433,7 @@ qla82xx_pci_get_crb_addr_2M(struct qla_hw_data *ha, ulong off_in,
 	if (off_in < QLA82XX_PCI_CRBSPACE)
 		return -1;
 
-	*off_out = (void __iomem *)(off_in - QLA82XX_PCI_CRBSPACE);
+	off_in -= QLA82XX_PCI_CRBSPACE;
 
 	/* Try direct map */
 	m = &crb_128M_2M_map[CRB_BLK(off_in)].sub_block[CRB_SUBBLK(off_in)];
@@ -443,6 +443,7 @@ qla82xx_pci_get_crb_addr_2M(struct qla_hw_data *ha, ulong off_in,
 		return 0;
 	}
 	/* Not in direct map, use crb window */
+	*off_out = (void __iomem *)off_in;
 	return 1;
 }
 
@@ -1228,7 +1229,7 @@ qla82xx_pinit_from_rom(scsi_qla_host_t *vha)
 	if (buf == NULL) {
 		ql_log(ql_log_fatal, vha, 0x010c,
 		    "Unable to allocate memory.\n");
-		return -1;
+		return -ENOMEM;
 	}
 
 	for (i = 0; i < n; i++) {

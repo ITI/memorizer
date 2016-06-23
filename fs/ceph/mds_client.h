@@ -44,6 +44,15 @@ struct ceph_mds_reply_info_in {
 	u64 inline_version;
 	u32 inline_len;
 	char *inline_data;
+	u32 pool_ns_len;
+};
+
+struct ceph_mds_reply_dir_entry {
+	char                          *name;
+	u32                           name_len;
+	struct ceph_mds_reply_lease   *lease;
+	struct ceph_mds_reply_info_in inode;
+	loff_t			      offset;
 };
 
 /*
@@ -72,11 +81,10 @@ struct ceph_mds_reply_info_parsed {
 			struct ceph_mds_reply_dirfrag *dir_dir;
 			size_t			      dir_buf_size;
 			int                           dir_nr;
-			char                          **dir_dname;
-			u32                           *dir_dname_len;
-			struct ceph_mds_reply_lease   **dir_dlease;
-			struct ceph_mds_reply_info_in *dir_in;
-			u8                            dir_complete, dir_end;
+			bool			      dir_complete;
+			bool			      dir_end;
+			bool			      hash_order;
+			struct ceph_mds_reply_dir_entry  *dir_entries;
 		};
 
 		/* for create results */
@@ -96,7 +104,7 @@ struct ceph_mds_reply_info_parsed {
 /*
  * cap releases are batched and sent to the MDS en masse.
  */
-#define CEPH_CAPS_PER_RELEASE ((PAGE_CACHE_SIZE -			\
+#define CEPH_CAPS_PER_RELEASE ((PAGE_SIZE -			\
 				sizeof(struct ceph_mds_cap_release)) /	\
 			       sizeof(struct ceph_mds_cap_item))
 
@@ -235,6 +243,9 @@ struct ceph_mds_request {
 	/* link unsafe requests to parent directory, for fsync */
 	struct inode	*r_unsafe_dir;
 	struct list_head r_unsafe_dir_item;
+
+	/* unsafe requests that modify the target inode */
+	struct list_head r_unsafe_target_item;
 
 	struct ceph_mds_session *r_session;
 

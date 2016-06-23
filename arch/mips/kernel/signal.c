@@ -36,7 +36,6 @@
 #include <asm/ucontext.h>
 #include <asm/cpu-features.h>
 #include <asm/war.h>
-#include <asm/vdso.h>
 #include <asm/dsp.h>
 #include <asm/inst.h>
 #include <asm/msa.h>
@@ -195,6 +194,9 @@ static int restore_msa_extcontext(void __user *buf, unsigned int size)
 	unsigned long long val;
 	unsigned int csr;
 	int i, err;
+
+	if (!config_enabled(CONFIG_CPU_HAS_MSA))
+		return SIGSYS;
 
 	if (size != sizeof(*msa))
 		return -EINVAL;
@@ -399,8 +401,8 @@ int protected_restore_fp_context(void __user *sc)
 	}
 
 fp_done:
-	if (used & USED_EXTCONTEXT)
-		err |= restore_extcontext(sc_to_extcontext(sc));
+	if (!err && (used & USED_EXTCONTEXT))
+		err = restore_extcontext(sc_to_extcontext(sc));
 
 	return err ?: sig;
 }
@@ -752,16 +754,15 @@ static int setup_rt_frame(void *sig_return, struct ksignal *ksig,
 struct mips_abi mips_abi = {
 #ifdef CONFIG_TRAD_SIGNALS
 	.setup_frame	= setup_frame,
-	.signal_return_offset = offsetof(struct mips_vdso, signal_trampoline),
 #endif
 	.setup_rt_frame = setup_rt_frame,
-	.rt_signal_return_offset =
-		offsetof(struct mips_vdso, rt_signal_trampoline),
 	.restart	= __NR_restart_syscall,
 
 	.off_sc_fpregs = offsetof(struct sigcontext, sc_fpregs),
 	.off_sc_fpc_csr = offsetof(struct sigcontext, sc_fpc_csr),
 	.off_sc_used_math = offsetof(struct sigcontext, sc_used_math),
+
+	.vdso		= &vdso_image,
 };
 
 static void handle_signal(struct ksignal *ksig, struct pt_regs *regs)
@@ -769,15 +770,7 @@ static void handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 	sigset_t *oldset = sigmask_to_save();
 	int ret;
 	struct mips_abi *abi = current->thread.abi;
-#ifdef CONFIG_CPU_MICROMIPS
-	void *vdso;
-	unsigned long tmp = (unsigned long)current->mm->context.vdso;
-
-	set_isa16_mode(tmp);
-	vdso = (void *)tmp;
-#else
 	void *vdso = current->mm->context.vdso;
-#endif
 
 	if (regs->regs[0]) {
 		switch(regs->regs[2]) {
@@ -800,12 +793,12 @@ static void handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 		regs->regs[0] = 0;		/* Don't deal with this again.	*/
 	}
 
-	if (sig_uses_siginfo(&ksig->ka))
-		ret = abi->setup_rt_frame(vdso + abi->rt_signal_return_offset,
+	if (sig_uses_siginfo(&ksig->ka, abi))
+		ret = abi->setup_rt_frame(vdso + abi->vdso->off_rt_sigreturn,
 					  ksig, regs, oldset);
 	else
-		ret = abi->setup_frame(vdso + abi->signal_return_offset, ksig,
-				       regs, oldset);
+		ret = abi->setup_frame(vdso + abi->vdso->off_sigreturn,
+				       ksig, regs, oldset);
 
 	signal_setup_done(ret, ksig, 0);
 }

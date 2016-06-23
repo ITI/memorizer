@@ -26,6 +26,8 @@
 #include <linux/of_iommu.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
+#include <linux/regmap.h>
+#include <linux/mfd/syscon.h>
 
 #include <asm/cacheflush.h>
 
@@ -112,6 +114,18 @@ void omap_iommu_restore_ctx(struct device *dev)
 }
 EXPORT_SYMBOL_GPL(omap_iommu_restore_ctx);
 
+static void dra7_cfg_dspsys_mmu(struct omap_iommu *obj, bool enable)
+{
+	u32 val, mask;
+
+	if (!obj->syscfg)
+		return;
+
+	mask = (1 << (obj->id * DSP_SYS_MMU_CONFIG_EN_SHIFT));
+	val = enable ? mask : 0;
+	regmap_update_bits(obj->syscfg, DSP_SYS_MMU_CONFIG, mask, val);
+}
+
 static void __iommu_set_twl(struct omap_iommu *obj, bool on)
 {
 	u32 l = iommu_read_reg(obj, MMU_CNTL);
@@ -147,6 +161,8 @@ static int omap2_iommu_enable(struct omap_iommu *obj)
 
 	iommu_write_reg(obj, pa, MMU_TTB);
 
+	dra7_cfg_dspsys_mmu(obj, true);
+
 	if (obj->has_bus_err_back)
 		iommu_write_reg(obj, MMU_GP_REG_BUS_ERR_BACK_EN, MMU_GP_REG);
 
@@ -161,6 +177,7 @@ static void omap2_iommu_disable(struct omap_iommu *obj)
 
 	l &= ~MMU_CNTL_MASK;
 	iommu_write_reg(obj, l, MMU_CNTL);
+	dra7_cfg_dspsys_mmu(obj, false);
 
 	dev_dbg(obj->dev, "%s is shutting down\n", obj->name);
 }
@@ -611,9 +628,11 @@ iopgtable_store_entry_core(struct omap_iommu *obj, struct iotlb_entry *e)
 		break;
 	default:
 		fn = NULL;
-		BUG();
 		break;
 	}
+
+	if (WARN_ON(!fn))
+		return -EINVAL;
 
 	prot = get_iopte_attr(e);
 
@@ -864,6 +883,42 @@ static void omap_iommu_detach(struct omap_iommu *obj)
 	dev_dbg(obj->dev, "%s: %s\n", __func__, obj->name);
 }
 
+static int omap_iommu_dra7_get_dsp_system_cfg(struct platform_device *pdev,
+					      struct omap_iommu *obj)
+{
+	struct device_node *np = pdev->dev.of_node;
+	int ret;
+
+	if (!of_device_is_compatible(np, "ti,dra7-dsp-iommu"))
+		return 0;
+
+	if (!of_property_read_bool(np, "ti,syscon-mmuconfig")) {
+		dev_err(&pdev->dev, "ti,syscon-mmuconfig property is missing\n");
+		return -EINVAL;
+	}
+
+	obj->syscfg =
+		syscon_regmap_lookup_by_phandle(np, "ti,syscon-mmuconfig");
+	if (IS_ERR(obj->syscfg)) {
+		/* can fail with -EPROBE_DEFER */
+		ret = PTR_ERR(obj->syscfg);
+		return ret;
+	}
+
+	if (of_property_read_u32_index(np, "ti,syscon-mmuconfig", 1,
+				       &obj->id)) {
+		dev_err(&pdev->dev, "couldn't get the IOMMU instance id within subsystem\n");
+		return -EINVAL;
+	}
+
+	if (obj->id != 0 && obj->id != 1) {
+		dev_err(&pdev->dev, "invalid IOMMU instance id\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 /*
  *	OMAP Device MMU(IOMMU) detection
  */
@@ -907,6 +962,10 @@ static int omap_iommu_probe(struct platform_device *pdev)
 	if (IS_ERR(obj->regbase))
 		return PTR_ERR(obj->regbase);
 
+	err = omap_iommu_dra7_get_dsp_system_cfg(pdev, obj);
+	if (err)
+		return err;
+
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0)
 		return -ENODEV;
@@ -930,7 +989,6 @@ static int omap_iommu_remove(struct platform_device *pdev)
 {
 	struct omap_iommu *obj = platform_get_drvdata(pdev);
 
-	iopgtable_clear_entry_all(obj);
 	omap_iommu_debugfs_remove(obj);
 
 	pm_runtime_disable(obj->dev);
@@ -943,6 +1001,7 @@ static const struct of_device_id omap_iommu_of_match[] = {
 	{ .compatible = "ti,omap2-iommu" },
 	{ .compatible = "ti,omap4-iommu" },
 	{ .compatible = "ti,dra7-iommu"	},
+	{ .compatible = "ti,dra7-dsp-iommu" },
 	{},
 };
 
@@ -1103,7 +1162,8 @@ static struct iommu_domain *omap_iommu_domain_alloc(unsigned type)
 	 * should never fail, but please keep this around to ensure
 	 * we keep the hardware happy
 	 */
-	BUG_ON(!IS_ALIGNED((long)omap_domain->pgtable, IOPGD_TABLE_SIZE));
+	if (WARN_ON(!IS_ALIGNED((long)omap_domain->pgtable, IOPGD_TABLE_SIZE)))
+		goto fail_align;
 
 	clean_dcache_area(omap_domain->pgtable, IOPGD_TABLE_SIZE);
 	spin_lock_init(&omap_domain->lock);
@@ -1114,6 +1174,8 @@ static struct iommu_domain *omap_iommu_domain_alloc(unsigned type)
 
 	return &omap_domain->domain;
 
+fail_align:
+	kfree(omap_domain->pgtable);
 fail_nomem:
 	kfree(omap_domain);
 out:

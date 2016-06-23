@@ -809,6 +809,7 @@ static const struct of_device_id pxa_ssp_of_ids[] = {
 	{ .compatible = "mrvl,pxa-ssp-dai" },
 	{}
 };
+MODULE_DEVICE_TABLE(of, pxa_ssp_of_ids);
 #endif
 
 static int asoc_ssp_probe(struct platform_device *pdev)
@@ -832,3 +833,4 @@ module_platform_driver(asoc_ssp_driver);
 MODULE_AUTHOR("Mark Brown <broonie@opensource.wolfsonmicro.com>");
 MODULE_DESCRIPTION("PXA SSP/PCM SoC Interface");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:pxa-ssp-dai");

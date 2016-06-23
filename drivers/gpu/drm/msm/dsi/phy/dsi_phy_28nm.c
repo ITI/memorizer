@@ -99,16 +99,14 @@ static int dsi_28nm_phy_enable(struct msm_dsi_phy *phy, int src_pll_id,
 		dsi_phy_write(base + REG_DSI_28nm_PHY_LN_CFG_1(i), 0);
 		dsi_phy_write(base + REG_DSI_28nm_PHY_LN_CFG_2(i), 0);
 		dsi_phy_write(base + REG_DSI_28nm_PHY_LN_CFG_3(i), 0);
+		dsi_phy_write(base + REG_DSI_28nm_PHY_LN_CFG_4(i), 0);
 		dsi_phy_write(base + REG_DSI_28nm_PHY_LN_TEST_DATAPATH(i), 0);
 		dsi_phy_write(base + REG_DSI_28nm_PHY_LN_DEBUG_SEL(i), 0);
 		dsi_phy_write(base + REG_DSI_28nm_PHY_LN_TEST_STR_0(i), 0x1);
 		dsi_phy_write(base + REG_DSI_28nm_PHY_LN_TEST_STR_1(i), 0x97);
 	}
-	dsi_phy_write(base + REG_DSI_28nm_PHY_LN_CFG_4(0), 0);
-	dsi_phy_write(base + REG_DSI_28nm_PHY_LN_CFG_4(1), 0x5);
-	dsi_phy_write(base + REG_DSI_28nm_PHY_LN_CFG_4(2), 0xa);
-	dsi_phy_write(base + REG_DSI_28nm_PHY_LN_CFG_4(3), 0xf);
 
+	dsi_phy_write(base + REG_DSI_28nm_PHY_LNCK_CFG_4, 0);
 	dsi_phy_write(base + REG_DSI_28nm_PHY_LNCK_CFG_1, 0xc0);
 	dsi_phy_write(base + REG_DSI_28nm_PHY_LNCK_TEST_STR0, 0x1);
 	dsi_phy_write(base + REG_DSI_28nm_PHY_LNCK_TEST_STR1, 0xbb);
@@ -140,7 +138,7 @@ const struct msm_dsi_phy_cfg dsi_phy_28nm_hpm_cfgs = {
 	.reg_cfg = {
 		.num = 1,
 		.regs = {
-			{"vddio", 1800000, 1800000, 100000, 100},
+			{"vddio", 100000, 100},
 		},
 	},
 	.ops = {
@@ -155,7 +153,7 @@ const struct msm_dsi_phy_cfg dsi_phy_28nm_lp_cfgs = {
 	.reg_cfg = {
 		.num = 1,
 		.regs = {
-			{"vddio", 1800000, 1800000, 100000, 100},
+			{"vddio", 100000, 100},	/* 1.8 V */
 		},
 	},
 	.ops = {

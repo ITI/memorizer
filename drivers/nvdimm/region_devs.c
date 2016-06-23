@@ -134,62 +134,6 @@ int nd_region_to_nstype(struct nd_region *nd_region)
 }
 EXPORT_SYMBOL(nd_region_to_nstype);
 
-static int is_uuid_busy(struct device *dev, void *data)
-{
-	struct nd_region *nd_region = to_nd_region(dev->parent);
-	u8 *uuid = data;
-
-	switch (nd_region_to_nstype(nd_region)) {
-	case ND_DEVICE_NAMESPACE_PMEM: {
-		struct nd_namespace_pmem *nspm = to_nd_namespace_pmem(dev);
-
-		if (!nspm->uuid)
-			break;
-		if (memcmp(uuid, nspm->uuid, NSLABEL_UUID_LEN) == 0)
-			return -EBUSY;
-		break;
-	}
-	case ND_DEVICE_NAMESPACE_BLK: {
-		struct nd_namespace_blk *nsblk = to_nd_namespace_blk(dev);
-
-		if (!nsblk->uuid)
-			break;
-		if (memcmp(uuid, nsblk->uuid, NSLABEL_UUID_LEN) == 0)
-			return -EBUSY;
-		break;
-	}
-	default:
-		break;
-	}
-
-	return 0;
-}
-
-static int is_namespace_uuid_busy(struct device *dev, void *data)
-{
-	if (is_nd_pmem(dev) || is_nd_blk(dev))
-		return device_for_each_child(dev, data, is_uuid_busy);
-	return 0;
-}
-
-/**
- * nd_is_uuid_unique - verify that no other namespace has @uuid
- * @dev: any device on a nvdimm_bus
- * @uuid: uuid to check
- */
-bool nd_is_uuid_unique(struct device *dev, u8 *uuid)
-{
-	struct nvdimm_bus *nvdimm_bus = walk_to_nvdimm_bus(dev);
-
-	if (!nvdimm_bus)
-		return false;
-	WARN_ON_ONCE(!is_nvdimm_bus_locked(&nvdimm_bus->dev));
-	if (device_for_each_child(&nvdimm_bus->dev, uuid,
-				is_namespace_uuid_busy) != 0)
-		return false;
-	return true;
-}
-
 static ssize_t size_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -362,6 +306,23 @@ static ssize_t pfn_seed_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(pfn_seed);
 
+static ssize_t dax_seed_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct nd_region *nd_region = to_nd_region(dev);
+	ssize_t rc;
+
+	nvdimm_bus_lock(dev);
+	if (nd_region->dax_seed)
+		rc = sprintf(buf, "%s\n", dev_name(nd_region->dax_seed));
+	else
+		rc = sprintf(buf, "\n");
+	nvdimm_bus_unlock(dev);
+
+	return rc;
+}
+static DEVICE_ATTR_RO(dax_seed);
+
 static ssize_t read_only_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -391,6 +352,7 @@ static struct attribute *nd_region_attributes[] = {
 	&dev_attr_mappings.attr,
 	&dev_attr_btt_seed.attr,
 	&dev_attr_pfn_seed.attr,
+	&dev_attr_dax_seed.attr,
 	&dev_attr_read_only.attr,
 	&dev_attr_set_cookie.attr,
 	&dev_attr_available_size.attr,
@@ -405,6 +367,12 @@ static umode_t region_visible(struct kobject *kobj, struct attribute *a, int n)
 	struct nd_region *nd_region = to_nd_region(dev);
 	struct nd_interleave_set *nd_set = nd_region->nd_set;
 	int type = nd_region_to_nstype(nd_region);
+
+	if (!is_nd_pmem(dev) && a == &dev_attr_pfn_seed.attr)
+		return 0;
+
+	if (!is_nd_pmem(dev) && a == &dev_attr_dax_seed.attr)
+		return 0;
 
 	if (a != &dev_attr_set_cookie.attr
 			&& a != &dev_attr_available_size.attr)
@@ -485,6 +453,20 @@ static void nd_region_notify_driver_action(struct nvdimm_bus *nvdimm_bus,
 		if (nd_region->ns_seed == &nd_btt->ndns->dev &&
 				is_nd_blk(dev->parent))
 			nd_region_create_blk_seed(nd_region);
+		nvdimm_bus_unlock(dev);
+	}
+	if (is_nd_pfn(dev) && probe) {
+		nd_region = to_nd_region(dev->parent);
+		nvdimm_bus_lock(dev);
+		if (nd_region->pfn_seed == dev)
+			nd_region_create_pfn_seed(nd_region);
+		nvdimm_bus_unlock(dev);
+	}
+	if (is_nd_dax(dev) && probe) {
+		nd_region = to_nd_region(dev->parent);
+		nvdimm_bus_lock(dev);
+		if (nd_region->dax_seed == dev)
+			nd_region_create_dax_seed(nd_region);
 		nvdimm_bus_unlock(dev);
 	}
 }
@@ -764,6 +746,7 @@ static struct nd_region *nd_region_create(struct nvdimm_bus *nvdimm_bus,
 	ida_init(&nd_region->ns_ida);
 	ida_init(&nd_region->btt_ida);
 	ida_init(&nd_region->pfn_ida);
+	ida_init(&nd_region->dax_ida);
 	dev = &nd_region->dev;
 	dev_set_name(dev, "region%d", nd_region->id);
 	dev->parent = &nvdimm_bus->dev;
@@ -810,3 +793,8 @@ struct nd_region *nvdimm_volatile_region_create(struct nvdimm_bus *nvdimm_bus,
 			__func__);
 }
 EXPORT_SYMBOL_GPL(nvdimm_volatile_region_create);
+
+void __exit nd_region_devs_exit(void)
+{
+	ida_destroy(&region_ida);
+}

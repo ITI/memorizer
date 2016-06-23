@@ -398,8 +398,7 @@ static void sh_mobile_i2c_get_data(struct sh_mobile_i2c_data *pd,
 {
 	switch (pd->pos) {
 	case -1:
-		*buf = (pd->msg->addr & 0x7f) << 1;
-		*buf |= (pd->msg->flags & I2C_M_RD) ? 1 : 0;
+		*buf = i2c_8bit_addr_from_msg(pd->msg);
 		break;
 	default:
 		*buf = pd->msg->buf[pd->pos];
@@ -836,6 +835,7 @@ static const struct of_device_id sh_mobile_i2c_dt_ids[] = {
 	{ .compatible = "renesas,iic-r8a7792", .data = &fast_clock_dt_config },
 	{ .compatible = "renesas,iic-r8a7793", .data = &fast_clock_dt_config },
 	{ .compatible = "renesas,iic-r8a7794", .data = &fast_clock_dt_config },
+	{ .compatible = "renesas,iic-r8a7795", .data = &fast_clock_dt_config },
 	{ .compatible = "renesas,iic-sh73a0", .data = &fast_clock_dt_config },
 	{},
 };

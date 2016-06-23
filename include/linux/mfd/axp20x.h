@@ -11,12 +11,16 @@
 #ifndef __LINUX_MFD_AXP20X_H
 #define __LINUX_MFD_AXP20X_H
 
+#include <linux/regmap.h>
+
 enum {
 	AXP152_ID = 0,
 	AXP202_ID,
 	AXP209_ID,
 	AXP221_ID,
+	AXP223_ID,
 	AXP288_ID,
+	AXP809_ID,
 	NR_AXP20X_VARIANTS,
 };
 
@@ -261,6 +265,29 @@ enum {
 	AXP22X_REG_ID_MAX,
 };
 
+enum {
+	AXP809_DCDC1 = 0,
+	AXP809_DCDC2,
+	AXP809_DCDC3,
+	AXP809_DCDC4,
+	AXP809_DCDC5,
+	AXP809_DC1SW,
+	AXP809_DC5LDO,
+	AXP809_ALDO1,
+	AXP809_ALDO2,
+	AXP809_ALDO3,
+	AXP809_ELDO1,
+	AXP809_ELDO2,
+	AXP809_ELDO3,
+	AXP809_DLDO1,
+	AXP809_DLDO2,
+	AXP809_RTC_LDO,
+	AXP809_LDO_IO0,
+	AXP809_LDO_IO1,
+	AXP809_SW,
+	AXP809_REG_ID_MAX,
+};
+
 /* IRQs */
 enum {
 	AXP152_IRQ_LDO0IN_CONNECT = 1,
@@ -387,6 +414,41 @@ enum axp288_irqs {
 	AXP288_IRQ_BC_USB_CHNG,
 };
 
+enum axp809_irqs {
+	AXP809_IRQ_ACIN_OVER_V = 1,
+	AXP809_IRQ_ACIN_PLUGIN,
+	AXP809_IRQ_ACIN_REMOVAL,
+	AXP809_IRQ_VBUS_OVER_V,
+	AXP809_IRQ_VBUS_PLUGIN,
+	AXP809_IRQ_VBUS_REMOVAL,
+	AXP809_IRQ_VBUS_V_LOW,
+	AXP809_IRQ_BATT_PLUGIN,
+	AXP809_IRQ_BATT_REMOVAL,
+	AXP809_IRQ_BATT_ENT_ACT_MODE,
+	AXP809_IRQ_BATT_EXIT_ACT_MODE,
+	AXP809_IRQ_CHARG,
+	AXP809_IRQ_CHARG_DONE,
+	AXP809_IRQ_BATT_CHG_TEMP_HIGH,
+	AXP809_IRQ_BATT_CHG_TEMP_HIGH_END,
+	AXP809_IRQ_BATT_CHG_TEMP_LOW,
+	AXP809_IRQ_BATT_CHG_TEMP_LOW_END,
+	AXP809_IRQ_BATT_ACT_TEMP_HIGH,
+	AXP809_IRQ_BATT_ACT_TEMP_HIGH_END,
+	AXP809_IRQ_BATT_ACT_TEMP_LOW,
+	AXP809_IRQ_BATT_ACT_TEMP_LOW_END,
+	AXP809_IRQ_DIE_TEMP_HIGH,
+	AXP809_IRQ_LOW_PWR_LVL1,
+	AXP809_IRQ_LOW_PWR_LVL2,
+	AXP809_IRQ_TIMER,
+	AXP809_IRQ_PEK_RIS_EDGE,
+	AXP809_IRQ_PEK_FAL_EDGE,
+	AXP809_IRQ_PEK_SHORT,
+	AXP809_IRQ_PEK_LONG,
+	AXP809_IRQ_PEK_OVER_OFF,
+	AXP809_IRQ_GPIO1_INPUT,
+	AXP809_IRQ_GPIO0_INPUT,
+};
+
 #define AXP288_TS_ADC_H		0x58
 #define AXP288_TS_ADC_L		0x59
 #define AXP288_GP_ADC_H		0x5a
@@ -394,7 +456,7 @@ enum axp288_irqs {
 
 struct axp20x_dev {
 	struct device			*dev;
-	struct i2c_client		*i2c_client;
+	int				irq;
 	struct regmap			*regmap;
 	struct regmap_irq_chip_data	*regmap_irqc;
 	long				variant;
@@ -437,5 +499,58 @@ struct axp288_extcon_pdata {
 	/* GPIO pin control to switch D+/D- lines b/w PMIC and SOC */
 	struct gpio_desc *gpio_mux_cntl;
 };
+
+/* generic helper function for reading 9-16 bit wide regs */
+static inline int axp20x_read_variable_width(struct regmap *regmap,
+	unsigned int reg, unsigned int width)
+{
+	unsigned int reg_val, result;
+	int err;
+
+	err = regmap_read(regmap, reg, &reg_val);
+	if (err)
+		return err;
+
+	result = reg_val << (width - 8);
+
+	err = regmap_read(regmap, reg + 1, &reg_val);
+	if (err)
+		return err;
+
+	result |= reg_val;
+
+	return result;
+}
+
+/**
+ * axp20x_match_device(): Setup axp20x variant related fields
+ *
+ * @axp20x: axp20x device to setup (.dev field must be set)
+ * @dev: device associated with this axp20x device
+ *
+ * This lets the axp20x core configure the mfd cells and register maps
+ * for later use.
+ */
+int axp20x_match_device(struct axp20x_dev *axp20x);
+
+/**
+ * axp20x_device_probe(): Probe a configured axp20x device
+ *
+ * @axp20x: axp20x device to probe (must be configured)
+ *
+ * This function lets the axp20x core register the axp20x mfd devices
+ * and irqchip. The axp20x device passed in must be fully configured
+ * with axp20x_match_device, its irq set, and regmap created.
+ */
+int axp20x_device_probe(struct axp20x_dev *axp20x);
+
+/**
+ * axp20x_device_probe(): Remove a axp20x device
+ *
+ * @axp20x: axp20x device to remove
+ *
+ * This tells the axp20x core to remove the associated mfd devices
+ */
+int axp20x_device_remove(struct axp20x_dev *axp20x);
 
 #endif /* __LINUX_MFD_AXP20X_H */

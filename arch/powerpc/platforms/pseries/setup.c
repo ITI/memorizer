@@ -40,6 +40,7 @@
 #include <linux/seq_file.h>
 #include <linux/root_dev.h>
 #include <linux/of.h>
+#include <linux/of_pci.h>
 #include <linux/kexec.h>
 
 #include <asm/mmu.h>
@@ -234,6 +235,8 @@ static void __init pseries_discover_pic(void)
 
 	for_each_node_by_name(np, "interrupt-controller") {
 		typep = of_get_property(np, "compatible", NULL);
+		if (!typep)
+			continue;
 		if (strstr(typep, "open-pic")) {
 			pSeries_mpic_node = of_node_get(np);
 			ppc_md.init_IRQ       = pseries_mpic_init_IRQ;
@@ -264,7 +267,7 @@ static int pci_dn_reconfig_notifier(struct notifier_block *nb, unsigned long act
 		pdn = parent ? PCI_DN(parent) : NULL;
 		if (pdn) {
 			/* Create pdn and EEH device */
-			update_dn_pci_info(np, pdn->phb);
+			pci_add_device_node_info(pdn->phb, np);
 			eeh_dev_init(PCI_DN(np), pdn->phb);
 		}
 
@@ -495,18 +498,7 @@ static void __init find_and_init_phbs(void)
 	 * PCI_PROBE_ONLY and PCI_REASSIGN_ALL_BUS can be set via properties
 	 * in chosen.
 	 */
-	if (of_chosen) {
-		const int *prop;
-
-		prop = of_get_property(of_chosen,
-				"linux,pci-probe-only", NULL);
-		if (prop) {
-			if (*prop)
-				pci_add_flags(PCI_PROBE_ONLY);
-			else
-				pci_clear_flags(PCI_PROBE_ONLY);
-		}
-	}
+	of_pci_check_probe_only();
 }
 
 static void __init pSeries_setup_arch(void)
@@ -525,7 +517,7 @@ static void __init pSeries_setup_arch(void)
 
 	fwnmi_init();
 
-	/* By default, only probe PCI (can be overriden by rtas_pci) */
+	/* By default, only probe PCI (can be overridden by rtas_pci) */
 	pci_add_flags(PCI_PROBE_ONLY);
 
 	/* Find and initialize PCI host bridges */
@@ -836,10 +828,6 @@ static int pSeries_pci_probe_mode(struct pci_bus *bus)
 		return PCI_PROBE_DEVTREE;
 	return PCI_PROBE_NORMAL;
 }
-
-#ifndef CONFIG_PCI
-void pSeries_final_fixup(void) { }
-#endif
 
 struct pci_controller_ops pseries_pci_controller_ops = {
 	.probe_mode		= pSeries_pci_probe_mode,

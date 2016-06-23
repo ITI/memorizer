@@ -11,7 +11,7 @@
 #include <linux/acpi.h>
 #include <linux/pci.h>
 
-#include "amdgpu_acpi.h"
+#include "amd_acpi.h"
 
 struct amdgpu_atpx_functions {
 	bool px_params;
@@ -144,7 +144,10 @@ static int amdgpu_atpx_validate(struct amdgpu_atpx *atpx)
 {
 	/* make sure required functions are enabled */
 	/* dGPU power control is required */
-	atpx->functions.power_cntl = true;
+	if (atpx->functions.power_cntl == false) {
+		printk("ATPX dGPU power cntl not present, forcing\n");
+		atpx->functions.power_cntl = true;
+	}
 
 	if (atpx->functions.px_params) {
 		union acpi_object *info;
@@ -501,7 +504,7 @@ static int amdgpu_atpx_get_client_id(struct pci_dev *pdev)
 		return VGA_SWITCHEROO_DIS;
 }
 
-static struct vga_switcheroo_handler amdgpu_atpx_handler = {
+static const struct vga_switcheroo_handler amdgpu_atpx_handler = {
 	.switchto = amdgpu_atpx_switchto,
 	.power_state = amdgpu_atpx_power_state,
 	.init = amdgpu_atpx_init,
@@ -536,7 +539,7 @@ static bool amdgpu_atpx_detect(void)
 
 	if (has_atpx && vga_count == 2) {
 		acpi_get_name(amdgpu_atpx_priv.atpx.handle, ACPI_FULL_PATHNAME, &buffer);
-		printk(KERN_INFO "VGA switcheroo: detected switching method %s handle\n",
+		printk(KERN_INFO "vga_switcheroo: detected switching method %s handle\n",
 		       acpi_method_name);
 		amdgpu_atpx_priv.atpx_detected = true;
 		return true;
@@ -552,13 +555,14 @@ static bool amdgpu_atpx_detect(void)
 void amdgpu_register_atpx_handler(void)
 {
 	bool r;
+	enum vga_switcheroo_handler_flags_t handler_flags = 0;
 
 	/* detect if we have any ATPX + 2 VGA in the system */
 	r = amdgpu_atpx_detect();
 	if (!r)
 		return;
 
-	vga_switcheroo_register_handler(&amdgpu_atpx_handler);
+	vga_switcheroo_register_handler(&amdgpu_atpx_handler, handler_flags);
 }
 
 /**

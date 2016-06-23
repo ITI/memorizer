@@ -93,6 +93,8 @@ static unsigned long cpu_pgsz_mask;
 static struct linux_prom64_registers pavail[MAX_BANKS];
 static int pavail_ents;
 
+u64 numa_latency[MAX_NUMNODES][MAX_NUMNODES];
+
 static int cmp_p64(const void *a, const void *b)
 {
 	const struct linux_prom64_registers *x = a, *y = b;
@@ -321,18 +323,6 @@ static void __update_mmu_tsb_insert(struct mm_struct *mm, unsigned long tsb_inde
 	tag = (address >> 22UL);
 	tsb_insert(tsb, tag, tte);
 }
-
-#if defined(CONFIG_HUGETLB_PAGE) || defined(CONFIG_TRANSPARENT_HUGEPAGE)
-static inline bool is_hugetlb_pte(pte_t pte)
-{
-	if ((tlb_type == hypervisor &&
-	     (pte_val(pte) & _PAGE_SZALL_4V) == _PAGE_SZHUGE_4V) ||
-	    (tlb_type != hypervisor &&
-	     (pte_val(pte) & _PAGE_SZALL_4U) == _PAGE_SZHUGE_4U))
-		return true;
-	return false;
-}
-#endif
 
 void update_mmu_cache(struct vm_area_struct *vma, unsigned long address, pte_t *ptep)
 {
@@ -1157,6 +1147,48 @@ static struct mdesc_mlgroup * __init find_mlgroup(u64 node)
 	return NULL;
 }
 
+int __node_distance(int from, int to)
+{
+	if ((from >= MAX_NUMNODES) || (to >= MAX_NUMNODES)) {
+		pr_warn("Returning default NUMA distance value for %d->%d\n",
+			from, to);
+		return (from == to) ? LOCAL_DISTANCE : REMOTE_DISTANCE;
+	}
+	return numa_latency[from][to];
+}
+
+static int find_best_numa_node_for_mlgroup(struct mdesc_mlgroup *grp)
+{
+	int i;
+
+	for (i = 0; i < MAX_NUMNODES; i++) {
+		struct node_mem_mask *n = &node_masks[i];
+
+		if ((grp->mask == n->mask) && (grp->match == n->val))
+			break;
+	}
+	return i;
+}
+
+static void find_numa_latencies_for_group(struct mdesc_handle *md, u64 grp,
+					  int index)
+{
+	u64 arc;
+
+	mdesc_for_each_arc(arc, md, grp, MDESC_ARC_TYPE_FWD) {
+		int tnode;
+		u64 target = mdesc_arc_target(md, arc);
+		struct mdesc_mlgroup *m = find_mlgroup(target);
+
+		if (!m)
+			continue;
+		tnode = find_best_numa_node_for_mlgroup(m);
+		if (tnode == MAX_NUMNODES)
+			continue;
+		numa_latency[index][tnode] = m->latency;
+	}
+}
+
 static int __init numa_attach_mlgroup(struct mdesc_handle *md, u64 grp,
 				      int index)
 {
@@ -1220,7 +1252,7 @@ static int __init numa_parse_mdesc_group(struct mdesc_handle *md, u64 grp,
 static int __init numa_parse_mdesc(void)
 {
 	struct mdesc_handle *md = mdesc_grab();
-	int i, err, count;
+	int i, j, err, count;
 	u64 node;
 
 	node = mdesc_node_by_name(md, MDESC_NODE_NULL, "latency-groups");
@@ -1243,6 +1275,23 @@ static int __init numa_parse_mdesc(void)
 		if (err < 0)
 			break;
 		count++;
+	}
+
+	count = 0;
+	mdesc_for_each_node_by_name(md, node, "group") {
+		find_numa_latencies_for_group(md, node, count);
+		count++;
+	}
+
+	/* Normalize numa latency matrix according to ACPI SLIT spec. */
+	for (i = 0; i < MAX_NUMNODES; i++) {
+		u64 self_latency = numa_latency[i][i];
+
+		for (j = 0; j < MAX_NUMNODES; j++) {
+			numa_latency[i][j] =
+				(numa_latency[i][j] * LOCAL_DISTANCE) /
+				self_latency;
+		}
 	}
 
 	add_node_ranges();
@@ -1301,9 +1350,17 @@ static int __init numa_parse_sun4u(void)
 
 static int __init bootmem_init_numa(void)
 {
+	int i, j;
 	int err = -1;
 
 	numadbg("bootmem_init_numa()\n");
+
+	/* Some sane defaults for numa latency values */
+	for (i = 0; i < MAX_NUMNODES; i++) {
+		for (j = 0; j < MAX_NUMNODES; j++)
+			numa_latency[i][j] = (i == j) ?
+				LOCAL_DISTANCE : REMOTE_DISTANCE;
+	}
 
 	if (numa_enabled) {
 		if (tlb_type == hypervisor)
@@ -1700,6 +1757,7 @@ static void __init setup_page_offset(void)
 			max_phys_bits = 47;
 			break;
 		case SUN4V_CHIP_SPARC_M7:
+		case SUN4V_CHIP_SPARC_SN:
 		default:
 			/* M7 and later support 52-bit virtual addresses.  */
 			sparc64_va_hole_top =    0xfff8000000000000UL;
@@ -1917,6 +1975,7 @@ static void __init sun4v_linear_pte_xor_finalize(void)
 	 */
 	switch (sun4v_chip_type) {
 	case SUN4V_CHIP_SPARC_M7:
+	case SUN4V_CHIP_SPARC_SN:
 		pagecv_flag = 0x00;
 		break;
 	default:
@@ -2069,6 +2128,7 @@ void __init paging_init(void)
 	 */
 	switch (sun4v_chip_type) {
 	case SUN4V_CHIP_SPARC_M7:
+	case SUN4V_CHIP_SPARC_SN:
 		page_cache4v_flag = _PAGE_CP_4V;
 		break;
 	default:
@@ -2764,9 +2824,10 @@ void hugetlb_setup(struct pt_regs *regs)
 	 * the Data-TLB for huge pages.
 	 */
 	if (tlb_type == cheetah_plus) {
+		bool need_context_reload = false;
 		unsigned long ctx;
 
-		spin_lock(&ctx_alloc_lock);
+		spin_lock_irq(&ctx_alloc_lock);
 		ctx = mm->context.sparc64_ctx_val;
 		ctx &= ~CTX_PGSZ_MASK;
 		ctx |= CTX_PGSZ_BASE << CTX_PGSZ0_SHIFT;
@@ -2785,26 +2846,29 @@ void hugetlb_setup(struct pt_regs *regs)
 			 * also executing in this address space.
 			 */
 			mm->context.sparc64_ctx_val = ctx;
-			on_each_cpu(context_reload, mm, 0);
+			need_context_reload = true;
 		}
-		spin_unlock(&ctx_alloc_lock);
+		spin_unlock_irq(&ctx_alloc_lock);
+
+		if (need_context_reload)
+			on_each_cpu(context_reload, mm, 0);
 	}
 }
 #endif
 
 static struct resource code_resource = {
 	.name	= "Kernel code",
-	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM
+	.flags	= IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM
 };
 
 static struct resource data_resource = {
 	.name	= "Kernel data",
-	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM
+	.flags	= IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM
 };
 
 static struct resource bss_resource = {
 	.name	= "Kernel bss",
-	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM
+	.flags	= IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM
 };
 
 static inline resource_size_t compute_kern_paddr(void *addr)
@@ -2840,7 +2904,7 @@ static int __init report_memory(void)
 		res->name = "System RAM";
 		res->start = pavail[i].phys_addr;
 		res->end = pavail[i].phys_addr + pavail[i].reg_size - 1;
-		res->flags = IORESOURCE_BUSY | IORESOURCE_MEM;
+		res->flags = IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM;
 
 		if (insert_resource(&iomem_resource, res) < 0) {
 			pr_warn("Resource insertion failed.\n");

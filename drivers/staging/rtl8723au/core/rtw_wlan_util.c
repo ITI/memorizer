@@ -304,19 +304,9 @@ inline void rtw_set_oper_ch23a(struct rtw_adapter *adapter, u8 ch)
 	adapter_to_dvobj(adapter)->oper_channel = ch;
 }
 
-inline u8 rtw_get_oper_bw23a(struct rtw_adapter *adapter)
-{
-	return adapter_to_dvobj(adapter)->oper_bwmode;
-}
-
 inline void rtw_set_oper_bw23a(struct rtw_adapter *adapter, u8 bw)
 {
 	adapter_to_dvobj(adapter)->oper_bwmode = bw;
-}
-
-inline u8 rtw_get_oper_ch23aoffset(struct rtw_adapter *adapter)
-{
-	return adapter_to_dvobj(adapter)->oper_ch_offset;
 }
 
 inline void rtw_set_oper_ch23aoffset23a(struct rtw_adapter *adapter, u8 offset)
@@ -525,7 +515,7 @@ void WMMOnAssocRsp23a(struct rtw_adapter *padapter)
 	else
 		aSifsTime = 16;
 
-		for (i = 0; i < 4; i++) {
+	for (i = 0; i < 4; i++) {
 		ACI = (pmlmeinfo->WMM_param.ac_param[i].ACI_AIFSN >> 5) & 0x03;
 		ACM = (pmlmeinfo->WMM_param.ac_param[i].ACI_AIFSN >> 4) & 0x01;
 
@@ -1212,7 +1202,7 @@ unsigned int update_supported_rate23a(unsigned char *ptn, unsigned int ptn_sz)
 
 unsigned int update_MSC_rate23a(struct ieee80211_ht_cap *pHT_caps)
 {
-	unsigned int mask = 0;
+	unsigned int mask;
 
 	mask = pHT_caps->mcs.rx_mask[0] << 12 |
 		pHT_caps->mcs.rx_mask[1] << 20;

@@ -42,6 +42,7 @@ int acpi_pci_disabled = 1;	/* skip ACPI PCI scan and IRQ initialization */
 EXPORT_SYMBOL(acpi_pci_disabled);
 
 static bool param_acpi_off __initdata;
+static bool param_acpi_on __initdata;
 static bool param_acpi_force __initdata;
 
 static int __init parse_acpi(char *arg)
@@ -52,6 +53,8 @@ static int __init parse_acpi(char *arg)
 	/* "acpi=off" disables both ACPI table parsing and interpreter */
 	if (strcmp(arg, "off") == 0)
 		param_acpi_off = true;
+	else if (strcmp(arg, "on") == 0) /* prefer ACPI over DT */
+		param_acpi_on = true;
 	else if (strcmp(arg, "force") == 0) /* force ACPI to be enabled */
 		param_acpi_force = true;
 	else
@@ -66,12 +69,24 @@ static int __init dt_scan_depth1_nodes(unsigned long node,
 				       void *data)
 {
 	/*
-	 * Return 1 as soon as we encounter a node at depth 1 that is
-	 * not the /chosen node.
+	 * Ignore anything not directly under the root node; we'll
+	 * catch its parent instead.
 	 */
-	if (depth == 1 && (strcmp(uname, "chosen") != 0))
-		return 1;
-	return 0;
+	if (depth != 1)
+		return 0;
+
+	if (strcmp(uname, "chosen") == 0)
+		return 0;
+
+	if (strcmp(uname, "hypervisor") == 0 &&
+	    of_flat_dt_is_compatible(node, "xen,xen"))
+		return 0;
+
+	/*
+	 * This node at depth 1 is neither a chosen node nor a xen node,
+	 * which we do not expect.
+	 */
+	return 1;
 }
 
 /*
@@ -184,11 +199,13 @@ void __init acpi_boot_table_init(void)
 	/*
 	 * Enable ACPI instead of device tree unless
 	 * - ACPI has been disabled explicitly (acpi=off), or
-	 * - the device tree is not empty (it has more than just a /chosen node)
-	 *   and ACPI has not been force enabled (acpi=force)
+	 * - the device tree is not empty (it has more than just a /chosen node,
+	 *   and a /hypervisor node when running on Xen)
+	 *   and ACPI has not been [force] enabled (acpi=on|force)
 	 */
 	if (param_acpi_off ||
-	    (!param_acpi_force && of_scan_flat_dt(dt_scan_depth1_nodes, NULL)))
+	    (!param_acpi_on && !param_acpi_force &&
+	     of_scan_flat_dt(dt_scan_depth1_nodes, NULL)))
 		return;
 
 	/*
@@ -209,31 +226,6 @@ void __init acpi_boot_table_init(void)
 		if (!param_acpi_force)
 			disable_acpi();
 	}
-}
-
-void __init acpi_gic_init(void)
-{
-	struct acpi_table_header *table;
-	acpi_status status;
-	acpi_size tbl_size;
-	int err;
-
-	if (acpi_disabled)
-		return;
-
-	status = acpi_get_table_with_size(ACPI_SIG_MADT, 0, &table, &tbl_size);
-	if (ACPI_FAILURE(status)) {
-		const char *msg = acpi_format_exception(status);
-
-		pr_err("Failed to get MADT table, %s\n", msg);
-		return;
-	}
-
-	err = gic_v2_acpi_init(table);
-	if (err)
-		pr_err("Failed to initialize GIC IRQ controller");
-
-	early_acpi_os_unmap_memory((char *)table, tbl_size);
 }
 
 #ifdef CONFIG_ACPI_APEI

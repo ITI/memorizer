@@ -15,6 +15,39 @@
 	#address-cells = <1>;
 	#size-cells = <1>;
 
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		gp0_reserved: rproc@40000000 {
+			compatible = "shared-dma-pool";
+			reg = <0x40000000 0x01000000>;
+			no-map;
+			status = "disabled";
+		};
+
+		gp1_reserved: rproc@41000000 {
+			compatible = "shared-dma-pool";
+			reg = <0x41000000 0x01000000>;
+			no-map;
+			status = "disabled";
+		};
+
+		audio_reserved: rproc@42000000 {
+			compatible = "shared-dma-pool";
+			reg = <0x42000000 0x01000000>;
+			no-map;
+			status = "disabled";
+		};
+
+		dmu_reserved: rproc@43000000 {
+			compatible = "shared-dma-pool";
+			reg = <0x43000000 0x01000000>;
+			no-map;
+		};
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -22,15 +55,35 @@
 			device_type = "cpu";
 			compatible = "arm,cortex-a9";
 			reg = <0>;
+
 			/* u-boot puts hpen in SBC dmem at 0xa4 offset */
 			cpu-release-addr = <0x94100A4>;
+
+					 /* kHz     uV   */
+			operating-points = <1500000 0
+					    1200000 0
+					    800000  0
+					    500000  0>;
+
+			clocks = <&clk_m_a9>;
+			clock-names = "cpu";
+			clock-latency = <100000>;
+			cpu0-supply = <&pwm_regulator>;
+			st,syscfg = <&syscfg_core 0x8e0>;
 		};
 		cpu@1 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a9";
 			reg = <1>;
+
 			/* u-boot puts hpen in SBC dmem at 0xa4 offset */
 			cpu-release-addr = <0x94100A4>;
+
+					 /* kHz     uV   */
+			operating-points = <1500000 0
+					    1200000 0
+					    800000  0
+					    500000  0>;
 		};
 	};
 
@@ -150,6 +203,19 @@
 					<ST_IRQ_SYSCFG_PMU_1>;
 			st,fiq-device = <ST_IRQ_SYSCFG_DISABLED>,
 					<ST_IRQ_SYSCFG_DISABLED>;
+		};
+
+		/* Display */
+		vtg_main: sti-vtg-main@8d02800 {
+			compatible = "st,vtg";
+			reg = <0x8d02800 0x200>;
+			interrupts = <GIC_SPI 108 IRQ_TYPE_NONE>;
+		};
+
+		vtg_aux: sti-vtg-aux@8d00200 {
+			compatible = "st,vtg";
+			reg = <0x8d00200 0x100>;
+			interrupts = <GIC_SPI 109 IRQ_TYPE_NONE>;
 		};
 
 		serial@9830000 {
@@ -396,6 +462,8 @@
 			interrupts = <GIC_SPI 113 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clk_s_c0_flexgen CLK_EXT2F_A9>;
 			clock-names = "ssc";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_spi1_default>;
 
 			status = "disabled";
 		};
@@ -406,6 +474,8 @@
 			interrupts = <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clk_s_c0_flexgen CLK_EXT2F_A9>;
 			clock-names = "ssc";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_spi2_default>;
 
 			status = "disabled";
 		};
@@ -416,6 +486,8 @@
 			interrupts = <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clk_s_c0_flexgen CLK_EXT2F_A9>;
 			clock-names = "ssc";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_spi3_default>;
 
 			status = "disabled";
 		};
@@ -426,6 +498,8 @@
 			interrupts = <GIC_SPI 116 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clk_s_c0_flexgen CLK_EXT2F_A9>;
 			clock-names = "ssc";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_spi4_default>;
 
 			status = "disabled";
 		};
@@ -437,6 +511,8 @@
 			interrupts = <GIC_SPI 135 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clk_sysin>;
 			clock-names = "ssc";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_spi10_default>;
 
 			status = "disabled";
 		};
@@ -447,6 +523,8 @@
 			interrupts = <GIC_SPI 136 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clk_sysin>;
 			clock-names = "ssc";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_spi11_default>;
 
 			status = "disabled";
 		};
@@ -457,6 +535,8 @@
 			interrupts = <GIC_SPI 137 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clk_sysin>;
 			clock-names = "ssc";
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_spi12_default>;
 
 			status = "disabled";
 		};
@@ -507,7 +587,7 @@
 			reg = <0x8788000 0x1000>;
 			interrupts = <GIC_SPI 130 IRQ_TYPE_EDGE_RISING>;
 			clocks = <&clk_s_d3_flexgen CLK_LPC_1>;
-			st,lpc-mode = <ST_LPC_MODE_RTC>;
+			st,lpc-mode = <ST_LPC_MODE_CLKSRC>;
 		};
 
 		sata0: sata@9b20000 {
@@ -585,7 +665,6 @@
 		/* COMMS PWM Module */
 		pwm0: pwm@9810000 {
 			compatible	= "st,sti-pwm";
-			status		= "okay";
 			#pwm-cells	= <2>;
 			reg		= <0x9810000 0x68>;
 			pinctrl-names	= "default";
@@ -593,12 +672,13 @@
 			clock-names	= "pwm";
 			clocks		= <&clk_sysin>;
 			st,pwm-num-chan = <1>;
+
+			status		= "disabled";
 		};
 
 		/* SBC PWM Module */
 		pwm1: pwm@9510000 {
 			compatible	= "st,sti-pwm";
-			status		= "okay";
 			#pwm-cells	= <2>;
 			reg		= <0x9510000 0x68>;
 			pinctrl-names	= "default";
@@ -609,6 +689,8 @@
 			clock-names	= "pwm";
 			clocks		= <&clk_sysin>;
 			st,pwm-num-chan = <4>;
+
+			status		= "disabled";
 		};
 
 		rng10: rng@08a89000 {
@@ -623,6 +705,121 @@
 			reg		= <0x08a8a000 0x1000>;
 			clocks          = <&clk_sysin>;
 			status		= "okay";
+		};
+
+		ethernet0: dwmac@9630000 {
+			device_type = "network";
+			status = "disabled";
+			compatible = "st,stih407-dwmac", "snps,dwmac", "snps,dwmac-3.710";
+			reg = <0x9630000 0x8000>, <0x80 0x4>;
+			reg-names = "stmmaceth", "sti-ethconf";
+
+			st,syscon = <&syscfg_sbc_reg 0x80>;
+			st,gmac_en;
+			resets = <&softreset STIH407_ETH1_SOFTRESET>;
+			reset-names = "stmmaceth";
+
+			interrupts = <GIC_SPI 98 IRQ_TYPE_NONE>,
+				     <GIC_SPI 99 IRQ_TYPE_NONE>;
+			interrupt-names = "macirq", "eth_wake_irq";
+
+			/* DMA Bus Mode */
+			snps,pbl = <8>;
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&pinctrl_rgmii1>;
+
+			clock-names = "stmmaceth", "sti-ethclk";
+			clocks = <&clk_s_c0_flexgen CLK_EXT2F_A9>,
+				 <&clk_s_c0_flexgen CLK_ETH_PHY>;
+		};
+
+		rng10: rng@08a89000 {
+			compatible      = "st,rng";
+			reg		= <0x08a89000 0x1000>;
+			clocks          = <&clk_sysin>;
+			status		= "okay";
+		};
+
+		rng11: rng@08a8a000 {
+			compatible      = "st,rng";
+			reg		= <0x08a8a000 0x1000>;
+			clocks          = <&clk_sysin>;
+			status		= "okay";
+		};
+
+		mailbox0: mailbox@8f00000  {
+			compatible	= "st,stih407-mailbox";
+			reg		= <0x8f00000 0x1000>;
+			interrupts	= <GIC_SPI 1 IRQ_TYPE_NONE>;
+			#mbox-cells	= <2>;
+			mbox-name	= "a9";
+			status		= "okay";
+		};
+
+		mailbox1: mailbox@8f01000 {
+			compatible	= "st,stih407-mailbox";
+			reg		= <0x8f01000 0x1000>;
+			#mbox-cells	= <2>;
+			mbox-name	= "st231_gp_1";
+			status		= "okay";
+		};
+
+		mailbox2: mailbox@8f02000 {
+			compatible	= "st,stih407-mailbox";
+			reg		= <0x8f02000 0x1000>;
+			#mbox-cells	= <2>;
+			mbox-name	= "st231_gp_0";
+			status		= "okay";
+		};
+
+		mailbox3: mailbox@8f03000 {
+			compatible	= "st,stih407-mailbox";
+			reg		= <0x8f03000 0x1000>;
+			#mbox-cells	= <2>;
+			mbox-name	= "st231_audio_video";
+			status		= "okay";
+		};
+
+		st231_gp0: remote-processor {
+			compatible	= "st,st231-rproc";
+			memory-region	= <&gp0_reserved>;
+			resets		= <&softreset STIH407_ST231_GP0_SOFTRESET>;
+			reset-names	= "sw_reset";
+			clocks		= <&clk_s_c0_flexgen CLK_ST231_GP_0>;
+			clock-frequency	= <600000000>;
+			st,syscfg	= <&syscfg_core 0x22c>;
+		};
+
+
+		st231_gp1: remote-processor {
+			compatible	= "st,st231-rproc";
+			memory-region	= <&gp1_reserved>;
+			resets		= <&softreset STIH407_ST231_GP1_SOFTRESET>;
+			reset-names	= "sw_reset";
+			clocks		= <&clk_s_c0_flexgen CLK_ST231_GP_1>;
+			clock-frequency = <600000000>;
+			st,syscfg	= <&syscfg_core 0x220>;
+		};
+
+		st231_audio: remote-processor {
+			compatible	= "st,st231-rproc";
+			memory-region	= <&audio_reserved>;
+			resets		= <&softreset STIH407_ST231_AUD_SOFTRESET>;
+			reset-names	= "sw_reset";
+			clocks		= <&clk_s_c0_flexgen CLK_ST231_AUD_0>;
+			clock-frequency	= <600000000>;
+			st,syscfg	= <&syscfg_core 0x228>;
+		};
+
+		st231_dmu: remote-processor {
+			compatible	= "st,st231-rproc";
+			memory-region	= <&dmu_reserved>;
+			resets		= <&softreset STIH407_ST231_DMU_SOFTRESET>;
+			reset-names	= "sw_reset";
+			clocks		= <&clk_s_c0_flexgen CLK_ST231_DMU>;
+			clock-frequency	= <600000000>;
+			st,syscfg	= <&syscfg_core 0x224>;
 		};
 	};
 };

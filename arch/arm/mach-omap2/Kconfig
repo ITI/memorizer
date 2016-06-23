@@ -17,6 +17,7 @@ config ARCH_OMAP3
 	select PM_OPP if PM
 	select PM if CPU_IDLE
 	select SOC_HAS_OMAP2_SDRC
+	select ARM_ERRATA_430973
 
 config ARCH_OMAP4
 	bool "TI OMAP4"
@@ -36,6 +37,7 @@ config ARCH_OMAP4
 	select PM if CPU_IDLE
 	select ARM_ERRATA_754322
 	select ARM_ERRATA_775420
+	select OMAP_INTERCONNECT
 
 config SOC_OMAP5
 	bool "TI OMAP5"
@@ -65,6 +67,10 @@ config SOC_AM43XX
 	select MACH_OMAP_GENERIC
 	select MIGHT_HAVE_CACHE_L2X0
 	select HAVE_ARM_SCU
+	select GENERIC_CLOCKEVENTS_BROADCAST
+	select HAVE_ARM_TWD
+	select ARM_ERRATA_754322
+	select ARM_ERRATA_775420
 
 config SOC_DRA7XX
 	bool "TI DRA7XX"
@@ -96,8 +102,8 @@ config ARCH_OMAP2PLUS
 	select OMAP_GPMC
 	select PINCTRL
 	select SOC_BUS
-	select TI_PRIV_EDMA
 	select OMAP_IRQCHIP
+	select CLKSRC_TI_32K
 	help
 	  Systems based on OMAP2, OMAP3, OMAP4 or OMAP5
 
@@ -121,6 +127,7 @@ config ARCH_OMAP2PLUS_TYPICAL
 	select NEON if CPU_V7
 	select PM
 	select REGULATOR
+	select REGULATOR_FIXED_VOLTAGE
 	select TWL4030_CORE if ARCH_OMAP3 || ARCH_OMAP4
 	select TWL4030_POWER if ARCH_OMAP3 || ARCH_OMAP4
 	select VFP
@@ -201,7 +208,6 @@ config MACH_OMAP3_PANDORA
 	depends on ARCH_OMAP3
 	default y
 	select OMAP_PACKAGE_CBB
-	select REGULATOR_FIXED_VOLTAGE if REGULATOR
 
 config MACH_NOKIA_N810
        bool
@@ -237,5 +243,13 @@ config OMAP3_SDRC_AC_TIMING
 endmenu
 
 endif
+
+config OMAP5_ERRATA_801819
+	bool "Errata 801819: An eviction from L1 data cache might stall indefinitely"
+	depends on SOC_OMAP5 || SOC_DRA7XX
+	help
+	  A livelock can occur in the L2 cache arbitration that might prevent
+	  a snoop from completing. Under certain conditions this can cause the
+	  system to deadlock.
 
 endmenu

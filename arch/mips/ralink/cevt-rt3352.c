@@ -3,7 +3,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2013 by John Crispin <blogic@openwrt.org>
+ * Copyright (C) 2013 by John Crispin <john@phrozen.org>
  */
 
 #include <linux/clockchips.h>
@@ -48,7 +48,7 @@ static int systick_next_event(unsigned long delta,
 	sdev = container_of(evt, struct systick_device, dev);
 	count = ioread32(sdev->membase + SYSTICK_COUNT);
 	count = (count + delta) % SYSTICK_FREQ;
-	iowrite32(count + delta, sdev->membase + SYSTICK_COMPARE);
+	iowrite32(count, sdev->membase + SYSTICK_COMPARE);
 
 	return 0;
 }

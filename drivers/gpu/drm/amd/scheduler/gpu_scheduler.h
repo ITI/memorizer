@@ -27,12 +27,17 @@
 #include <linux/kfifo.h>
 #include <linux/fence.h>
 
+#define AMD_SCHED_FENCE_SCHEDULED_BIT	FENCE_FLAG_USER_BITS
+
 struct amd_gpu_scheduler;
 struct amd_sched_rq;
 
+extern struct kmem_cache *sched_fence_slab;
+extern atomic_t sched_fence_slab_ref;
+
 /**
  * A scheduler entity is a wrapper around a job queue or a group
- * of other entities. Entities take turns emitting jobs from their 
+ * of other entities. Entities take turns emitting jobs from their
  * job queues to corresponding hardware ring based on scheduling
  * policy.
 */
@@ -65,16 +70,25 @@ struct amd_sched_rq {
 struct amd_sched_fence {
 	struct fence                    base;
 	struct fence_cb                 cb;
+	struct list_head		scheduled_cb;
 	struct amd_gpu_scheduler	*sched;
 	spinlock_t			lock;
 	void                            *owner;
+	struct amd_sched_job	*s_job;
 };
 
 struct amd_sched_job {
+	struct kref refcount;
 	struct amd_gpu_scheduler        *sched;
 	struct amd_sched_entity         *s_entity;
 	struct amd_sched_fence          *s_fence;
-	void		                *owner;
+	bool	use_sched;	/* true if the job goes to scheduler */
+	struct fence_cb                cb_free_job;
+	struct work_struct             work_free_job;
+	struct list_head			   node;
+	struct delayed_work work_tdr;
+	void (*timeout_callback) (struct work_struct *work);
+	void (*free_callback)(struct kref *refcount);
 };
 
 extern const struct fence_ops amd_sched_fence_ops;
@@ -95,26 +109,36 @@ static inline struct amd_sched_fence *to_amd_sched_fence(struct fence *f)
 struct amd_sched_backend_ops {
 	struct fence *(*dependency)(struct amd_sched_job *sched_job);
 	struct fence *(*run_job)(struct amd_sched_job *sched_job);
+	void (*begin_job)(struct amd_sched_job *sched_job);
+	void (*finish_job)(struct amd_sched_job *sched_job);
+};
+
+enum amd_sched_priority {
+	AMD_SCHED_PRIORITY_KERNEL = 0,
+	AMD_SCHED_PRIORITY_NORMAL,
+	AMD_SCHED_MAX_PRIORITY
 };
 
 /**
  * One scheduler is implemented for each hardware ring
 */
 struct amd_gpu_scheduler {
-	struct amd_sched_backend_ops	*ops;
+	const struct amd_sched_backend_ops	*ops;
 	uint32_t			hw_submission_limit;
+	long				timeout;
 	const char			*name;
-	struct amd_sched_rq		sched_rq;
-	struct amd_sched_rq		kernel_rq;
+	struct amd_sched_rq		sched_rq[AMD_SCHED_MAX_PRIORITY];
 	wait_queue_head_t		wake_up_worker;
 	wait_queue_head_t		job_scheduled;
 	atomic_t			hw_rq_count;
 	struct task_struct		*thread;
+	struct list_head	ring_mirror_list;
+	spinlock_t			job_list_lock;
 };
 
 int amd_sched_init(struct amd_gpu_scheduler *sched,
-		   struct amd_sched_backend_ops *ops,
-		   uint32_t hw_submission, const char *name);
+		   const struct amd_sched_backend_ops *ops,
+		   uint32_t hw_submission, long timeout, const char *name);
 void amd_sched_fini(struct amd_gpu_scheduler *sched);
 
 int amd_sched_entity_init(struct amd_gpu_scheduler *sched,
@@ -123,11 +147,30 @@ int amd_sched_entity_init(struct amd_gpu_scheduler *sched,
 			  uint32_t jobs);
 void amd_sched_entity_fini(struct amd_gpu_scheduler *sched,
 			   struct amd_sched_entity *entity);
-int amd_sched_entity_push_job(struct amd_sched_job *sched_job);
+void amd_sched_entity_push_job(struct amd_sched_job *sched_job);
 
 struct amd_sched_fence *amd_sched_fence_create(
 	struct amd_sched_entity *s_entity, void *owner);
+void amd_sched_fence_scheduled(struct amd_sched_fence *fence);
 void amd_sched_fence_signal(struct amd_sched_fence *fence);
+int amd_sched_job_init(struct amd_sched_job *job,
+					struct amd_gpu_scheduler *sched,
+					struct amd_sched_entity *entity,
+					void (*timeout_cb)(struct work_struct *work),
+					void (*free_cb)(struct kref* refcount),
+					void *owner, struct fence **fence);
+void amd_sched_job_pre_schedule(struct amd_gpu_scheduler *sched ,
+								struct amd_sched_job *s_job);
+void amd_sched_job_finish(struct amd_sched_job *s_job);
+void amd_sched_job_begin(struct amd_sched_job *s_job);
+static inline void amd_sched_job_get(struct amd_sched_job *job) {
+	if (job)
+		kref_get(&job->refcount);
+}
 
+static inline void amd_sched_job_put(struct amd_sched_job *job) {
+	if (job)
+		kref_put(&job->refcount, job->free_callback);
+}
 
 #endif

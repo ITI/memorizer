@@ -138,6 +138,9 @@ struct strlist *probe_file__get_rawlist(int fd)
 	char *p;
 	struct strlist *sl;
 
+	if (fd < 0)
+		return NULL;
+
 	sl = strlist__new(NULL, NULL);
 
 	fp = fdopen(dup(fd), "r");
@@ -217,8 +220,7 @@ int probe_file__add_event(int fd, struct probe_trace_event *tev)
 
 	pr_debug("Writing event: %s\n", buf);
 	if (!probe_event_dry_run) {
-		ret = write(fd, buf, strlen(buf));
-		if (ret <= 0) {
+		if (write(fd, buf, strlen(buf)) < (int)strlen(buf)) {
 			ret = -errno;
 			pr_warning("Failed to write event: %s\n",
 				   strerror_r(errno, sbuf, sizeof(sbuf)));
@@ -270,6 +272,9 @@ int probe_file__get_events(int fd, struct strfilter *filter,
 	struct str_node *ent;
 	const char *p;
 	int ret = -ENOENT;
+
+	if (!plist)
+		return -EINVAL;
 
 	namelist = __probe_file__get_namelist(fd, true);
 	if (!namelist)

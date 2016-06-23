@@ -99,6 +99,7 @@ void rds_send_reset(struct rds_connection *conn)
 	list_splice_init(&conn->c_retrans, &conn->c_send_queue);
 	spin_unlock_irqrestore(&conn->c_lock, flags);
 }
+EXPORT_SYMBOL_GPL(rds_send_reset);
 
 static int acquire_in_xmit(struct rds_connection *conn)
 {
@@ -1013,11 +1014,13 @@ int rds_sendmsg(struct socket *sock, struct msghdr *msg, size_t payload_len)
 		release_sock(sk);
 	}
 
-	/* racing with another thread binding seems ok here */
+	lock_sock(sk);
 	if (daddr == 0 || rs->rs_bound_addr == 0) {
+		release_sock(sk);
 		ret = -ENOTCONN; /* XXX not a great errno */
 		goto out;
 	}
+	release_sock(sk);
 
 	if (payload_len > rds_sk_sndbuf(rs)) {
 		ret = -EMSGSIZE;

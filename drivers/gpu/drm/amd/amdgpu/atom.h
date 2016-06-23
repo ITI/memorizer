@@ -60,7 +60,7 @@
 #define ATOM_CT_PS_MASK		0x7F
 #define ATOM_CT_CODE_PTR	6
 
-#define ATOM_OP_CNT		123
+#define ATOM_OP_CNT		127
 #define ATOM_OP_EOT		91
 
 #define ATOM_CASE_MAGIC		0x63
@@ -92,7 +92,7 @@
 #define ATOM_WS_AND_MASK	0x45
 #define ATOM_WS_FB_WINDOW	0x46
 #define ATOM_WS_ATTRIBUTES	0x47
-#define ATOM_WS_REGPTR  	0x48
+#define ATOM_WS_REGPTR		0x48
 
 #define ATOM_IIO_NOP		0
 #define ATOM_IIO_START		1

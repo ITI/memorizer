@@ -91,27 +91,13 @@ VECTOR   mem_service             ; 0x8, Mem exception   (0x1)
 VECTOR   instr_service           ; 0x10, Instrn Error   (0x2)
 
 ; ******************** Device ISRs **********************
-#ifdef CONFIG_ARC_IRQ3_LV2
+#ifdef CONFIG_ARC_COMPACT_IRQ_LEVELS
 VECTOR   handle_interrupt_level2
 #else
 VECTOR   handle_interrupt_level1
 #endif
 
-VECTOR   handle_interrupt_level1
-
-#ifdef CONFIG_ARC_IRQ5_LV2
-VECTOR   handle_interrupt_level2
-#else
-VECTOR   handle_interrupt_level1
-#endif
-
-#ifdef CONFIG_ARC_IRQ6_LV2
-VECTOR   handle_interrupt_level2
-#else
-VECTOR   handle_interrupt_level1
-#endif
-
-.rept   25
+.rept   28
 VECTOR   handle_interrupt_level1 ; Other devices
 .endr
 
@@ -142,15 +128,11 @@ int1_saved_reg:
 	.zero 4
 
 /* Each Interrupt level needs its own scratch */
-#ifdef CONFIG_ARC_COMPACT_IRQ_LEVELS
-
 ARCFP_DATA int2_saved_reg
 	.type   int2_saved_reg, @object
 	.size   int2_saved_reg, 4
 int2_saved_reg:
 	.zero 4
-
-#endif
 
 ; ---------------------------------------------
 	.section .text, "ax",@progbits
@@ -214,6 +196,31 @@ ENTRY(handle_interrupt_level2)
 END(handle_interrupt_level2)
 
 #endif
+
+; ---------------------------------------------
+; User Mode Memory Bus Error Interrupt Handler
+; (Kernel mode memory errors handled via seperate exception vectors)
+; ---------------------------------------------
+ENTRY(mem_service)
+
+	INTERRUPT_PROLOGUE 2
+
+	mov r0, ilink2
+	mov r1, sp
+
+	; User process needs to be killed with SIGBUS, but first need to get
+	; out of the L2 interrupt context (drop to pure kernel mode) and jump
+	; off to "C" code where SIGBUS in enqueued
+	lr  r3, [status32]
+	bclr r3, r3, STATUS_A2_BIT
+	or  r3, r3, (STATUS_E1_MASK|STATUS_E2_MASK)
+	sr  r3, [status32_l2]
+	mov ilink2, 1f
+	rtie
+1:
+	bl  do_memory_error
+	b   ret_from_exception
+END(mem_service)
 
 ; ---------------------------------------------
 ;  Level 1 ISR
@@ -320,6 +327,9 @@ END(call_do_page_fault)
 
 .Lrestore_regs:
 
+	# Interrpts are actually disabled from this point on, but will get
+	# reenabled after we return from interrupt/exception.
+	# But irq tracer needs to be told now...
 	TRACE_ASM_IRQ_ENABLE
 
 	lr	r10, [status32]

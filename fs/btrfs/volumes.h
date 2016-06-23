@@ -26,7 +26,7 @@
 
 extern struct mutex uuid_mutex;
 
-#define BTRFS_STRIPE_LEN	(64 * 1024)
+#define BTRFS_STRIPE_LEN	SZ_64K
 
 struct buffer_head;
 struct btrfs_pending_bios {
@@ -256,7 +256,7 @@ struct btrfs_fs_devices {
 
 	struct btrfs_fs_info *fs_info;
 	/* sysfs kobjects */
-	struct kobject super_kobj;
+	struct kobject fsid_kobj;
 	struct kobject *device_dir_kobj;
 	struct completion kobj_unregister;
 };
@@ -334,15 +334,20 @@ struct btrfs_raid_attr {
 	int dev_stripes;	/* stripes per dev */
 	int devs_max;		/* max devs to use */
 	int devs_min;		/* min devs needed */
+	int tolerated_failures; /* max tolerated fail devs */
 	int devs_increment;	/* ndevs has to be a multiple of this */
 	int ncopies;		/* how many copies to data has */
 };
+
+extern const struct btrfs_raid_attr btrfs_raid_array[BTRFS_NR_RAID_TYPES];
+extern const int btrfs_raid_mindev_error[BTRFS_NR_RAID_TYPES];
+extern const u64 btrfs_raid_group[BTRFS_NR_RAID_TYPES];
 
 struct map_lookup {
 	u64 type;
 	int io_align;
 	int io_width;
-	int stripe_len;
+	u64 stripe_len;
 	int sector_size;
 	int num_stripes;
 	int sub_stripes;
@@ -351,46 +356,6 @@ struct map_lookup {
 
 #define map_lookup_size(n) (sizeof(struct map_lookup) + \
 			    (sizeof(struct btrfs_bio_stripe) * (n)))
-
-/*
- * Restriper's general type filter
- */
-#define BTRFS_BALANCE_DATA		(1ULL << 0)
-#define BTRFS_BALANCE_SYSTEM		(1ULL << 1)
-#define BTRFS_BALANCE_METADATA		(1ULL << 2)
-
-#define BTRFS_BALANCE_TYPE_MASK		(BTRFS_BALANCE_DATA |	    \
-					 BTRFS_BALANCE_SYSTEM |	    \
-					 BTRFS_BALANCE_METADATA)
-
-#define BTRFS_BALANCE_FORCE		(1ULL << 3)
-#define BTRFS_BALANCE_RESUME		(1ULL << 4)
-
-/*
- * Balance filters
- */
-#define BTRFS_BALANCE_ARGS_PROFILES	(1ULL << 0)
-#define BTRFS_BALANCE_ARGS_USAGE	(1ULL << 1)
-#define BTRFS_BALANCE_ARGS_DEVID	(1ULL << 2)
-#define BTRFS_BALANCE_ARGS_DRANGE	(1ULL << 3)
-#define BTRFS_BALANCE_ARGS_VRANGE	(1ULL << 4)
-#define BTRFS_BALANCE_ARGS_LIMIT	(1ULL << 5)
-
-#define BTRFS_BALANCE_ARGS_MASK			\
-	(BTRFS_BALANCE_ARGS_PROFILES |		\
-	 BTRFS_BALANCE_ARGS_USAGE |		\
-	 BTRFS_BALANCE_ARGS_DEVID | 		\
-	 BTRFS_BALANCE_ARGS_DRANGE |		\
-	 BTRFS_BALANCE_ARGS_VRANGE |		\
-	 BTRFS_BALANCE_ARGS_LIMIT)
-
-/*
- * Profile changing flags.  When SOFT is set we won't relocate chunk if
- * it already has the target profile (even though it may be
- * half-filled).
- */
-#define BTRFS_BALANCE_ARGS_CONVERT	(1ULL << 8)
-#define BTRFS_BALANCE_ARGS_SOFT		(1ULL << 9)
 
 struct btrfs_balance_args;
 struct btrfs_balance_progress;
@@ -434,13 +399,18 @@ int btrfs_scan_one_device(const char *path, fmode_t flags, void *holder,
 			  struct btrfs_fs_devices **fs_devices_ret);
 int btrfs_close_devices(struct btrfs_fs_devices *fs_devices);
 void btrfs_close_extra_devices(struct btrfs_fs_devices *fs_devices, int step);
+void btrfs_assign_next_active_device(struct btrfs_fs_info *fs_info,
+		struct btrfs_device *device, struct btrfs_device *this_dev);
 int btrfs_find_device_missing_or_by_path(struct btrfs_root *root,
 					 char *device_path,
+					 struct btrfs_device **device);
+int btrfs_find_device_by_devspec(struct btrfs_root *root, u64 devid,
+					 char *devpath,
 					 struct btrfs_device **device);
 struct btrfs_device *btrfs_alloc_device(struct btrfs_fs_info *fs_info,
 					const u64 *devid,
 					const u8 *uuid);
-int btrfs_rm_device(struct btrfs_root *root, char *device_path);
+int btrfs_rm_device(struct btrfs_root *root, char *device_path, u64 devid);
 void btrfs_cleanup_fs_uuids(void);
 int btrfs_num_copies(struct btrfs_fs_info *fs_info, u64 logical, u64 len);
 int btrfs_grow_device(struct btrfs_trans_handle *trans,
@@ -482,7 +452,7 @@ void btrfs_destroy_dev_replace_tgtdev(struct btrfs_fs_info *fs_info,
 				      struct btrfs_device *tgtdev);
 void btrfs_init_dev_replace_tgtdev_for_resume(struct btrfs_fs_info *fs_info,
 					      struct btrfs_device *tgtdev);
-int btrfs_scratch_superblock(struct btrfs_device *device);
+void btrfs_scratch_superblocks(struct block_device *bdev, char *device_path);
 int btrfs_is_parity_mirror(struct btrfs_mapping_tree *map_tree,
 			   u64 logical, u64 len, int mirror_num);
 unsigned long btrfs_full_stripe_len(struct btrfs_root *root,

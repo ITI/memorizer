@@ -17,7 +17,7 @@
 #include <asm/tlbflush.h>
 #include <asm/kvm_ppc.h>
 #include <asm/kvm_book3s.h>
-#include <asm/mmu-hash64.h>
+#include <asm/book3s/64/mmu-hash.h>
 #include <asm/hvcall.h>
 #include <asm/synch.h>
 #include <asm/ppc-opcode.h>
@@ -32,7 +32,7 @@ static void *real_vmalloc_addr(void *x)
 	 * So don't worry about THP collapse/split. Called
 	 * Only in realmode, hence won't need irq_save/restore.
 	 */
-	p = __find_linux_pte_or_hugepte(swapper_pg_dir, addr, NULL);
+	p = __find_linux_pte_or_hugepte(swapper_pg_dir, addr, NULL, NULL);
 	if (!p || !pte_present(*p))
 		return NULL;
 	addr = (pte_pfn(*p) << PAGE_SHIFT) | (addr & ~PAGE_MASK);
@@ -175,7 +175,7 @@ long kvmppc_do_h_enter(struct kvm *kvm, unsigned long flags,
 	unsigned long g_ptel;
 	struct kvm_memory_slot *memslot;
 	unsigned hpage_shift;
-	unsigned long is_io;
+	bool is_ci;
 	unsigned long *rmap;
 	pte_t *ptep;
 	unsigned int writing;
@@ -199,7 +199,7 @@ long kvmppc_do_h_enter(struct kvm *kvm, unsigned long flags,
 	gfn = gpa >> PAGE_SHIFT;
 	memslot = __gfn_to_memslot(kvm_memslots_raw(kvm), gfn);
 	pa = 0;
-	is_io = ~0ul;
+	is_ci = false;
 	rmap = NULL;
 	if (!(memslot && !(memslot->flags & KVM_MEMSLOT_INVALID))) {
 		/* Emulated MMIO - mark this with key=31 */
@@ -221,10 +221,12 @@ long kvmppc_do_h_enter(struct kvm *kvm, unsigned long flags,
 	 * retry via mmu_notifier_retry.
 	 */
 	if (realmode)
-		ptep = __find_linux_pte_or_hugepte(pgdir, hva, &hpage_shift);
+		ptep = __find_linux_pte_or_hugepte(pgdir, hva, NULL,
+						   &hpage_shift);
 	else {
 		local_irq_save(irq_flags);
-		ptep = find_linux_pte_or_hugepte(pgdir, hva, &hpage_shift);
+		ptep = find_linux_pte_or_hugepte(pgdir, hva, NULL,
+						 &hpage_shift);
 	}
 	if (ptep) {
 		pte_t pte;
@@ -248,7 +250,7 @@ long kvmppc_do_h_enter(struct kvm *kvm, unsigned long flags,
 			if (writing && !pte_write(pte))
 				/* make the actual HPTE be read-only */
 				ptel = hpte_make_readonly(ptel);
-			is_io = hpte_cache_bits(pte_val(pte));
+			is_ci = pte_ci(pte);
 			pa = pte_pfn(pte) << PAGE_SHIFT;
 			pa |= hva & (host_pte_size - 1);
 			pa |= gpa & ~PAGE_MASK;
@@ -265,9 +267,9 @@ long kvmppc_do_h_enter(struct kvm *kvm, unsigned long flags,
 	else
 		pteh |= HPTE_V_ABSENT;
 
-	/* Check WIMG */
-	if (is_io != ~0ul && !hpte_cache_flags_ok(ptel, is_io)) {
-		if (is_io)
+	/*If we had host pte mapping then  Check WIMG */
+	if (ptep && !hpte_cache_flags_ok(ptel, is_ci)) {
+		if (is_ci)
 			return H_PARAMETER;
 		/*
 		 * Allow guest to map emulated device memory as
@@ -470,6 +472,8 @@ long kvmppc_do_h_remove(struct kvm *kvm, unsigned long flags,
 	note_hpte_modification(kvm, rev);
 	unlock_hpte(hpte, 0);
 
+	if (v & HPTE_V_ABSENT)
+		v = (v & ~HPTE_V_ABSENT) | HPTE_V_VALID;
 	hpret[0] = v;
 	hpret[1] = r;
 	return H_SUCCESS;

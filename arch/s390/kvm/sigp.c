@@ -240,6 +240,12 @@ static int __sigp_sense_running(struct kvm_vcpu *vcpu,
 	struct kvm_s390_local_interrupt *li;
 	int rc;
 
+	if (!test_kvm_facility(vcpu->kvm, 9)) {
+		*reg &= 0xffffffff00000000UL;
+		*reg |= SIGP_STATUS_INVALID_ORDER;
+		return SIGP_CC_STATUS_STORED;
+	}
+
 	li = &dst_vcpu->arch.local_int;
 	if (atomic_read(li->cpuflags) & CPUSTAT_RUNNING) {
 		/* running */
@@ -291,12 +297,8 @@ static int handle_sigp_dst(struct kvm_vcpu *vcpu, u8 order_code,
 			   u16 cpu_addr, u32 parameter, u64 *status_reg)
 {
 	int rc;
-	struct kvm_vcpu *dst_vcpu;
+	struct kvm_vcpu *dst_vcpu = kvm_get_vcpu_by_id(vcpu->kvm, cpu_addr);
 
-	if (cpu_addr >= KVM_MAX_VCPUS)
-		return SIGP_CC_NOT_OPERATIONAL;
-
-	dst_vcpu = kvm_get_vcpu(vcpu->kvm, cpu_addr);
 	if (!dst_vcpu)
 		return SIGP_CC_NOT_OPERATIONAL;
 
@@ -478,7 +480,7 @@ int kvm_s390_handle_sigp_pei(struct kvm_vcpu *vcpu)
 	trace_kvm_s390_handle_sigp_pei(vcpu, order_code, cpu_addr);
 
 	if (order_code == SIGP_EXTERNAL_CALL) {
-		dest_vcpu = kvm_get_vcpu(vcpu->kvm, cpu_addr);
+		dest_vcpu = kvm_get_vcpu_by_id(vcpu->kvm, cpu_addr);
 		BUG_ON(dest_vcpu == NULL);
 
 		kvm_s390_vcpu_wakeup(dest_vcpu);

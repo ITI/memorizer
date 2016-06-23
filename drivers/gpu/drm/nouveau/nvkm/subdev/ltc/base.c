@@ -67,6 +67,20 @@ nvkm_ltc_zbc_depth_get(struct nvkm_ltc *ltc, int index, const u32 depth)
 	return index;
 }
 
+void
+nvkm_ltc_invalidate(struct nvkm_ltc *ltc)
+{
+	if (ltc->func->invalidate)
+		ltc->func->invalidate(ltc);
+}
+
+void
+nvkm_ltc_flush(struct nvkm_ltc *ltc)
+{
+	if (ltc->func->flush)
+		ltc->func->flush(ltc);
+}
+
 static void
 nvkm_ltc_intr(struct nvkm_subdev *subdev)
 {
@@ -124,7 +138,7 @@ nvkm_ltc_new_(const struct nvkm_ltc_func *func, struct nvkm_device *device,
 	if (!(ltc = *pltc = kzalloc(sizeof(*ltc), GFP_KERNEL)))
 		return -ENOMEM;
 
-	nvkm_subdev_ctor(&nvkm_ltc, device, index, 0, &ltc->subdev);
+	nvkm_subdev_ctor(&nvkm_ltc, device, index, &ltc->subdev);
 	ltc->func = func;
 	ltc->zbc_min = 1; /* reserve 0 for disabled */
 	ltc->zbc_max = min(func->zbc, NVKM_LTC_MAX_ZBC_CNT) - 1;

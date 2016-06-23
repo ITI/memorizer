@@ -28,6 +28,7 @@
 #include <linux/sched.h>
 #include <linux/i2c.h>
 #include <drm/drm_dp_helper.h>
+#include <drm/drm_dp_aux_dev.h>
 #include <drm/drmP.h>
 
 /**
@@ -177,14 +178,16 @@ static int drm_dp_dpcd_access(struct drm_dp_aux *aux, u8 request,
 			      unsigned int offset, void *buffer, size_t size)
 {
 	struct drm_dp_aux_msg msg;
-	unsigned int retry;
-	int err;
+	unsigned int retry, native_reply;
+	int err = 0, ret = 0;
 
 	memset(&msg, 0, sizeof(msg));
 	msg.address = offset;
 	msg.request = request;
 	msg.buffer = buffer;
 	msg.size = size;
+
+	mutex_lock(&aux->hw_mutex);
 
 	/*
 	 * The specification doesn't give any recommendation on how often to
@@ -193,35 +196,39 @@ static int drm_dp_dpcd_access(struct drm_dp_aux *aux, u8 request,
 	 * sufficient, bump to 32 which makes Dell 4k monitors happier.
 	 */
 	for (retry = 0; retry < 32; retry++) {
-
-		mutex_lock(&aux->hw_mutex);
-		err = aux->transfer(aux, &msg);
-		mutex_unlock(&aux->hw_mutex);
-		if (err < 0) {
-			if (err == -EBUSY)
-				continue;
-
-			return err;
+		if (ret != 0 && ret != -ETIMEDOUT) {
+			usleep_range(AUX_RETRY_INTERVAL,
+				     AUX_RETRY_INTERVAL + 100);
 		}
 
+		ret = aux->transfer(aux, &msg);
 
-		switch (msg.reply & DP_AUX_NATIVE_REPLY_MASK) {
-		case DP_AUX_NATIVE_REPLY_ACK:
-			if (err < size)
-				return -EPROTO;
-			return err;
+		if (ret > 0) {
+			native_reply = msg.reply & DP_AUX_NATIVE_REPLY_MASK;
+			if (native_reply == DP_AUX_NATIVE_REPLY_ACK) {
+				if (ret == size)
+					goto unlock;
 
-		case DP_AUX_NATIVE_REPLY_NACK:
-			return -EIO;
-
-		case DP_AUX_NATIVE_REPLY_DEFER:
-			usleep_range(AUX_RETRY_INTERVAL, AUX_RETRY_INTERVAL + 100);
-			break;
+				ret = -EPROTO;
+			} else
+				ret = -EIO;
 		}
+
+		/*
+		 * We want the error we return to be the error we received on
+		 * the first transaction, since we may get a different error the
+		 * next time we retry
+		 */
+		if (!err)
+			err = ret;
 	}
 
 	DRM_DEBUG_KMS("too many retries, giving up\n");
-	return -EIO;
+	ret = err;
+
+unlock:
+	mutex_unlock(&aux->hw_mutex);
+	return ret;
 }
 
 /**
@@ -241,6 +248,25 @@ static int drm_dp_dpcd_access(struct drm_dp_aux *aux, u8 request,
 ssize_t drm_dp_dpcd_read(struct drm_dp_aux *aux, unsigned int offset,
 			 void *buffer, size_t size)
 {
+	int ret;
+
+	/*
+	 * HP ZR24w corrupts the first DPCD access after entering power save
+	 * mode. Eg. on a read, the entire buffer will be filled with the same
+	 * byte. Do a throw away read to avoid corrupting anything we care
+	 * about. Afterwards things will work correctly until the monitor
+	 * gets woken up and subsequently re-enters power save mode.
+	 *
+	 * The user pressing any button on the monitor is enough to wake it
+	 * up, so there is no particularly good place to do the workaround.
+	 * We just have to do it before any DPCD access and hope that the
+	 * monitor doesn't power down exactly after the throw away read.
+	 */
+	ret = drm_dp_dpcd_access(aux, DP_AUX_NATIVE_READ, DP_DPCD_REV, buffer,
+				 1);
+	if (ret != 1)
+		return ret;
+
 	return drm_dp_dpcd_access(aux, DP_AUX_NATIVE_READ, offset, buffer,
 				  size);
 }
@@ -424,6 +450,19 @@ static u32 drm_dp_i2c_functionality(struct i2c_adapter *adapter)
 	       I2C_FUNC_10BIT_ADDR;
 }
 
+static void drm_dp_i2c_msg_write_status_update(struct drm_dp_aux_msg *msg)
+{
+	/*
+	 * In case of i2c defer or short i2c ack reply to a write,
+	 * we need to switch to WRITE_STATUS_UPDATE to drain the
+	 * rest of the message
+	 */
+	if ((msg->request & ~DP_AUX_I2C_MOT) == DP_AUX_I2C_WRITE) {
+		msg->request &= DP_AUX_I2C_MOT;
+		msg->request |= DP_AUX_I2C_WRITE_STATUS_UPDATE;
+	}
+}
+
 #define AUX_PRECHARGE_LEN 10 /* 10 to 16 */
 #define AUX_SYNC_LEN (16 + 4) /* preamble + AUX_SYNC_END */
 #define AUX_STOP_LEN 4
@@ -530,9 +569,7 @@ static int drm_dp_i2c_do_msg(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg)
 	int max_retries = max(7, drm_dp_i2c_retry_count(msg, dp_aux_i2c_speed_khz));
 
 	for (retry = 0, defer_i2c = 0; retry < (max_retries + defer_i2c); retry++) {
-		mutex_lock(&aux->hw_mutex);
 		ret = aux->transfer(aux, msg);
-		mutex_unlock(&aux->hw_mutex);
 		if (ret < 0) {
 			if (ret == -EBUSY)
 				continue;
@@ -579,6 +616,8 @@ static int drm_dp_i2c_do_msg(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg)
 			 * Both native ACK and I2C ACK replies received. We
 			 * can assume the transfer was successful.
 			 */
+			if (ret != msg->size)
+				drm_dp_i2c_msg_write_status_update(msg);
 			return ret;
 
 		case DP_AUX_I2C_REPLY_NACK:
@@ -596,6 +635,8 @@ static int drm_dp_i2c_do_msg(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg)
 			if (defer_i2c < 7)
 				defer_i2c++;
 			usleep_range(AUX_RETRY_INTERVAL, AUX_RETRY_INTERVAL + 100);
+			drm_dp_i2c_msg_write_status_update(msg);
+
 			continue;
 
 		default:
@@ -606,6 +647,14 @@ static int drm_dp_i2c_do_msg(struct drm_dp_aux *aux, struct drm_dp_aux_msg *msg)
 
 	DRM_DEBUG_KMS("too many retries, giving up\n");
 	return -EREMOTEIO;
+}
+
+static void drm_dp_i2c_msg_set_request(struct drm_dp_aux_msg *msg,
+				       const struct i2c_msg *i2c_msg)
+{
+	msg->request = (i2c_msg->flags & I2C_M_RD) ?
+		DP_AUX_I2C_READ : DP_AUX_I2C_WRITE;
+	msg->request |= DP_AUX_I2C_MOT;
 }
 
 /*
@@ -659,12 +708,11 @@ static int drm_dp_i2c_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs,
 
 	memset(&msg, 0, sizeof(msg));
 
+	mutex_lock(&aux->hw_mutex);
+
 	for (i = 0; i < num; i++) {
 		msg.address = msgs[i].addr;
-		msg.request = (msgs[i].flags & I2C_M_RD) ?
-			DP_AUX_I2C_READ :
-			DP_AUX_I2C_WRITE;
-		msg.request |= DP_AUX_I2C_MOT;
+		drm_dp_i2c_msg_set_request(&msg, &msgs[i]);
 		/* Send a bare address packet to start the transaction.
 		 * Zero sized messages specify an address only (bare
 		 * address) transaction.
@@ -672,6 +720,13 @@ static int drm_dp_i2c_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs,
 		msg.buffer = NULL;
 		msg.size = 0;
 		err = drm_dp_i2c_do_msg(aux, &msg);
+
+		/*
+		 * Reset msg.request in case in case it got
+		 * changed into a WRITE_STATUS_UPDATE.
+		 */
+		drm_dp_i2c_msg_set_request(&msg, &msgs[i]);
+
 		if (err < 0)
 			break;
 		/* We want each transaction to be as large as possible, but
@@ -684,6 +739,13 @@ static int drm_dp_i2c_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs,
 			msg.size = min(transfer_size, msgs[i].len - j);
 
 			err = drm_dp_i2c_drain_msg(aux, &msg);
+
+			/*
+			 * Reset msg.request in case in case it got
+			 * changed into a WRITE_STATUS_UPDATE.
+			 */
+			drm_dp_i2c_msg_set_request(&msg, &msgs[i]);
+
 			if (err < 0)
 				break;
 			transfer_size = err;
@@ -702,6 +764,8 @@ static int drm_dp_i2c_xfer(struct i2c_adapter *adapter, struct i2c_msg *msgs,
 	msg.size = 0;
 	(void)drm_dp_i2c_do_msg(aux, &msg);
 
+	mutex_unlock(&aux->hw_mutex);
+
 	return err;
 }
 
@@ -718,6 +782,8 @@ static const struct i2c_algorithm drm_dp_i2c_algo = {
  */
 int drm_dp_aux_register(struct drm_dp_aux *aux)
 {
+	int ret;
+
 	mutex_init(&aux->hw_mutex);
 
 	aux->ddc.algo = &drm_dp_i2c_algo;
@@ -732,7 +798,17 @@ int drm_dp_aux_register(struct drm_dp_aux *aux)
 	strlcpy(aux->ddc.name, aux->name ? aux->name : dev_name(aux->dev),
 		sizeof(aux->ddc.name));
 
-	return i2c_add_adapter(&aux->ddc);
+	ret = drm_dp_aux_register_devnode(aux);
+	if (ret)
+		return ret;
+
+	ret = i2c_add_adapter(&aux->ddc);
+	if (ret) {
+		drm_dp_aux_unregister_devnode(aux);
+		return ret;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL(drm_dp_aux_register);
 
@@ -742,6 +818,7 @@ EXPORT_SYMBOL(drm_dp_aux_register);
  */
 void drm_dp_aux_unregister(struct drm_dp_aux *aux)
 {
+	drm_dp_aux_unregister_devnode(aux);
 	i2c_del_adapter(&aux->ddc);
 }
 EXPORT_SYMBOL(drm_dp_aux_unregister);

@@ -19,7 +19,7 @@
 #include <linux/sched.h>
 #include <linux/file.h>
 
-#include <media/videobuf2-core.h>
+#include <media/videobuf2-v4l2.h>
 #include <media/videobuf2-memops.h>
 
 /**
@@ -49,7 +49,7 @@ struct frame_vector *vb2_create_framevec(unsigned long start,
 	vec = frame_vector_create(nr);
 	if (!vec)
 		return ERR_PTR(-ENOMEM);
-	ret = get_vaddr_frames(start, nr, write, 1, vec);
+	ret = get_vaddr_frames(start & PAGE_MASK, nr, write, true, vec);
 	if (ret < 0)
 		goto out_destroy;
 	/* We accept only complete set of PFNs */

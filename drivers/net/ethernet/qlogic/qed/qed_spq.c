@@ -27,6 +27,7 @@
 #include "qed_mcp.h"
 #include "qed_reg_addr.h"
 #include "qed_sp.h"
+#include "qed_sriov.h"
 
 /***************************************************************************
 * Structures & Definitions
@@ -112,8 +113,6 @@ static int
 qed_spq_fill_entry(struct qed_hwfn *p_hwfn,
 		   struct qed_spq_entry *p_ent)
 {
-	p_ent->elem.hdr.echo = 0;
-	p_hwfn->p_spq->echo_idx++;
 	p_ent->flags = 0;
 
 	switch (p_ent->comp_mode) {
@@ -185,20 +184,20 @@ static void qed_spq_hw_initialize(struct qed_hwfn *p_hwfn,
 	p_cxt->xstorm_st_context.spq_base_hi =
 		DMA_HI_LE(p_spq->chain.p_phys_addr);
 
-	p_cxt->xstorm_st_context.consolid_base_addr.lo =
-		DMA_LO_LE(p_hwfn->p_consq->chain.p_phys_addr);
-	p_cxt->xstorm_st_context.consolid_base_addr.hi =
-		DMA_HI_LE(p_hwfn->p_consq->chain.p_phys_addr);
+	DMA_REGPAIR_LE(p_cxt->xstorm_st_context.consolid_base_addr,
+		       p_hwfn->p_consq->chain.p_phys_addr);
 }
 
 static int qed_spq_hw_post(struct qed_hwfn *p_hwfn,
 			   struct qed_spq *p_spq,
 			   struct qed_spq_entry *p_ent)
 {
-	struct qed_chain		*p_chain = &p_hwfn->p_spq->chain;
+	struct qed_chain *p_chain = &p_hwfn->p_spq->chain;
+	u16 echo = qed_chain_get_prod_idx(p_chain);
 	struct slow_path_element	*elem;
 	struct core_db_data		db;
 
+	p_ent->elem.hdr.echo	= cpu_to_le16(echo);
 	elem = qed_chain_produce(p_chain);
 	if (!elem) {
 		DP_NOTICE(p_hwfn, "Failed to produce from SPQ chain\n");
@@ -244,10 +243,17 @@ static int
 qed_async_event_completion(struct qed_hwfn *p_hwfn,
 			   struct event_ring_entry *p_eqe)
 {
-	DP_NOTICE(p_hwfn,
-		  "Unknown Async completion for protocol: %d\n",
-		   p_eqe->protocol_id);
-	return -EINVAL;
+	switch (p_eqe->protocol_id) {
+	case PROTOCOLID_COMMON:
+		return qed_sriov_eqe_event(p_hwfn,
+					   p_eqe->opcode,
+					   p_eqe->echo, &p_eqe->data);
+	default:
+		DP_NOTICE(p_hwfn,
+			  "Unknown Async completion for protocol: %d\n",
+			  p_eqe->protocol_id);
+		return -EINVAL;
+	}
 }
 
 /***************************************************************************
@@ -327,7 +333,7 @@ struct qed_eq *qed_eq_alloc(struct qed_hwfn *p_hwfn,
 	struct qed_eq *p_eq;
 
 	/* Allocate EQ struct */
-	p_eq = kzalloc(sizeof(*p_eq), GFP_ATOMIC);
+	p_eq = kzalloc(sizeof(*p_eq), GFP_KERNEL);
 	if (!p_eq) {
 		DP_NOTICE(p_hwfn, "Failed to allocate `struct qed_eq'\n");
 		return NULL;
@@ -381,6 +387,9 @@ static int qed_cqe_completion(
 	struct eth_slow_path_rx_cqe *cqe,
 	enum protocol_type protocol)
 {
+	if (IS_VF(p_hwfn->cdev))
+		return 0;
+
 	/* @@@tmp - it's possible we'll eventually want to handle some
 	 * actual commands that can arrive here, but for now this is only
 	 * used to complete the ramrod using the echo value on the cqe
@@ -423,8 +432,7 @@ void qed_spq_setup(struct qed_hwfn *p_hwfn)
 	p_virt	= p_spq->p_virt;
 
 	for (i = 0; i < p_spq->chain.capacity; i++) {
-		p_virt->elem.data_ptr.hi = DMA_HI_LE(p_phys);
-		p_virt->elem.data_ptr.lo = DMA_LO_LE(p_phys);
+		DMA_REGPAIR_LE(p_virt->elem.data_ptr, p_phys);
 
 		list_add_tail(&p_virt->list, &p_spq->free_pool);
 
@@ -437,7 +445,9 @@ void qed_spq_setup(struct qed_hwfn *p_hwfn)
 	p_spq->comp_count		= 0;
 	p_spq->comp_sent_count		= 0;
 	p_spq->unlimited_pending_count	= 0;
-	p_spq->echo_idx			= 0;
+
+	bitmap_zero(p_spq->p_comp_bitmap, SPQ_RING_SIZE);
+	p_spq->comp_bitmap_idx = 0;
 
 	/* SPQ cid, cannot fail */
 	qed_cxt_acquire_cid(p_hwfn, PROTOCOLID_CORE, &p_spq->cid);
@@ -455,7 +465,7 @@ int qed_spq_alloc(struct qed_hwfn *p_hwfn)
 
 	/* SPQ struct */
 	p_spq =
-		kzalloc(sizeof(struct qed_spq), GFP_ATOMIC);
+		kzalloc(sizeof(struct qed_spq), GFP_KERNEL);
 	if (!p_spq) {
 		DP_NOTICE(p_hwfn, "Failed to allocate `struct qed_spq'\n");
 		return -ENOMEM;
@@ -582,26 +592,32 @@ qed_spq_add_entry(struct qed_hwfn *p_hwfn,
 	struct qed_spq *p_spq = p_hwfn->p_spq;
 
 	if (p_ent->queue == &p_spq->unlimited_pending) {
-		struct qed_spq_entry *p_en2;
 
 		if (list_empty(&p_spq->free_pool)) {
 			list_add_tail(&p_ent->list, &p_spq->unlimited_pending);
 			p_spq->unlimited_pending_count++;
 
 			return 0;
+		} else {
+			struct qed_spq_entry *p_en2;
+
+			p_en2 = list_first_entry(&p_spq->free_pool,
+						 struct qed_spq_entry,
+						 list);
+			list_del(&p_en2->list);
+
+			/* Copy the ring element physical pointer to the new
+			 * entry, since we are about to override the entire ring
+			 * entry and don't want to lose the pointer.
+			 */
+			p_ent->elem.data_ptr = p_en2->elem.data_ptr;
+
+			*p_en2 = *p_ent;
+
+			kfree(p_ent);
+
+			p_ent = p_en2;
 		}
-
-		p_en2 = list_first_entry(&p_spq->free_pool,
-					 struct qed_spq_entry,
-					 list);
-		list_del(&p_en2->list);
-
-		/* Strcut assignment */
-		*p_en2 = *p_ent;
-
-		kfree(p_ent);
-
-		p_ent = p_en2;
 	}
 
 	/* entry is to be placed in 'pending' queue */
@@ -777,13 +793,38 @@ int qed_spq_completion(struct qed_hwfn *p_hwfn,
 	list_for_each_entry_safe(p_ent, tmp, &p_spq->completion_pending,
 				 list) {
 		if (p_ent->elem.hdr.echo == echo) {
+			u16 pos = le16_to_cpu(echo) % SPQ_RING_SIZE;
+
 			list_del(&p_ent->list);
 
-			qed_chain_return_produced(&p_spq->chain);
+			/* Avoid overriding of SPQ entries when getting
+			 * out-of-order completions, by marking the completions
+			 * in a bitmap and increasing the chain consumer only
+			 * for the first successive completed entries.
+			 */
+			bitmap_set(p_spq->p_comp_bitmap, pos, SPQ_RING_SIZE);
+
+			while (test_bit(p_spq->comp_bitmap_idx,
+					p_spq->p_comp_bitmap)) {
+				bitmap_clear(p_spq->p_comp_bitmap,
+					     p_spq->comp_bitmap_idx,
+					     SPQ_RING_SIZE);
+				p_spq->comp_bitmap_idx++;
+				qed_chain_return_produced(&p_spq->chain);
+			}
+
 			p_spq->comp_count++;
 			found = p_ent;
 			break;
 		}
+
+		/* This is relatively uncommon - depends on scenarios
+		 * which have mutliple per-PF sent ramrods.
+		 */
+		DP_VERBOSE(p_hwfn, QED_MSG_SPQ,
+			   "Got completion for echo %04x - doesn't match echo %04x in completion pending list\n",
+			   le16_to_cpu(echo),
+			   le16_to_cpu(p_ent->elem.hdr.echo));
 	}
 
 	/* Release lock before callback, as callback may post
@@ -820,7 +861,7 @@ struct qed_consq *qed_consq_alloc(struct qed_hwfn *p_hwfn)
 	struct qed_consq *p_consq;
 
 	/* Allocate ConsQ struct */
-	p_consq = kzalloc(sizeof(*p_consq), GFP_ATOMIC);
+	p_consq = kzalloc(sizeof(*p_consq), GFP_KERNEL);
 	if (!p_consq) {
 		DP_NOTICE(p_hwfn, "Failed to allocate `struct qed_consq'\n");
 		return NULL;

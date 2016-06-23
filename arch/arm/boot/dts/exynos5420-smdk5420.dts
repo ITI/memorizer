@@ -11,6 +11,8 @@
 
 /dts-v1/;
 #include "exynos5420.dtsi"
+#include "exynos5420-cpus.dtsi"
+#include <dt-bindings/gpio/gpio.h>
 
 / {
 	model = "Samsung SMDK5420 board based on EXYNOS5420";
@@ -69,7 +71,7 @@
 		regulator-name = "VBUS0";
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
-		gpio = <&gpg0 5 0>;
+		gpio = <&gpg0 5 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&usb300_vbus_en>;
 		enable-active-high;
@@ -80,7 +82,7 @@
 		regulator-name = "VBUS1";
 		regulator-min-microvolt = <5000000>;
 		regulator-max-microvolt = <5000000>;
-		gpio = <&gpg1 4 0>;
+		gpio = <&gpg1 4 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&usb301_vbus_en>;
 		enable-active-high;
@@ -88,23 +90,26 @@
 
 };
 
+&cpu0 {
+	cpu-supply = <&buck2_reg>;
+};
+
+&cpu4 {
+	cpu-supply = <&buck6_reg>;
+};
+
 &dp {
 	pinctrl-names = "default";
 	pinctrl-0 = <&dp_hpd>;
 	samsung,color-space = <0>;
-	samsung,dynamic-range = <0>;
-	samsung,ycbcr-coeff = <0>;
 	samsung,color-depth = <1>;
 	samsung,link-rate = <0x0a>;
 	samsung,lane-count = <4>;
 	status = "okay";
-};
 
-&fimd {
-	status = "okay";
 	display-timings {
 		native-mode = <&timing0>;
-		timing0: timing@0 {
+		timing0: timing {
 			clock-frequency = <50000>;
 			hactive = <2560>;
 			vactive = <1600>;
@@ -118,9 +123,13 @@
 	};
 };
 
+&fimd {
+	status = "okay";
+};
+
 &hdmi {
 	status = "okay";
-	hpd-gpio = <&gpx3 7 0>;
+	hpd-gpio = <&gpx3 7 GPIO_ACTIVE_HIGH>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&hdmi_hpd_irq>;
 };
@@ -131,13 +140,6 @@
 	s2mps11_pmic@66 {
 		compatible = "samsung,s2mps11-pmic";
 		reg = <0x66>;
-		s2mps11,buck2-ramp-delay = <12>;
-		s2mps11,buck34-ramp-delay = <12>;
-		s2mps11,buck16-ramp-delay = <12>;
-		s2mps11,buck6-ramp-enable = <1>;
-		s2mps11,buck2-ramp-enable = <1>;
-		s2mps11,buck3-ramp-enable = <1>;
-		s2mps11,buck4-ramp-enable = <1>;
 
 		s2mps11_osc: clocks {
 			#clock-cells = <1>;

@@ -44,11 +44,10 @@ SYSCALL_DEFINE0(arc_gettls)
 void arch_cpu_idle(void)
 {
 	/* sleep, but enable all interrupts before committing */
-	if (is_isa_arcompact()) {
-		__asm__("sleep 0x3");
-	} else {
-		__asm__("sleep 0x10");
-	}
+	__asm__ __volatile__(
+		"sleep %0	\n"
+		:
+		:"I"(ISA_SLEEP_ARG)); /* can't be "r" has to be embedded const */
 }
 
 asmlinkage void ret_from_fork(void);
@@ -181,13 +180,6 @@ void start_thread(struct pt_regs * regs, unsigned long pc, unsigned long usp)
  * Some archs flush debug and FPU info here
  */
 void flush_thread(void)
-{
-}
-
-/*
- * Free any architecture-specific thread data structures, etc.
- */
-void exit_thread(void)
 {
 }
 

@@ -269,6 +269,7 @@ int iscsi_target_check_login_request(
 
 	return 0;
 }
+EXPORT_SYMBOL(iscsi_target_check_login_request);
 
 static int iscsi_target_check_first_request(
 	struct iscsi_conn *conn,
@@ -388,6 +389,7 @@ err:
 	if (login->login_complete) {
 		if (conn->rx_thread && conn->rx_thread_active) {
 			send_sig(SIGINT, conn->rx_thread, 1);
+			complete(&conn->rx_login_comp);
 			kthread_stop(conn->rx_thread);
 		}
 		if (conn->tx_thread && conn->tx_thread_active) {
@@ -1245,16 +1247,16 @@ int iscsi_target_start_negotiation(
 {
 	int ret;
 
-	ret = iscsi_target_do_login(conn, login);
-	if (!ret) {
-		if (conn->sock) {
-			struct sock *sk = conn->sock->sk;
+       if (conn->sock) {
+               struct sock *sk = conn->sock->sk;
 
-			write_lock_bh(&sk->sk_callback_lock);
-			set_bit(LOGIN_FLAGS_READY, &conn->login_flags);
-			write_unlock_bh(&sk->sk_callback_lock);
-		}
-	} else if (ret < 0) {
+               write_lock_bh(&sk->sk_callback_lock);
+               set_bit(LOGIN_FLAGS_READY, &conn->login_flags);
+               write_unlock_bh(&sk->sk_callback_lock);
+       }
+
+       ret = iscsi_target_do_login(conn, login);
+       if (ret < 0) {
 		cancel_delayed_work_sync(&conn->login_work);
 		cancel_delayed_work_sync(&conn->login_cleanup_work);
 		iscsi_target_restore_sock_callbacks(conn);

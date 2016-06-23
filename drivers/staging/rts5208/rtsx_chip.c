@@ -43,14 +43,6 @@ static void rtsx_calibration(struct rtsx_chip *chip)
 	rtsx_write_phy_register(chip, 0x00, 0x0288);
 }
 
-void rtsx_disable_card_int(struct rtsx_chip *chip)
-{
-	u32 reg = rtsx_readl(chip, RTSX_BIER);
-
-	reg &= ~(XD_INT_EN | SD_INT_EN | MS_INT_EN);
-	rtsx_writel(chip, RTSX_BIER, reg);
-}
-
 void rtsx_enable_card_int(struct rtsx_chip *chip)
 {
 	u32 reg = rtsx_readl(chip, RTSX_BIER);
@@ -521,13 +513,14 @@ int rtsx_reset_chip(struct rtsx_chip *chip)
 		}
 	}
 
-	/* Disable cd_pwr_save (u_force_rst_core_en=0, u_cd_rst_core_en=0)
-	      0xFE5B
-	      bit[1]    u_cd_rst_core_en	rst_value = 0
-	      bit[2]    u_force_rst_core_en	rst_value = 0
-	      bit[5]    u_mac_phy_rst_n_dbg	rst_value = 1
-	      bit[4]	u_non_sticky_rst_n_dbg	rst_value = 0
-	*/
+	/*
+	 * Disable cd_pwr_save (u_force_rst_core_en=0, u_cd_rst_core_en=0)
+	 *    0xFE5B
+	 *    bit[1]    u_cd_rst_core_en	rst_value = 0
+	 *    bit[2]    u_force_rst_core_en	rst_value = 0
+	 *    bit[5]    u_mac_phy_rst_n_dbg	rst_value = 1
+	 *    bit[4]	u_non_sticky_rst_n_dbg	rst_value = 0
+	 */
 	retval = rtsx_write_register(chip, CHANGE_LINK_STATE, 0x16, 0x10);
 	if (retval) {
 		rtsx_trace(chip);
@@ -1446,12 +1439,6 @@ delink_stage:
 	rtsx_delink_stage(chip);
 }
 
-void rtsx_undo_delink(struct rtsx_chip *chip)
-{
-	chip->auto_delink_allowed = 0;
-	rtsx_write_register(chip, CHANGE_LINK_STATE, 0x0A, 0x00);
-}
-
 /**
  * rtsx_stop_cmd - stop command transfer and DMA transfer
  * @chip: Realtek's card reader chip
@@ -1999,27 +1986,6 @@ int rtsx_set_phy_reg_bit(struct rtsx_chip *chip, u8 reg, u8 bit)
 	return STATUS_SUCCESS;
 }
 
-int rtsx_check_link_ready(struct rtsx_chip *chip)
-{
-	int retval;
-	u8 val;
-
-	retval = rtsx_read_register(chip, IRQSTAT0, &val);
-	if (retval) {
-		rtsx_trace(chip);
-		return retval;
-	}
-
-	dev_dbg(rtsx_dev(chip), "IRQSTAT0: 0x%x\n", val);
-	if (val & LINK_RDY_INT) {
-		dev_dbg(rtsx_dev(chip), "Delinked!\n");
-		rtsx_write_register(chip, IRQSTAT0, LINK_RDY_INT, LINK_RDY_INT);
-		return STATUS_FAIL;
-	}
-
-	return STATUS_SUCCESS;
-}
-
 static void rtsx_handle_pm_dstate(struct rtsx_chip *chip, u8 dstate)
 {
 	u32 ultmp;
@@ -2153,12 +2119,13 @@ int rtsx_pre_handle_interrupt(struct rtsx_chip *chip)
 				clear_bit(SD_NR, &chip->need_reset);
 			}
 		} else {
-			/* If multi-luns, it's possible that
-			   when plugging/unplugging one card
-			   there is another card which still
-			   exists in the slot. In this case,
-			   all existed cards should be reset.
-			*/
+			/*
+			 * If multi-luns, it's possible that
+			 * when plugging/unplugging one card
+			 * there is another card which still
+			 * exists in the slot. In this case,
+			 * all existed cards should be reset.
+			 */
 			if (exit_ss && (status & SD_EXIST))
 				set_bit(SD_NR, &chip->need_reinit);
 		}

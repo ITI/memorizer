@@ -77,12 +77,21 @@ struct bridge_mcast_querier {
 };
 #endif
 
+struct br_vlan_stats {
+	u64 rx_bytes;
+	u64 rx_packets;
+	u64 tx_bytes;
+	u64 tx_packets;
+	struct u64_stats_sync syncp;
+};
+
 /**
  * struct net_bridge_vlan - per-vlan entry
  *
  * @vnode: rhashtable member
  * @vid: VLAN id
  * @flags: bridge vlan flags
+ * @stats: per-cpu VLAN statistics
  * @br: if MASTER flag set, this points to a bridge struct
  * @port: if MASTER flag unset, this points to a port struct
  * @refcnt: if MASTER flag set, this is bumped for each port referencing it
@@ -100,6 +109,7 @@ struct net_bridge_vlan {
 	struct rhash_head		vnode;
 	u16				vid;
 	u16				flags;
+	struct br_vlan_stats __percpu	*stats;
 	union {
 		struct net_bridge	*br;
 		struct net_bridge_port	*port;
@@ -150,6 +160,9 @@ struct net_bridge_fdb_entry
 	struct rcu_head			rcu;
 };
 
+#define MDB_PG_FLAGS_PERMANENT	BIT(0)
+#define MDB_PG_FLAGS_OFFLOAD	BIT(1)
+
 struct net_bridge_port_group {
 	struct net_bridge_port		*port;
 	struct net_bridge_port_group __rcu *next;
@@ -157,7 +170,7 @@ struct net_bridge_port_group {
 	struct rcu_head			rcu;
 	struct timer_list		timer;
 	struct br_ip			addr;
-	unsigned char			state;
+	unsigned char			flags;
 };
 
 struct net_bridge_mdb_entry
@@ -339,6 +352,7 @@ struct net_bridge
 #ifdef CONFIG_BRIDGE_VLAN_FILTERING
 	struct net_bridge_vlan_group	__rcu *vlgrp;
 	u8				vlan_enabled;
+	u8				vlan_stats_enabled;
 	__be16				vlan_proto;
 	u16				default_pvid;
 #endif
@@ -554,11 +568,11 @@ void br_multicast_free_pg(struct rcu_head *head);
 struct net_bridge_port_group *
 br_multicast_new_port_group(struct net_bridge_port *port, struct br_ip *group,
 			    struct net_bridge_port_group __rcu *next,
-			    unsigned char state);
+			    unsigned char flags);
 void br_mdb_init(void);
 void br_mdb_uninit(void);
 void br_mdb_notify(struct net_device *dev, struct net_bridge_port *port,
-		   struct br_ip *group, int type, u8 state);
+		   struct br_ip *group, int type, u8 flags);
 void br_rtr_notify(struct net_device *dev, struct net_bridge_port *port,
 		   int type);
 
@@ -688,6 +702,7 @@ int __br_vlan_filter_toggle(struct net_bridge *br, unsigned long val);
 int br_vlan_filter_toggle(struct net_bridge *br, unsigned long val);
 int __br_vlan_set_proto(struct net_bridge *br, __be16 proto);
 int br_vlan_set_proto(struct net_bridge *br, unsigned long val);
+int br_vlan_set_stats(struct net_bridge *br, unsigned long val);
 int br_vlan_init(struct net_bridge *br);
 int br_vlan_set_default_pvid(struct net_bridge *br, unsigned long val);
 int __br_vlan_set_default_pvid(struct net_bridge *br, u16 pvid);
@@ -696,6 +711,8 @@ int nbp_vlan_delete(struct net_bridge_port *port, u16 vid);
 void nbp_vlan_flush(struct net_bridge_port *port);
 int nbp_vlan_init(struct net_bridge_port *port);
 int nbp_get_num_vlan_infos(struct net_bridge_port *p, u32 filter_mask);
+void br_vlan_get_stats(const struct net_bridge_vlan *v,
+		       struct br_vlan_stats *stats);
 
 static inline struct net_bridge_vlan_group *br_vlan_group(
 					const struct net_bridge *br)
@@ -878,6 +895,10 @@ static inline struct net_bridge_vlan_group *nbp_vlan_group_rcu(
 	return NULL;
 }
 
+static inline void br_vlan_get_stats(const struct net_bridge_vlan *v,
+				     struct br_vlan_stats *stats)
+{
+}
 #endif
 
 struct nf_br_ops {
@@ -897,7 +918,6 @@ static inline void br_nf_core_fini(void) {}
 #endif
 
 /* br_stp.c */
-void br_log_state(const struct net_bridge_port *p);
 void br_set_state(struct net_bridge_port *p, unsigned int state);
 struct net_bridge_port *br_get_port(struct net_bridge *br, u16 port_no);
 void br_init_port(struct net_bridge_port *p);

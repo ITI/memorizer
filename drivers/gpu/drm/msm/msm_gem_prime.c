@@ -45,9 +45,7 @@ int msm_gem_prime_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma)
 {
 	int ret;
 
-	mutex_lock(&obj->dev->struct_mutex);
 	ret = drm_gem_mmap_obj(obj, obj->size, vma);
-	mutex_unlock(&obj->dev->struct_mutex);
 	if (ret < 0)
 		return ret;
 
@@ -57,7 +55,7 @@ int msm_gem_prime_mmap(struct drm_gem_object *obj, struct vm_area_struct *vma)
 struct drm_gem_object *msm_gem_prime_import_sg_table(struct drm_device *dev,
 		struct dma_buf_attachment *attach, struct sg_table *sg)
 {
-	return msm_gem_import(dev, attach->dmabuf->size, sg);
+	return msm_gem_import(dev, attach->dmabuf, sg);
 }
 
 int msm_gem_prime_pin(struct drm_gem_object *obj)

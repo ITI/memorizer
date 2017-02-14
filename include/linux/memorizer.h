@@ -88,32 +88,21 @@ void __memorizer_print_events(unsigned int num_events);
 
 #else /*----------- !CONFIG_MEMORIZER ------------------------- */
 
-int __init memorizer_init(void){}
-int memorizer_init_from_driver(void){}
+int __init memorizer_init(void);
+int memorizer_init_from_driver(void);
+void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
+uint64_t __memorizer_get_opsx(void);
+void __memorizer_print_events(unsigned int num_events);
+void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags);
+void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int node);
+void memorizer_kfree(unsigned long call_site, const void *ptr);
+void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned int order);
+void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned int order);
+void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags);
+void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int node);
+void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr);
+void memorizer_register_global(const void *ptr, size_t size);
 
-void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip)
-	{}
-uint64_t __memorizer_get_opsx(void) {}
-void __memorizer_print_events(unsigned int num_events){}
-static __init void memorizer_init(void){}
-void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
-		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags){}
-void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
-			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
-			   node){}
-void memorizer_kfree(unsigned long call_site, const void *ptr){}
-void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
-			   int order){}
-void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
-			  int order){}
-void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
-				bytes_req, size_t bytes_alloc, gfp_t
-				gfp_flags){}
-void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
-				      size_t bytes_req, size_t bytes_alloc,
-				      gfp_t gfp_flags, int node){}
-void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr){}
-void memorizer_register_global(const void *ptr, size_t size){}
 #endif /* CONFIG_MEMORIZER */
 
 #endif /* __MEMORIZER_H_ */

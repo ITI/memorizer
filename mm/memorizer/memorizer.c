@@ -219,6 +219,9 @@ static bool memorizer_enabled = false;
 static bool memorizer_log_access = false;
 //module_param(memorizer_log_access, bool, 0644);
 
+/* flag enable/disable printing of live objects */
+static bool print_live_obj = false;
+
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
 
@@ -807,6 +810,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->free_jiffies = 0;
 	kobj->free_ip = 0;
 	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
+	kobj->printed = false;
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->object_list);
 	/* Some of the call sites are not tracked correctly so don't try */
@@ -896,6 +900,33 @@ static void clear_object_list(void)
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
 		/* If free_jiffies is 0 then this object is live */
 		if(kobj->free_jiffies > 0) {
+			/* remove the kobj from the free-list */
+			list_del(&kobj->object_list);
+			/* Free the object data */
+			free_kobj(kobj);
+		}
+	}
+	write_unlock_irqrestore(&object_list_spinlock, flags);
+	__memorizer_exit();
+}
+
+/**
+ * clear_printed_objects() --- remove entries from free list and free kobjs
+ */
+static void clear_printed_objects(void)
+{
+	struct memorizer_kobj *kobj;
+	struct list_head *p;
+	struct list_head *tmp;
+	unsigned long flags;
+	pr_info("Clearing the free'd and printed kernel objects\n");
+	__memorizer_enter();
+	write_lock_irqsave(&object_list_spinlock, flags);
+	list_for_each_safe(p, tmp, &object_list)
+	{
+		kobj = list_entry(p, struct memorizer_kobj, object_list);
+		/* If free_jiffies is 0 then this object is live */
+		if(kobj->free_jiffies > 0 && kobj->printed) {
 			/* remove the kobj from the free-list */
 			list_del(&kobj->object_list);
 			/* Free the object data */
@@ -1231,7 +1262,12 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
 						 object_list);
 	read_lock(&kobj->rwlock);
-
+	/* If free_jiffies is 0 then this object is live */
+	if(!print_live_obj && kobj->free_jiffies == 0) {
+		read_unlock(&kobj->rwlock);
+		return 0;
+	}
+	kobj->printed = true;
 	/* Print object allocation info */
 	seq_printf(seq,"%p,%d,%p,%lu,%lu,%lu,%p,%s\n",
 		   (void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
@@ -1327,6 +1363,22 @@ static ssize_t clear_object_list_write(struct file *file, const char __user
 static const struct file_operations clear_object_list_fops = {
 	.owner		= THIS_MODULE,
 	.write		= clear_object_list_write,
+};
+
+/* 
+ * clear_printed_free_list_write() - call the function to clear the printed free'd kobjs
+ */
+static ssize_t clear_printed_list_write(struct file *file, const char __user
+				   *user_buf, size_t size, loff_t *ppos)
+{
+	clear_printed_objects();
+	*ppos += size;
+	return size;
+}
+
+static const struct file_operations clear_printed_list_fops = {
+	.owner		= THIS_MODULE,
+	.write		= clear_printed_list_write,
 };
 
 static int stats_seq_show(struct seq_file *seq, void *v)
@@ -1427,6 +1479,7 @@ void __init memorizer_init(void)
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;
+	print_live_obj = false;
 	local_irq_restore(flags);
 	__memorizer_exit();
 }
@@ -1456,6 +1509,10 @@ static int memorizer_late_init(void)
 				     NULL, &clear_object_list_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs clear_object_list\n");
+	dentry = debugfs_create_file("clear_printed_list", S_IWUGO, dentryMemDir,
+				     NULL, &clear_printed_list_fops);
+	if (!dentry)
+		pr_warning("Failed to create debugfs clear_printed_list\n");
 	dentry = debugfs_create_bool("memorizer_enabled", S_IRUGO|S_IWUGO,
 				     dentryMemDir, &memorizer_enabled);
 	if (!dentry)
@@ -1464,10 +1521,14 @@ static int memorizer_late_init(void)
 				     dentryMemDir, &memorizer_log_access);
 	if (!dentry)
 		pr_warning("Failed to create debugfs memorizer_log_access\n");
-
+	dentry = debugfs_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
+				     dentryMemDir, &print_live_obj);
+	if (!dentry)
+		pr_warning("Failed to create debugfs print_live_obj\n");
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;
+	print_live_obj = false;
 	local_irq_restore(flags);
 
 	pr_info("Memorizer initialized\n");

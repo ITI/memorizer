@@ -116,6 +116,16 @@ struct st_sensor_bdu {
 };
 
 /**
+ * struct st_sensor_das - ST sensor device data alignment selection
+ * @addr: address of the register.
+ * @mask: mask to write the das flag for left alignment.
+ */
+struct st_sensor_das {
+	u8 addr;
+	u8 mask;
+};
+
+/**
  * struct st_sensor_data_ready_irq - ST sensor device data-ready interrupt
  * @addr: address of the register.
  * @mask_int1: mask to enable/disable IRQ on INT1 pin.
@@ -185,6 +195,7 @@ struct st_sensor_transfer_function {
  * @enable_axis: Enable one or more axis of the sensor.
  * @fs: Full scale register and full scale list available.
  * @bdu: Block data update register.
+ * @das: Data Alignment Selection register.
  * @drdy_irq: Data ready register of the sensor.
  * @multi_read_bit: Use or not particular bit for [I2C/SPI] multi-read.
  * @bootime: samples to discard when sensor passing from power-down to power-up.
@@ -200,6 +211,7 @@ struct st_sensor_settings {
 	struct st_sensor_axis enable_axis;
 	struct st_sensor_fullscale fs;
 	struct st_sensor_bdu bdu;
+	struct st_sensor_das das;
 	struct st_sensor_data_ready_irq drdy_irq;
 	bool multi_read_bit;
 	unsigned int bootime;
@@ -223,6 +235,7 @@ struct st_sensor_settings {
  * @get_irq_data_ready: Function to get the IRQ used for data ready signal.
  * @tf: Transfer function structure used by I/O operations.
  * @tb: Transfer buffers and mutex used by I/O operations.
+ * @edge_irq: the IRQ triggers on edges and need special handling.
  * @hw_irq_trigger: if we're using the hardware interrupt on the sensor.
  * @hw_timestamp: Latest timestamp from the interrupt handler, when in use.
  */
@@ -250,14 +263,13 @@ struct st_sensor_data {
 	const struct st_sensor_transfer_function *tf;
 	struct st_sensor_transfer_buffer tb;
 
+	bool edge_irq;
 	bool hw_irq_trigger;
 	s64 hw_timestamp;
 };
 
 #ifdef CONFIG_IIO_BUFFER
 irqreturn_t st_sensors_trigger_handler(int irq, void *p);
-
-int st_sensors_get_buffer_element(struct iio_dev *indio_dev, u8 *buf);
 #endif
 
 #ifdef CONFIG_IIO_TRIGGER
@@ -287,7 +299,7 @@ int st_sensors_set_enable(struct iio_dev *indio_dev, bool enable);
 
 int st_sensors_set_axis_enable(struct iio_dev *indio_dev, u8 axis_enable);
 
-void st_sensors_power_enable(struct iio_dev *indio_dev);
+int st_sensors_power_enable(struct iio_dev *indio_dev);
 
 void st_sensors_power_disable(struct iio_dev *indio_dev);
 

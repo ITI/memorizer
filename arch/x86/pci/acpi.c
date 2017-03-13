@@ -114,6 +114,16 @@ static const struct dmi_system_id pci_crs_quirks[] __initconst = {
 			DMI_MATCH(DMI_BIOS_VERSION, "6JET85WW (1.43 )"),
 		},
 	},
+	/* https://bugzilla.kernel.org/show_bug.cgi?id=42606 */
+	{
+		.callback = set_nouse_crs,
+		.ident = "Supermicro X8DTH",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "Supermicro"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "X8DTH-i/6/iF/6F"),
+			DMI_MATCH(DMI_BIOS_VERSION, "2.0a"),
+		},
+	},
 
 	/* https://bugzilla.kernel.org/show_bug.cgi?id=15362 */
 	{
@@ -396,6 +406,7 @@ int __init pci_acpi_init(void)
 		return -ENODEV;
 
 	printk(KERN_INFO "PCI: Using ACPI for IRQ routing\n");
+	acpi_irq_penalty_init();
 	pcibios_enable_irq = acpi_pci_irq_enable;
 	pcibios_disable_irq = acpi_pci_irq_disable;
 	x86_init.pci.init_irq = x86_init_noop;

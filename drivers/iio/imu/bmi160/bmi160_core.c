@@ -20,6 +20,7 @@
 #include <linux/iio/triggered_buffer.h>
 #include <linux/iio/trigger_consumer.h>
 #include <linux/iio/buffer.h>
+#include <linux/iio/sysfs.h>
 
 #include "bmi160.h"
 
@@ -65,10 +66,8 @@
 
 #define BMI160_REG_DUMMY		0x7F
 
-#define BMI160_ACCEL_PMU_MIN_USLEEP	3200
-#define BMI160_ACCEL_PMU_MAX_USLEEP	3800
-#define BMI160_GYRO_PMU_MIN_USLEEP	55000
-#define BMI160_GYRO_PMU_MAX_USLEEP	80000
+#define BMI160_ACCEL_PMU_MIN_USLEEP	3800
+#define BMI160_GYRO_PMU_MIN_USLEEP	80000
 #define BMI160_SOFTRESET_USLEEP		1000
 
 #define BMI160_CHANNEL(_type, _axis, _index) {			\
@@ -150,20 +149,9 @@ static struct bmi160_regs bmi160_regs[] = {
 	},
 };
 
-struct bmi160_pmu_time {
-	unsigned long min;
-	unsigned long max;
-};
-
-static struct bmi160_pmu_time bmi160_pmu_time[] = {
-	[BMI160_ACCEL] = {
-		.min = BMI160_ACCEL_PMU_MIN_USLEEP,
-		.max = BMI160_ACCEL_PMU_MAX_USLEEP
-	},
-	[BMI160_GYRO] = {
-		.min = BMI160_GYRO_PMU_MIN_USLEEP,
-		.max = BMI160_GYRO_PMU_MIN_USLEEP,
-	},
+static unsigned long bmi160_pmu_time[] = {
+	[BMI160_ACCEL] = BMI160_ACCEL_PMU_MIN_USLEEP,
+	[BMI160_GYRO] = BMI160_GYRO_PMU_MIN_USLEEP,
 };
 
 struct bmi160_scale {
@@ -288,7 +276,7 @@ int bmi160_set_mode(struct bmi160_data *data, enum bmi160_sensor_type t,
 	if (ret < 0)
 		return ret;
 
-	usleep_range(bmi160_pmu_time[t].min, bmi160_pmu_time[t].max);
+	usleep_range(bmi160_pmu_time[t], bmi160_pmu_time[t] + 1000);
 
 	return 0;
 }
@@ -397,7 +385,8 @@ static irqreturn_t bmi160_trigger_handler(int irq, void *p)
 	struct iio_poll_func *pf = p;
 	struct iio_dev *indio_dev = pf->indio_dev;
 	struct bmi160_data *data = iio_priv(indio_dev);
-	s16 buf[16]; /* 3 sens x 3 axis x s16 + 3 x s16 pad + 4 x s16 tstamp */
+	__le16 buf[16];
+	/* 3 sens x 3 axis x __le16 + 3 x __le16 pad + 4 x __le16 tstamp */
 	int i, ret, j = 0, base = BMI160_REG_DATA_MAGN_XOUT_L;
 	__le16 sample;
 
@@ -410,7 +399,8 @@ static irqreturn_t bmi160_trigger_handler(int irq, void *p)
 		buf[j++] = sample;
 	}
 
-	iio_push_to_buffers_with_timestamp(indio_dev, buf, iio_get_time_ns());
+	iio_push_to_buffers_with_timestamp(indio_dev, buf,
+					   iio_get_time_ns(indio_dev));
 done:
 	iio_trigger_notify_done(indio_dev->trig);
 	return IRQ_HANDLED;
@@ -466,10 +456,36 @@ static int bmi160_write_raw(struct iio_dev *indio_dev,
 	return 0;
 }
 
+static
+IIO_CONST_ATTR(in_accel_sampling_frequency_available,
+	       "0.78125 1.5625 3.125 6.25 12.5 25 50 100 200 400 800 1600");
+static
+IIO_CONST_ATTR(in_anglvel_sampling_frequency_available,
+	       "25 50 100 200 400 800 1600 3200");
+static
+IIO_CONST_ATTR(in_accel_scale_available,
+	       "0.000598 0.001197 0.002394 0.004788");
+static
+IIO_CONST_ATTR(in_anglvel_scale_available,
+	       "0.001065 0.000532 0.000266 0.000133 0.000066");
+
+static struct attribute *bmi160_attrs[] = {
+	&iio_const_attr_in_accel_sampling_frequency_available.dev_attr.attr,
+	&iio_const_attr_in_anglvel_sampling_frequency_available.dev_attr.attr,
+	&iio_const_attr_in_accel_scale_available.dev_attr.attr,
+	&iio_const_attr_in_anglvel_scale_available.dev_attr.attr,
+	NULL,
+};
+
+static const struct attribute_group bmi160_attrs_group = {
+	.attrs = bmi160_attrs,
+};
+
 static const struct iio_info bmi160_info = {
 	.driver_module = THIS_MODULE,
 	.read_raw = bmi160_read_raw,
 	.write_raw = bmi160_write_raw,
+	.attrs = &bmi160_attrs_group,
 };
 
 static const char *bmi160_match_acpi_device(struct device *dev)

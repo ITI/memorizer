@@ -254,11 +254,8 @@ static int add_client_context(struct ib_device *device, struct ib_client *client
 	unsigned long flags;
 
 	context = kmalloc(sizeof *context, GFP_KERNEL);
-	if (!context) {
-		pr_warn("Couldn't allocate client context for %s/%s\n",
-			device->name, client->name);
+	if (!context)
 		return -ENOMEM;
-	}
 
 	context->client = client;
 	context->data   = NULL;
@@ -310,6 +307,15 @@ static int read_port_immutable(struct ib_device *device)
 	}
 	return 0;
 }
+
+void ib_get_device_fw_str(struct ib_device *dev, char *str, size_t str_len)
+{
+	if (dev->get_dev_fw_str)
+		dev->get_dev_fw_str(dev, str, str_len);
+	else
+		str[0] = '\0';
+}
+EXPORT_SYMBOL(ib_get_device_fw_str);
 
 /**
  * ib_register_device - Register an IB device with IB core

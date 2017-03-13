@@ -201,9 +201,14 @@ static const u16 sh_eth_offset_fast_rz[SH_ETH_MAX_REGISTER_OFFSET] = {
 
 	[ARSTR]		= 0x0000,
 	[TSU_CTRST]	= 0x0004,
+	[TSU_FWSLC]	= 0x0038,
 	[TSU_VTAG0]	= 0x0058,
 	[TSU_ADSBSY]	= 0x0060,
 	[TSU_TEN]	= 0x0064,
+	[TSU_POST1]	= 0x0070,
+	[TSU_POST2]	= 0x0074,
+	[TSU_POST3]	= 0x0078,
+	[TSU_POST4]	= 0x007c,
 	[TSU_ADRH0]	= 0x0100,
 
 	[TXNLCR0]	= 0x0080,
@@ -513,7 +518,7 @@ static struct sh_eth_cpu_data r7s72100_data = {
 
 	.ecsr_value	= ECSR_ICD,
 	.ecsipr_value	= ECSIPR_ICDIP,
-	.eesipr_value	= 0xff7f009f,
+	.eesipr_value	= 0xe77f009f,
 
 	.tx_check	= EESR_TC1 | EESR_FTC,
 	.eesr_err_check	= EESR_TWB1 | EESR_TWB | EESR_TABT | EESR_RABT |
@@ -569,6 +574,7 @@ static struct sh_eth_cpu_data r8a7740_data = {
 	.rpadir_value   = 2 << 16,
 	.no_trimd	= 1,
 	.no_ade		= 1,
+	.hw_crc		= 1,
 	.tsu		= 1,
 	.select_mii	= 1,
 	.shift_rd0	= 1,
@@ -797,7 +803,7 @@ static struct sh_eth_cpu_data sh7734_data = {
 
 	.ecsr_value	= ECSR_ICD | ECSR_MPD,
 	.ecsipr_value	= ECSIPR_LCHNGIP | ECSIPR_ICDIP | ECSIPR_MPDIP,
-	.eesipr_value	= DMAC_M_RFRMER | DMAC_M_ECI | 0x003fffff,
+	.eesipr_value	= DMAC_M_RFRMER | DMAC_M_ECI | 0x003f07ff,
 
 	.tx_check	= EESR_TC1 | EESR_FTC,
 	.eesr_err_check	= EESR_TWB1 | EESR_TWB | EESR_TABT | EESR_RABT |
@@ -814,6 +820,7 @@ static struct sh_eth_cpu_data sh7734_data = {
 	.tsu		= 1,
 	.hw_crc		= 1,
 	.select_mii	= 1,
+	.shift_rd0	= 1,
 };
 
 /* SH7763 */
@@ -826,7 +833,7 @@ static struct sh_eth_cpu_data sh7763_data = {
 
 	.ecsr_value	= ECSR_ICD | ECSR_MPD,
 	.ecsipr_value	= ECSIPR_LCHNGIP | ECSIPR_ICDIP | ECSIPR_MPDIP,
-	.eesipr_value	= DMAC_M_RFRMER | DMAC_M_ECI | 0x003fffff,
+	.eesipr_value	= DMAC_M_RFRMER | DMAC_M_ECI | 0x003f07ff,
 
 	.tx_check	= EESR_TC1 | EESR_FTC,
 	.eesr_err_check	= EESR_TWB1 | EESR_TWB | EESR_TABT | EESR_RABT |
@@ -1651,7 +1658,7 @@ static irqreturn_t sh_eth_interrupt(int irq, void *netdev)
 	else
 		goto out;
 
-	if (!likely(mdp->irq_enabled)) {
+	if (unlikely(!mdp->irq_enabled)) {
 		sh_eth_write(ndev, 0, EESIPR);
 		goto out;
 	}
@@ -1723,7 +1730,7 @@ out:
 static void sh_eth_adjust_link(struct net_device *ndev)
 {
 	struct sh_eth_private *mdp = netdev_priv(ndev);
-	struct phy_device *phydev = mdp->phydev;
+	struct phy_device *phydev = ndev->phydev;
 	int new_state = 0;
 
 	if (phydev->link) {
@@ -1780,6 +1787,7 @@ static int sh_eth_phy_init(struct net_device *ndev)
 					sh_eth_adjust_link, 0,
 					mdp->phy_interface);
 
+		of_node_put(pn);
 		if (!phydev)
 			phydev = ERR_PTR(-ENOENT);
 	} else {
@@ -1799,51 +1807,48 @@ static int sh_eth_phy_init(struct net_device *ndev)
 
 	phy_attached_info(phydev);
 
-	mdp->phydev = phydev;
-
 	return 0;
 }
 
 /* PHY control start function */
 static int sh_eth_phy_start(struct net_device *ndev)
 {
-	struct sh_eth_private *mdp = netdev_priv(ndev);
 	int ret;
 
 	ret = sh_eth_phy_init(ndev);
 	if (ret)
 		return ret;
 
-	phy_start(mdp->phydev);
+	phy_start(ndev->phydev);
 
 	return 0;
 }
 
-static int sh_eth_get_settings(struct net_device *ndev,
-			       struct ethtool_cmd *ecmd)
+static int sh_eth_get_link_ksettings(struct net_device *ndev,
+				     struct ethtool_link_ksettings *cmd)
 {
 	struct sh_eth_private *mdp = netdev_priv(ndev);
 	unsigned long flags;
 	int ret;
 
-	if (!mdp->phydev)
+	if (!ndev->phydev)
 		return -ENODEV;
 
 	spin_lock_irqsave(&mdp->lock, flags);
-	ret = phy_ethtool_gset(mdp->phydev, ecmd);
+	ret = phy_ethtool_ksettings_get(ndev->phydev, cmd);
 	spin_unlock_irqrestore(&mdp->lock, flags);
 
 	return ret;
 }
 
-static int sh_eth_set_settings(struct net_device *ndev,
-			       struct ethtool_cmd *ecmd)
+static int sh_eth_set_link_ksettings(struct net_device *ndev,
+				     const struct ethtool_link_ksettings *cmd)
 {
 	struct sh_eth_private *mdp = netdev_priv(ndev);
 	unsigned long flags;
 	int ret;
 
-	if (!mdp->phydev)
+	if (!ndev->phydev)
 		return -ENODEV;
 
 	spin_lock_irqsave(&mdp->lock, flags);
@@ -1851,11 +1856,11 @@ static int sh_eth_set_settings(struct net_device *ndev,
 	/* disable tx and rx */
 	sh_eth_rcv_snd_disable(ndev);
 
-	ret = phy_ethtool_sset(mdp->phydev, ecmd);
+	ret = phy_ethtool_ksettings_set(ndev->phydev, cmd);
 	if (ret)
 		goto error_exit;
 
-	if (ecmd->duplex == DUPLEX_FULL)
+	if (cmd->base.duplex == DUPLEX_FULL)
 		mdp->duplex = 1;
 	else
 		mdp->duplex = 0;
@@ -2066,11 +2071,11 @@ static int sh_eth_nway_reset(struct net_device *ndev)
 	unsigned long flags;
 	int ret;
 
-	if (!mdp->phydev)
+	if (!ndev->phydev)
 		return -ENODEV;
 
 	spin_lock_irqsave(&mdp->lock, flags);
-	ret = phy_start_aneg(mdp->phydev);
+	ret = phy_start_aneg(ndev->phydev);
 	spin_unlock_irqrestore(&mdp->lock, flags);
 
 	return ret;
@@ -2197,8 +2202,6 @@ static int sh_eth_set_ringparam(struct net_device *ndev,
 }
 
 static const struct ethtool_ops sh_eth_ethtool_ops = {
-	.get_settings	= sh_eth_get_settings,
-	.set_settings	= sh_eth_set_settings,
 	.get_regs_len	= sh_eth_get_regs_len,
 	.get_regs	= sh_eth_get_regs,
 	.nway_reset	= sh_eth_nway_reset,
@@ -2210,6 +2213,8 @@ static const struct ethtool_ops sh_eth_ethtool_ops = {
 	.get_sset_count     = sh_eth_get_sset_count,
 	.get_ringparam	= sh_eth_get_ringparam,
 	.set_ringparam	= sh_eth_set_ringparam,
+	.get_link_ksettings = sh_eth_get_link_ksettings,
+	.set_link_ksettings = sh_eth_set_link_ksettings,
 };
 
 /* network device open function */
@@ -2407,10 +2412,9 @@ static int sh_eth_close(struct net_device *ndev)
 	sh_eth_dev_exit(ndev);
 
 	/* PHY Disconnect */
-	if (mdp->phydev) {
-		phy_stop(mdp->phydev);
-		phy_disconnect(mdp->phydev);
-		mdp->phydev = NULL;
+	if (ndev->phydev) {
+		phy_stop(ndev->phydev);
+		phy_disconnect(ndev->phydev);
 	}
 
 	free_irq(ndev->irq, ndev);
@@ -2428,8 +2432,7 @@ static int sh_eth_close(struct net_device *ndev)
 /* ioctl to device function */
 static int sh_eth_do_ioctl(struct net_device *ndev, struct ifreq *rq, int cmd)
 {
-	struct sh_eth_private *mdp = netdev_priv(ndev);
-	struct phy_device *phydev = mdp->phydev;
+	struct phy_device *phydev = ndev->phydev;
 
 	if (!netif_running(ndev))
 		return -EINVAL;
@@ -2785,6 +2788,8 @@ static void sh_eth_tsu_init(struct sh_eth_private *mdp)
 {
 	if (sh_eth_is_rz_fast_ether(mdp)) {
 		sh_eth_tsu_write(mdp, 0, TSU_TEN); /* Disable all CAM entry */
+		sh_eth_tsu_write(mdp, TSU_FWSLC_POSTENU | TSU_FWSLC_POSTENL,
+				 TSU_FWSLC);	/* Enable POST registers */
 		return;
 	}
 
@@ -2911,7 +2916,6 @@ static const struct net_device_ops sh_eth_netdev_ops = {
 	.ndo_do_ioctl		= sh_eth_do_ioctl,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_mac_address	= eth_mac_addr,
-	.ndo_change_mtu		= eth_change_mtu,
 };
 
 static const struct net_device_ops sh_eth_netdev_ops_tsu = {
@@ -2926,7 +2930,6 @@ static const struct net_device_ops sh_eth_netdev_ops_tsu = {
 	.ndo_do_ioctl		= sh_eth_do_ioctl,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_mac_address	= eth_mac_addr,
-	.ndo_change_mtu		= eth_change_mtu,
 };
 
 #ifdef CONFIG_OF
@@ -2956,6 +2959,8 @@ static struct sh_eth_plat_data *sh_eth_parse_dt(struct device *dev)
 
 static const struct of_device_id sh_eth_match_table[] = {
 	{ .compatible = "renesas,gether-r8a7740", .data = &r8a7740_data },
+	{ .compatible = "renesas,ether-r8a7743", .data = &r8a779x_data },
+	{ .compatible = "renesas,ether-r8a7745", .data = &r8a779x_data },
 	{ .compatible = "renesas,ether-r8a7778", .data = &r8a777x_data },
 	{ .compatible = "renesas,ether-r8a7779", .data = &r8a777x_data },
 	{ .compatible = "renesas,ether-r8a7790", .data = &r8a779x_data },
@@ -2996,7 +3001,6 @@ static int sh_eth_drv_probe(struct platform_device *pdev)
 	if (devno < 0)
 		devno = 0;
 
-	ndev->dma = -1;
 	ret = platform_get_irq(pdev, 0);
 	if (ret < 0)
 		goto out_release;

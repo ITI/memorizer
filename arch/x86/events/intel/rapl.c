@@ -55,6 +55,7 @@
 #include <linux/slab.h>
 #include <linux/perf_event.h>
 #include <asm/cpu_device_id.h>
+#include <asm/intel-family.h>
 #include "../perf_event.h"
 
 MODULE_LICENSE("GPL");
@@ -160,7 +161,13 @@ static u64 rapl_timer_ms;
 
 static inline struct rapl_pmu *cpu_to_rapl_pmu(unsigned int cpu)
 {
-	return rapl_pmus->pmus[topology_logical_package_id(cpu)];
+	unsigned int pkgid = topology_logical_package_id(cpu);
+
+	/*
+	 * The unsigned check also catches the '-1' return value for non
+	 * existent mappings in the topology map.
+	 */
+	return pkgid < rapl_pmus->maxpkg ? rapl_pmus->pmus[pkgid] : NULL;
 }
 
 static inline u64 rapl_read_counter(struct perf_event *event)
@@ -356,6 +363,8 @@ static int rapl_pmu_event_init(struct perf_event *event)
 	if (event->cpu < 0)
 		return -EINVAL;
 
+	event->event_caps |= PERF_EV_CAP_READ_ACTIVE_PKG;
+
 	/*
 	 * check event is known (determines counter)
 	 */
@@ -399,6 +408,8 @@ static int rapl_pmu_event_init(struct perf_event *event)
 
 	/* must be done before validate_group */
 	pmu = cpu_to_rapl_pmu(event->cpu);
+	if (!pmu)
+		return -EINVAL;
 	event->cpu = pmu->cpu;
 	event->pmu_private = pmu;
 	event->hw.event_base = msr;
@@ -555,14 +566,14 @@ const struct attribute_group *rapl_attr_groups[] = {
 	NULL,
 };
 
-static void rapl_cpu_exit(int cpu)
+static int rapl_cpu_offline(unsigned int cpu)
 {
 	struct rapl_pmu *pmu = cpu_to_rapl_pmu(cpu);
 	int target;
 
 	/* Check if exiting cpu is used for collecting rapl events */
 	if (!cpumask_test_and_clear_cpu(cpu, &rapl_cpu_mask))
-		return;
+		return 0;
 
 	pmu->cpu = -1;
 	/* Find a new cpu to collect rapl events */
@@ -574,12 +585,27 @@ static void rapl_cpu_exit(int cpu)
 		pmu->cpu = target;
 		perf_pmu_migrate_context(pmu->pmu, cpu, target);
 	}
+	return 0;
 }
 
-static void rapl_cpu_init(int cpu)
+static int rapl_cpu_online(unsigned int cpu)
 {
 	struct rapl_pmu *pmu = cpu_to_rapl_pmu(cpu);
 	int target;
+
+	if (!pmu) {
+		pmu = kzalloc_node(sizeof(*pmu), GFP_KERNEL, cpu_to_node(cpu));
+		if (!pmu)
+			return -ENOMEM;
+
+		raw_spin_lock_init(&pmu->lock);
+		INIT_LIST_HEAD(&pmu->active_list);
+		pmu->pmu = &rapl_pmus->pmu;
+		pmu->timer_interval = ms_to_ktime(rapl_timer_ms);
+		rapl_hrtimer_init(pmu);
+
+		rapl_pmus->pmus[topology_logical_package_id(cpu)] = pmu;
+	}
 
 	/*
 	 * Check if there is an online cpu in the package which collects rapl
@@ -587,59 +613,12 @@ static void rapl_cpu_init(int cpu)
 	 */
 	target = cpumask_any_and(&rapl_cpu_mask, topology_core_cpumask(cpu));
 	if (target < nr_cpu_ids)
-		return;
+		return 0;
 
 	cpumask_set_cpu(cpu, &rapl_cpu_mask);
 	pmu->cpu = cpu;
-}
-
-static int rapl_cpu_prepare(int cpu)
-{
-	struct rapl_pmu *pmu = cpu_to_rapl_pmu(cpu);
-
-	if (pmu)
-		return 0;
-
-	pmu = kzalloc_node(sizeof(*pmu), GFP_KERNEL, cpu_to_node(cpu));
-	if (!pmu)
-		return -ENOMEM;
-
-	raw_spin_lock_init(&pmu->lock);
-	INIT_LIST_HEAD(&pmu->active_list);
-	pmu->pmu = &rapl_pmus->pmu;
-	pmu->timer_interval = ms_to_ktime(rapl_timer_ms);
-	pmu->cpu = -1;
-	rapl_hrtimer_init(pmu);
-	rapl_pmus->pmus[topology_logical_package_id(cpu)] = pmu;
 	return 0;
 }
-
-static int rapl_cpu_notifier(struct notifier_block *self,
-			     unsigned long action, void *hcpu)
-{
-	unsigned int cpu = (long)hcpu;
-
-	switch (action & ~CPU_TASKS_FROZEN) {
-	case CPU_UP_PREPARE:
-		rapl_cpu_prepare(cpu);
-		break;
-
-	case CPU_DOWN_FAILED:
-	case CPU_ONLINE:
-		rapl_cpu_init(cpu);
-		break;
-
-	case CPU_DOWN_PREPARE:
-		rapl_cpu_exit(cpu);
-		break;
-	}
-	return NOTIFY_OK;
-}
-
-static struct notifier_block rapl_cpu_nb = {
-	.notifier_call	= rapl_cpu_notifier,
-	.priority       = CPU_PRI_PERF + 1,
-};
 
 static int rapl_check_hw_unit(bool apply_quirk)
 {
@@ -691,24 +670,6 @@ static void __init rapl_advertise(void)
 	}
 }
 
-static int __init rapl_prepare_cpus(void)
-{
-	unsigned int cpu, pkg;
-	int ret;
-
-	for_each_online_cpu(cpu) {
-		pkg = topology_logical_package_id(cpu);
-		if (rapl_pmus->pmus[pkg])
-			continue;
-
-		ret = rapl_cpu_prepare(cpu);
-		if (ret)
-			return ret;
-		rapl_cpu_init(cpu);
-	}
-	return 0;
-}
-
 static void cleanup_rapl_pmus(void)
 {
 	int i;
@@ -737,6 +698,7 @@ static int __init init_rapl_pmus(void)
 	rapl_pmus->pmu.start		= rapl_pmu_event_start;
 	rapl_pmus->pmu.stop		= rapl_pmu_event_stop;
 	rapl_pmus->pmu.read		= rapl_pmu_event_read;
+	rapl_pmus->pmu.module		= THIS_MODULE;
 	return 0;
 }
 
@@ -786,26 +748,30 @@ static const struct intel_rapl_init_fun skl_rapl_init __initconst = {
 };
 
 static const struct x86_cpu_id rapl_cpu_match[] __initconst = {
-	X86_RAPL_MODEL_MATCH(42, snb_rapl_init),	/* Sandy Bridge */
-	X86_RAPL_MODEL_MATCH(45, snbep_rapl_init),	/* Sandy Bridge-EP */
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_SANDYBRIDGE,   snb_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_SANDYBRIDGE_X, snbep_rapl_init),
 
-	X86_RAPL_MODEL_MATCH(58, snb_rapl_init),	/* Ivy Bridge */
-	X86_RAPL_MODEL_MATCH(62, snbep_rapl_init),	/* IvyTown */
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_IVYBRIDGE,   snb_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_IVYBRIDGE_X, snbep_rapl_init),
 
-	X86_RAPL_MODEL_MATCH(60, hsw_rapl_init),	/* Haswell */
-	X86_RAPL_MODEL_MATCH(63, hsx_rapl_init),	/* Haswell-Server */
-	X86_RAPL_MODEL_MATCH(69, hsw_rapl_init),	/* Haswell-Celeron */
-	X86_RAPL_MODEL_MATCH(70, hsw_rapl_init),	/* Haswell GT3e */
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_HASWELL_CORE, hsw_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_HASWELL_X,    hsw_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_HASWELL_ULT,  hsw_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_HASWELL_GT3E, hsw_rapl_init),
 
-	X86_RAPL_MODEL_MATCH(61, hsw_rapl_init),	/* Broadwell */
-	X86_RAPL_MODEL_MATCH(71, hsw_rapl_init),	/* Broadwell-H */
-	X86_RAPL_MODEL_MATCH(79, hsx_rapl_init),	/* Broadwell-Server */
-	X86_RAPL_MODEL_MATCH(86, hsx_rapl_init),	/* Broadwell Xeon D */
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL_CORE,   hsw_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL_GT3E,   hsw_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL_X,	  hsw_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_BROADWELL_XEON_D, hsw_rapl_init),
 
-	X86_RAPL_MODEL_MATCH(87, knl_rapl_init),	/* Knights Landing */
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNL, knl_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_XEON_PHI_KNM, knl_rapl_init),
 
-	X86_RAPL_MODEL_MATCH(78, skl_rapl_init),	/* Skylake */
-	X86_RAPL_MODEL_MATCH(94, skl_rapl_init),	/* Skylake H/S */
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_SKYLAKE_MOBILE,  skl_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_SKYLAKE_DESKTOP, skl_rapl_init),
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_SKYLAKE_X,	 hsx_rapl_init),
+
+	X86_RAPL_MODEL_MATCH(INTEL_FAM6_ATOM_GOLDMONT, hsw_rapl_init),
 	{},
 };
 
@@ -835,35 +801,35 @@ static int __init rapl_pmu_init(void)
 	if (ret)
 		return ret;
 
-	cpu_notifier_register_begin();
-
-	ret = rapl_prepare_cpus();
+	/*
+	 * Install callbacks. Core will call them for each online cpu.
+	 */
+	ret = cpuhp_setup_state(CPUHP_AP_PERF_X86_RAPL_ONLINE,
+				"perf/x86/rapl:online",
+				rapl_cpu_online, rapl_cpu_offline);
 	if (ret)
 		goto out;
 
 	ret = perf_pmu_register(&rapl_pmus->pmu, "power", -1);
 	if (ret)
-		goto out;
+		goto out1;
 
-	__register_cpu_notifier(&rapl_cpu_nb);
-	cpu_notifier_register_done();
 	rapl_advertise();
 	return 0;
 
+out1:
+	cpuhp_remove_state(CPUHP_AP_PERF_X86_RAPL_ONLINE);
 out:
 	pr_warn("Initialization failed (%d), disabled\n", ret);
 	cleanup_rapl_pmus();
-	cpu_notifier_register_done();
 	return ret;
 }
 module_init(rapl_pmu_init);
 
 static void __exit intel_rapl_exit(void)
 {
-	cpu_notifier_register_begin();
-	__unregister_cpu_notifier(&rapl_cpu_nb);
+	cpuhp_remove_state_nocalls(CPUHP_AP_PERF_X86_RAPL_ONLINE);
 	perf_pmu_unregister(&rapl_pmus->pmu);
 	cleanup_rapl_pmus();
-	cpu_notifier_register_done();
 }
 module_exit(intel_rapl_exit);

@@ -24,6 +24,7 @@
 
 #include <clocksource/arm_arch_timer.h>
 #include <asm/arch_timer.h>
+#include <asm/kvm_hyp.h>
 
 #include <kvm/arm_vgic.h>
 #include <kvm/arm_arch_timer.h>
@@ -31,15 +32,15 @@
 #include "trace.h"
 
 static struct timecounter *timecounter;
-static struct workqueue_struct *wqueue;
 static unsigned int host_vtimer_irq;
+static u32 host_vtimer_irq_flags;
 
 void kvm_timer_vcpu_put(struct kvm_vcpu *vcpu)
 {
 	vcpu->arch.timer_cpu.active_cleared_last = false;
 }
 
-static cycle_t kvm_phys_timer_read(void)
+static u64 kvm_phys_timer_read(void)
 {
 	return timecounter->cc->read(timecounter->cc);
 }
@@ -89,9 +90,6 @@ static void kvm_timer_inject_irq_work(struct work_struct *work)
 	struct kvm_vcpu *vcpu;
 
 	vcpu = container_of(work, struct kvm_vcpu, arch.timer_cpu.expired);
-	vcpu->arch.timer_cpu.armed = false;
-
-	WARN_ON(!kvm_timer_should_fire(vcpu));
 
 	/*
 	 * If the vcpu is blocked we want to wake it up so that it will see
@@ -102,7 +100,7 @@ static void kvm_timer_inject_irq_work(struct work_struct *work)
 
 static u64 kvm_timer_compute_delta(struct kvm_vcpu *vcpu)
 {
-	cycle_t cval, now;
+	u64 cval, now;
 
 	cval = vcpu->arch.timer_cpu.cntv_cval;
 	now = kvm_phys_timer_read() - vcpu->kvm->arch.timer.cntvoff;
@@ -140,7 +138,7 @@ static enum hrtimer_restart kvm_timer_expire(struct hrtimer *hrt)
 		return HRTIMER_RESTART;
 	}
 
-	queue_work(wqueue, &timer->expired);
+	schedule_work(&timer->expired);
 	return HRTIMER_NORESTART;
 }
 
@@ -155,7 +153,7 @@ static bool kvm_timer_irq_can_fire(struct kvm_vcpu *vcpu)
 bool kvm_timer_should_fire(struct kvm_vcpu *vcpu)
 {
 	struct arch_timer_cpu *timer = &vcpu->arch.timer_cpu;
-	cycle_t cval, now;
+	u64 cval, now;
 
 	if (!kvm_timer_irq_can_fire(vcpu))
 		return false;
@@ -365,7 +363,7 @@ void kvm_timer_vcpu_init(struct kvm_vcpu *vcpu)
 
 static void kvm_timer_init_interrupt(void *info)
 {
-	enable_percpu_irq(host_vtimer_irq, 0);
+	enable_percpu_irq(host_vtimer_irq, host_vtimer_irq_flags);
 }
 
 int kvm_arm_timer_set_reg(struct kvm_vcpu *vcpu, u64 regid, u64 value)
@@ -405,26 +403,17 @@ u64 kvm_arm_timer_get_reg(struct kvm_vcpu *vcpu, u64 regid)
 	return (u64)-1;
 }
 
-static int kvm_timer_cpu_notify(struct notifier_block *self,
-				unsigned long action, void *cpu)
+static int kvm_timer_starting_cpu(unsigned int cpu)
 {
-	switch (action) {
-	case CPU_STARTING:
-	case CPU_STARTING_FROZEN:
-		kvm_timer_init_interrupt(NULL);
-		break;
-	case CPU_DYING:
-	case CPU_DYING_FROZEN:
-		disable_percpu_irq(host_vtimer_irq);
-		break;
-	}
-
-	return NOTIFY_OK;
+	kvm_timer_init_interrupt(NULL);
+	return 0;
 }
 
-static struct notifier_block kvm_timer_cpu_nb = {
-	.notifier_call = kvm_timer_cpu_notify,
-};
+static int kvm_timer_dying_cpu(unsigned int cpu)
+{
+	disable_percpu_irq(host_vtimer_irq);
+	return 0;
+}
 
 int kvm_timer_hyp_init(void)
 {
@@ -434,6 +423,11 @@ int kvm_timer_hyp_init(void)
 	info = arch_timer_get_kvm_info();
 	timecounter = &info->timecounter;
 
+	if (!timecounter->cc) {
+		kvm_err("kvm_arch_timer: uninitialized timecounter\n");
+		return -ENODEV;
+	}
+
 	if (info->virtual_irq <= 0) {
 		kvm_err("kvm_arch_timer: invalid virtual timer IRQ: %d\n",
 			info->virtual_irq);
@@ -441,33 +435,27 @@ int kvm_timer_hyp_init(void)
 	}
 	host_vtimer_irq = info->virtual_irq;
 
+	host_vtimer_irq_flags = irq_get_trigger_type(host_vtimer_irq);
+	if (host_vtimer_irq_flags != IRQF_TRIGGER_HIGH &&
+	    host_vtimer_irq_flags != IRQF_TRIGGER_LOW) {
+		kvm_err("Invalid trigger for IRQ%d, assuming level low\n",
+			host_vtimer_irq);
+		host_vtimer_irq_flags = IRQF_TRIGGER_LOW;
+	}
+
 	err = request_percpu_irq(host_vtimer_irq, kvm_arch_timer_handler,
 				 "kvm guest timer", kvm_get_running_vcpus());
 	if (err) {
 		kvm_err("kvm_arch_timer: can't request interrupt %d (%d)\n",
 			host_vtimer_irq, err);
-		goto out;
-	}
-
-	err = __register_cpu_notifier(&kvm_timer_cpu_nb);
-	if (err) {
-		kvm_err("Cannot register timer CPU notifier\n");
-		goto out_free;
-	}
-
-	wqueue = create_singlethread_workqueue("kvm_arch_timer");
-	if (!wqueue) {
-		err = -ENOMEM;
-		goto out_free;
+		return err;
 	}
 
 	kvm_info("virtual timer IRQ%d\n", host_vtimer_irq);
-	on_each_cpu(kvm_timer_init_interrupt, NULL, 1);
 
-	goto out;
-out_free:
-	free_percpu_irq(host_vtimer_irq, kvm_get_running_vcpus());
-out:
+	cpuhp_setup_state(CPUHP_AP_KVM_ARM_TIMER_STARTING,
+			  "kvm/arm/timer:starting", kvm_timer_starting_cpu,
+			  kvm_timer_dying_cpu);
 	return err;
 }
 
@@ -513,17 +501,7 @@ int kvm_timer_enable(struct kvm_vcpu *vcpu)
 	if (ret)
 		return ret;
 
-
-	/*
-	 * There is a potential race here between VCPUs starting for the first
-	 * time, which may be enabling the timer multiple times.  That doesn't
-	 * hurt though, because we're just setting a variable to the same
-	 * variable that it already was.  The important thing is that all
-	 * VCPUs have the enabled variable set, before entering the guest, if
-	 * the arch timers are enabled.
-	 */
-	if (timecounter && wqueue)
-		timer->enabled = 1;
+	timer->enabled = 1;
 
 	return 0;
 }
@@ -531,4 +509,26 @@ int kvm_timer_enable(struct kvm_vcpu *vcpu)
 void kvm_timer_init(struct kvm *kvm)
 {
 	kvm->arch.timer.cntvoff = kvm_phys_timer_read();
+}
+
+/*
+ * On VHE system, we only need to configure trap on physical timer and counter
+ * accesses in EL0 and EL1 once, not for every world switch.
+ * The host kernel runs at EL2 with HCR_EL2.TGE == 1,
+ * and this makes those bits have no effect for the host kernel execution.
+ */
+void kvm_timer_init_vhe(void)
+{
+	/* When HCR_EL2.E2H ==1, EL1PCEN and EL1PCTEN are shifted by 10 */
+	u32 cnthctl_shift = 10;
+	u64 val;
+
+	/*
+	 * Disallow physical timer access for the guest.
+	 * Physical counter access is allowed.
+	 */
+	val = read_sysreg(cnthctl_el2);
+	val &= ~(CNTHCTL_EL1PCEN << cnthctl_shift);
+	val |= (CNTHCTL_EL1PCTEN << cnthctl_shift);
+	write_sysreg(val, cnthctl_el2);
 }

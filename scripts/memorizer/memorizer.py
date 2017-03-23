@@ -9,7 +9,6 @@ def worker(cmd):
   ret = os.system(cmd)    
   if(ret != 0):
     print "Failed attempt on: " + cmd
-    cleanup()
     exit(1)
 
 def memManager():
@@ -20,11 +19,11 @@ def memManager():
     used_mem = float(stats_list[8])
     memory_usage = used_mem / total_mem
     if(memory_usage > 0.8):
-      ret = os.system("sudo cat " + mem_path + "kmap >> test.kmap")
+      ret = os.system("cat " + mem_path + "kmap >> test.kmap")
       if ret != 0:
         print "Failed to append kmap to temp file"
         exit(1)
-      ret = os.system("sudo echo 1 > " + mem_path + "clear_printed_list")
+      ret = os.system("echo 1 > " + mem_path + "clear_printed_list")
       if ret != 0:
         print "Failed to clear printed list"
         exit(1)
@@ -52,79 +51,93 @@ def postProcessing():
         out.write(caller+"\t"+callee+"\t"+str(count)+"\n")
             
 def startup():
+  # Setup group permissions to ftrace & memorizer directories
+  ret = os.system("sudo chgrp -R memorizer /sys/kernel/debug/")
+  if ret != 0:
+    print "Failed to change memorizer group permissions to /sys/kernel/debug/"
+    exit(1)
+  ret = os.system("sudo chmod -R g+wrx /sys/kernel/debug/")
+  if ret != 0:
+    print "Failed to grant wrx persmissions to /sys/kernel/debug/"
+    exit(1)
   # Memorizer Startup
-  ret = os.system("sudo echo 1 > " + mem_path + "clear_object_list")
+  ret = os.system("echo 1 > " + mem_path + "clear_object_list")
   if ret != 0:
     print "Failed to clear object list"
     exit(1)
-  ret = os.system("sudo echo 0 > " + mem_path + "print_live_obj")
+  ret = os.system("echo 0 > " + mem_path + "print_live_obj")
   if ret != 0:
     print "Failed to disable live object dumping"
     exit(1)
-  ret = os.system("sudo echo 1 > " + mem_path + "memorizer_enabled")
+  ret = os.system("echo 1 > " + mem_path + "memorizer_enabled")
   if ret != 0:
     print "Failed to enable memorizer object allocation tracking"
     exit(1)
   # Temporarily disabling -- enable later on
-  ret = os.system("sudo echo 0 > " + mem_path + "memorizer_log_access")
+  ret = os.system("echo 0 > " + mem_path + "memorizer_log_access")
   if ret != 0:
     print "Failed to enable memorizer object access tracking"
     exit(1)
   # ftrace startup
-  ret = os.system("sudo echo function > " + trace_path + "current_tracer")
+  ret = os.system("echo function > " + trace_path + "current_tracer")
   if ret != 0:
     print "Failed to add function to list of tracers"
     exit(1)
   # Clear trace buffer
-  ret = os.system("sudo echo > " + trace_path + "trace")
+  ret = os.system("echo > " + trace_path + "trace")
   if ret != 0:
     print "Failed to clear the trace buffer"
     exit(1)
-  ret = os.system("sudo echo 1 > " + trace_path + "tracing_on")
+  ret = os.system("echo 1 > " + trace_path + "tracing_on")
   if ret != 0:
     print "Failed to enable function tracing"
     exit(1)
 
 def cleanup():
   # ftrace cleanup 
-  ret = os.system("sudo echo 0 > " + trace_path + "tracing_on")
+  ret = os.system("echo 0 > " + trace_path + "tracing_on")
   if ret != 0 :
     print "Failed to disable function tracing"
     exit(1)
   # Memorizer cleanup
-  ret = os.system("sudo echo 0 > " + mem_path + "memorizer_enabled")
-  if ret != 0:
-    print "Failed to disable memorizer object allocation tracking"
-    exit(1)
-  ret = os.system("sudo echo 0 > " + mem_path + "memorizer_log_access")
+  ret = os.system("echo 0 > " + mem_path + "memorizer_log_access")
   if ret != 0:
     print "Failed to disable memorizer object access tracking"
     exit(1)
+  ret = os.system("echo 0 > " + mem_path + "memorizer_enabled")
+  if ret != 0:
+    print "Failed to disable memorizer object allocation tracking"
+    exit(1)
   # Print stats
-  ret = os.system("sudo cat " + mem_path + "show_stats")
+  ret = os.system("cat " + mem_path + "show_stats")
   if ret != 0:
     print "Failed to display memorizer stats"
     exit(1)
-  ret = os.system("sudo cat " + trace_path + "per_cpu/cpu0/stats")
+  ret = os.system("cat " + trace_path + "per_cpu/cpu0/stats")
   if ret != 0:
     print "Failed to display ftrace stats"
     exit(1)
-  ret = os.system("sudo echo 1 > " + mem_path + "print_live_obj")
+  # Cleanup trace first so we can stop overhead from function tracer
+  ret = os.system("cp " + trace_path + "trace trace.output") 
+  if ret != 0:
+    print "Failed to copy the trace output file"
+    exit(1)
+  ret = os.system("echo nop > " + trace_path + "current_tracer")
+  if ret != 0:
+    print "Failed to add nop to list of tracers"
+    exit(1)
+  ret = os.system("echo 1 > " + mem_path + "print_live_obj")
   if ret != 0:
     print "Failed to enable live object dumping"
     exit(1)
   # Make local copies of outputs
-  ret = os.system("sudo cat " + mem_path + "kmap >> test.kmap")
+  ret = os.system("cat " + mem_path + "kmap >> test.kmap")
   if ret != 0:
     print "Failed to copy live and freed objs to kmap"
     exit(1)
-  ret = os.system("sudo echo 1 > " + mem_path + "clear_object_list")
+  ret = os.system("echo 1 > " + mem_path + "clear_object_list")
   if ret != 0:
     print "Failed to clear all freed objects in obj list"
-    exit(1)
-  ret = os.system("sudo cp " + trace_path + "trace trace.output") 
-  if ret != 0:
-    print "Failed to copy the trace output file"
     exit(1)
 
 def main(argv):

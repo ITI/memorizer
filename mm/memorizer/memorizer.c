@@ -921,7 +921,6 @@ static void clear_printed_objects(void)
 	unsigned long flags;
 	pr_info("Clearing the free'd and printed kernel objects\n");
 	__memorizer_enter();
-	write_lock_irqsave(&object_list_spinlock, flags);
 	list_for_each_safe(p, tmp, &object_list)
 	{
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
@@ -933,7 +932,6 @@ static void clear_printed_objects(void)
 			free_kobj(kobj);
 		}
 	}
-	write_unlock_irqrestore(&object_list_spinlock, flags);
 	__memorizer_exit();
 }
 

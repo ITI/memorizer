@@ -1,4 +1,4 @@
-import sys,threading,os,subprocess,operator
+import sys,threading,os,subprocess,operator,time
 from collections import defaultdict
 
 mem_path = "/sys/kernel/debug/memorizer/"
@@ -27,6 +27,7 @@ def memManager():
       if ret != 0:
         print "Failed to clear printed list"
         exit(1)
+    time.sleep(2)
 
 def postProcessing():
   with open('trace.output','rU') as f:

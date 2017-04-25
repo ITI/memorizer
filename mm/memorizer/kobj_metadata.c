@@ -249,8 +249,8 @@ static void handle_overlapping_insert(uintptr_t va, struct memorizer_kobj **l1e)
 {
 	unsigned long flags;
 	struct memorizer_kobj *obj = lt_remove_kobj(va);
-	pr_err("Inserting 0x%lx into lookup table"
-	       " (overlaps existing) removing\n", va);
+	//pr_err("Inserting 0x%lx into lookup table"
+	//       " (overlaps existing) removing\n", va);
 	/* 
 	 * Note we don't need to free because the object
 	 * is in the free list and will get expunged

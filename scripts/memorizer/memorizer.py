@@ -1,4 +1,4 @@
-import sys,threading,os,subprocess,operator,time,
+import sys,threading,os,subprocess,operator,time
 
 mem_path = "/sys/kernel/debug/memorizer/"
 directory = ""

@@ -1,8 +1,7 @@
-import sys,threading,os,subprocess,operator,time
-from collections import defaultdict
+import sys,threading,os,subprocess,operator,time,
 
 mem_path = "/sys/kernel/debug/memorizer/"
-trace_path = "/sys/kernel/debug/tracing/"
+directory = ""
 completed = False
 
 def worker(cmd):
@@ -11,6 +10,11 @@ def worker(cmd):
     print "Failed attempt on: " + cmd
     exit(1)
 
+def basic_cleanup():
+  print "Basic tests completed. Now cleaning up."
+  ret = os.system("rm UPennlogo2.jpg")
+  ret = os.system("rm image.tar.gz")
+        
 def memManager():
   while(not completed):
     stats = subprocess.check_output(["free"])
@@ -19,7 +23,7 @@ def memManager():
     used_mem = float(stats_list[8])
     memory_usage = used_mem / total_mem
     if(memory_usage > 0.8):
-      ret = os.system("cat " + mem_path + "kmap >> test.kmap")
+      ret = os.system("cat " + mem_path + "kmap >> " + directory + "test.kmap")
       if ret != 0:
         print "Failed to append kmap to temp file"
         exit(1)
@@ -28,30 +32,16 @@ def memManager():
         print "Failed to clear printed list"
         exit(1)
     time.sleep(2)
-
-def postProcessing():
-  with open('trace.output','rU') as f:
-    i = 0
-    counts = defaultdict(int)
-    for line in f:
-      i+=1
-      if i < 12:
-        continue
-      split_line = line.split()
-      length = len(split_line)
-      if length != 6 and length != 7:
-        print "Bad line format: line#" + str(i) 
-        continue
-      callee = split_line[-2]
-      caller = split_line[-1][2:]
-      counts[(caller,callee)] += 1
-    with open('counts.txt', 'w') as out:
-      sorted_by_vals = sorted(counts.items(), key=operator.itemgetter(1),reverse=True)
-      out.write("Caller"+"\t"+"Callee"+"\t"+"Count"+"\t\n\n")
-      for ((caller,callee),count) in sorted_by_vals:
-        out.write(caller+"\t"+callee+"\t"+str(count)+"\n")
             
 def startup():
+  ret = os.system("sudo chgrp -R memorizer /opt/")
+  if ret != 0:
+    print "Failed to change group permissions of /opt/"
+    exit(1)
+  os.system("sudo chmod -R g+wrx /opt/")
+  if ret != 0:
+    print "Failed to grant wrx permissions to /opt/"
+    exit(1)
   # Setup group permissions to ftrace & memorizer directories
   ret = os.system("sudo chgrp -R memorizer /sys/kernel/debug/")
   if ret != 0:
@@ -74,32 +64,12 @@ def startup():
   if ret != 0:
     print "Failed to enable memorizer object allocation tracking"
     exit(1)
-  # Temporarily disabling -- enable later on
-  ret = os.system("echo 0 > " + mem_path + "memorizer_log_access")
+  ret = os.system("echo 1 > " + mem_path + "memorizer_log_access")
   if ret != 0:
     print "Failed to enable memorizer object access tracking"
     exit(1)
-  # ftrace startup
-  ret = os.system("echo function > " + trace_path + "current_tracer")
-  if ret != 0:
-    print "Failed to add function to list of tracers"
-    exit(1)
-  # Clear trace buffer
-  ret = os.system("echo > " + trace_path + "trace")
-  if ret != 0:
-    print "Failed to clear the trace buffer"
-    exit(1)
-  ret = os.system("echo 1 > " + trace_path + "tracing_on")
-  if ret != 0:
-    print "Failed to enable function tracing"
-    exit(1)
 
 def cleanup():
-  # ftrace cleanup 
-  ret = os.system("echo 0 > " + trace_path + "tracing_on")
-  if ret != 0 :
-    print "Failed to disable function tracing"
-    exit(1)
   # Memorizer cleanup
   ret = os.system("echo 0 > " + mem_path + "memorizer_log_access")
   if ret != 0:
@@ -114,25 +84,12 @@ def cleanup():
   if ret != 0:
     print "Failed to display memorizer stats"
     exit(1)
-  ret = os.system("cat " + trace_path + "per_cpu/cpu0/stats")
-  if ret != 0:
-    print "Failed to display ftrace stats"
-    exit(1)
-  # Cleanup trace first so we can stop overhead from function tracer
-  ret = os.system("cp " + trace_path + "trace trace.output") 
-  if ret != 0:
-    print "Failed to copy the trace output file"
-    exit(1)
-  ret = os.system("echo nop > " + trace_path + "current_tracer")
-  if ret != 0:
-    print "Failed to add nop to list of tracers"
-    exit(1)
   ret = os.system("echo 1 > " + mem_path + "print_live_obj")
   if ret != 0:
     print "Failed to enable live object dumping"
     exit(1)
   # Make local copies of outputs
-  ret = os.system("cat " + mem_path + "kmap >> test.kmap")
+  ret = os.system("cat " + mem_path + "kmap >> " +directory+ "test.kmap")
   if ret != 0:
     print "Failed to copy live and freed objs to kmap"
     exit(1)
@@ -143,14 +100,41 @@ def cleanup():
 
 def main(argv):
   global completed
+  global directory
+  if len(sys.argv) == 1:
+    print "Invalid/missing arg. Please enter -e for basic tests, -m for ltp tests, and/or specify a full process to run in quotes. Specify path using the -p <path> otherwise default to ."
+    return
   startup()
+  processes = []
+  easy_processes = False
+  next_arg = False
+  for arg in argv:
+    if next_arg: 
+      next_arg = False
+      directory = str(arg) + "/"
+    elif arg == '-p':
+      next_arg = True
+    #User wants to run ltp
+    elif arg == '-m':
+      print "Performing ltp tests" 
+      processes.append("/opt/ltp/runltp -p -l ltp.log")
+      print "See /opt/ltp/results/ltp.log for ltp results"
+    #User wants to run wget,ls,etc.
+    elif arg == '-e':
+      easy_processes = True
+      print "Performing basic ls test"
+      processes.append("ls")
+      print "Performing wget test"
+      processes.append("wget http://www.sas.upenn.edu/~egme/UPennlogo2.jpg")
+      print "Performing tar test"
+      processes.append("tar -czvf image.tar.gz UPennlogo2.jpg")
   print "Startup completed. Generating threads."
   manager = threading.Thread(target=memManager, args=())
   manager.start()
   threads = []
-  for i in xrange(1, len(argv)):
+  for process in processes:
     try:
-      t = threading.Thread(target=worker, args=(argv[i],))
+      t = threading.Thread(target=worker, args=(process,))
       threads.append(t)
       t.start()
     except:
@@ -160,10 +144,9 @@ def main(argv):
   completed = True
   manager.join()
   print "Threads ran to completion. Cleaning up."
+  basic_cleanup()
   cleanup()
-  print "Cleanup successful. Performing post processing."
-  postProcessing()
-  print "Post processing complete. Exiting."
+  print "Cleanup successful."
   return 0
 
 if __name__ == "__main__":

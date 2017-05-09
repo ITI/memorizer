@@ -13,7 +13,6 @@ def worker(cmd):
 def basic_cleanup():
   print "Basic tests completed. Now cleaning up."
   ret = os.system("rm UPennlogo2.jpg")
-  ret = os.system("rm image.tar.gz")
         
 def memManager():
   while(not completed):
@@ -126,8 +125,8 @@ def main(argv):
       processes.append("ls")
       print "Performing wget test"
       processes.append("wget http://www.sas.upenn.edu/~egme/UPennlogo2.jpg")
-      print "Performing tar test"
-      processes.append("tar -czvf image.tar.gz UPennlogo2.jpg")
+  print "Attempting to remove any existing kmaps in the specified path"
+  os.system("rm " + directory + "test.kmap")
   print "Startup completed. Generating threads."
   manager = threading.Thread(target=memManager, args=())
   manager.start()

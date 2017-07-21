@@ -233,7 +233,7 @@ static struct kmem_cache *kobj_cache;
 static struct kmem_cache *access_from_counts_cache;
 
 /* Object Cache for Serialized KObjects to be printed out to the RelayFS */
-static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial_Cache", sizeof(struct memorizer_kobj), 0, SLAB_PANIC);
+static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial_Cache", sizeof(struct memorizer_kobj), 0, SLAB_PANIC, NULL, NULL);
 
 /* active kobj metadata rb tree */
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
@@ -728,7 +728,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 {
 	unsigned long flags;
 	unsigned long len;
-	void *buf = kmem_cache_alloc(kobj_serial_cache, gfp_flags | GFP_ATOMIC);
+	void *buf = kmem_cache_alloc(kobj_serial_cache, GFP_ATOMIC);
 
 	struct memorizer_mem_access ma;
 	struct mem_access_worklists * ma_wls;
@@ -789,7 +789,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	ma.jiffies = jiffies;
 
 	/* Write the things out to the RelayFS */
-	len = sprintf(buf,"\t%lu,%lu,%lu,%lu,%lu,%lu",current,write,addr,size,ip,jiffies);
+	len = sprintf(buf,"\t%p,%lu,%lu,%lu,%lu,%lu",&current,write,addr,size,ip,jiffies);
 	__relay_write(relay_channel, buf, len);
 	kmem_cache_free(kobj_serial_cache,buf);
 
@@ -1084,7 +1084,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 {
 	unsigned long flags;
 	struct memorizer_kobj *kobj;
-	void * buf = kmem_cache_alloc(kobj_serial_cache, gfp_flags | GFP_ATOMIC);
+	void * buf = kmem_cache_alloc(kobj_serial_cache, GFP_ATOMIC);
 
 	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
 		return;
@@ -1512,7 +1512,6 @@ static struct rchan_callbacks relay_callbacks =
 void __init memorizer_init(void)
 {
 	unsigned long flags;
-	wq = create_single_workqueue("common_work_queue");
 	__memorizer_enter();
 	init_mem_access_wls();
 	create_obj_kmem_cache();

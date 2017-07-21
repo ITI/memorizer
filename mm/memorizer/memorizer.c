@@ -238,7 +238,7 @@ static struct kmem_cache *kobj_cache;
 static struct kmem_cache *access_from_counts_cache;
 
 /* Object Cache for Serialized KObjects to be printed out to the RelayFS */
-static struct kmem_cache *kobj_serial_cache = kmem_cache_create('S', sizeof(struct memorizer_kobj), 0, SLAB_PANIC,  NULL);
+static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial", sizeof(struct memorizer_kobj), 0, SLAB_PANIC,  NULL);
 
 /* active kobj metadata rb tree */
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
@@ -1492,7 +1492,7 @@ static void init_mem_access_wls(void)
 
 
 /* Callbacks for the RelayFS */
-static struct dentry *create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global)
+static struct dentry * create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global)
 {
 	return debugfs_create_file(filename, mode, parent, buf, &relay_file_operations);
 }
@@ -1574,7 +1574,7 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create debugfs print_live_obj\n");
 
 
-	relay_channel = relay_open("Relay", dentryMemDir, sizeof(memorizer_kobj), 1024*1024*1024*4, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
+	relay_channel = relay_open("Relay", dentryMemDir, sizeof(struct memorizer_kobj), 1024*4, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;

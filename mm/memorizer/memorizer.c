@@ -138,6 +138,11 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
 
+/* Prototypes for Relay FS Callbacks */
+static struct dentry *create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global);
+static int remove_buf_file_handler(struct dentry *dentry);
+
+
 /**
  * struct memorizer_mem_access - structure to capture all memory related events
  * @access_type: type of event
@@ -789,7 +794,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	ma.jiffies = jiffies;
 
 	/* Write the things out to the RelayFS */
-	len = sprintf(buf,"\t%p,%lu,%lu,%lu,%lu,%lu",(void *)&current,write,addr,size,ip,jiffies);
+	len = sprintf(buf,"\t%p,%lu,%lu,%lu,%lu,%lu",(void *)current,write,addr,size,ip,jiffies);
 	__relay_write(relay_channel, buf, len);
 	kmem_cache_free(kobj_serial_cache,buf);
 
@@ -1083,6 +1088,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 				       gfp_t gfp_flags)
 {
 	unsigned long flags;
+	unsigned long len;
 	struct memorizer_kobj *kobj;
 	void * buf = kmem_cache_alloc(kobj_serial_cache, GFP_ATOMIC);
 

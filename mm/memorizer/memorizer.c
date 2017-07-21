@@ -112,10 +112,10 @@
 #include <linux/stat.h>
 #include <linux/string.h>
 #include <linux/smp.h>
-
+#include <linux/workqueue.h>
 #include <asm/atomic.h>
 #include <asm/percpu.h>
-
+#include <linux/relay.h>
 #include <asm-generic/bug.h>
 
 #include "kobj_metadata.h"
@@ -206,6 +206,10 @@ struct code_region crypto_code_region = {
 	.e = 0xffffffff814cee00
 };
 
+
+/* RelayFS Channel to Shuttle Data Out of Kernel Space */
+struct rchan *relay_channel = NULL;
+
 /* TODO make this dynamically allocated based upon free memory */
 //DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls = {.selector = 0, .head = 0, .tail = 0 });
 DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
@@ -227,6 +231,9 @@ static struct kmem_cache *kobj_cache;
 
 /* object cache for access count objects */
 static struct kmem_cache *access_from_counts_cache;
+
+/* Object Cache for Serialized KObjects to be printed out to the RelayFS */
+static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial_Cache", sizeof(struct memorizer_kobj), 0, SLAB_PANIC);
 
 /* active kobj metadata rb tree */
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
@@ -720,6 +727,9 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 					  write, uintptr_t ip)
 {
 	unsigned long flags;
+	unsigned long len;
+	void *buf = kmem_cache_alloc(kobj_serial_cache, gfp_flags | GFP_ATOMIC);
+
 	struct memorizer_mem_access ma;
 	struct mem_access_worklists * ma_wls;
 
@@ -754,6 +764,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 	local_irq_save(flags);
 
+	// TODO: Make work and push it onto Workqueue
 	/* Get the local cpu data structure */
 	//ma_wls = &get_cpu_var(mem_access_wls);
 	/* Head points to the last inserted element, except for -1 on init */
@@ -776,6 +787,11 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	ma.access_size = size;
 	ma.src_ip = ip;
 	ma.jiffies = jiffies;
+
+	/* Write the things out to the RelayFS */
+	len = sprintf(buf,"\t%lu,%lu,%lu,%lu,%lu,%lu",current,write,addr,size,ip,jiffies);
+	__relay_write(relay_channel, buf, len);
+	kmem_cache_free(kobj_serial_cache,buf);
 
 	find_and_update_kobj_access(&ma);
 
@@ -1068,6 +1084,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 {
 	unsigned long flags;
 	struct memorizer_kobj *kobj;
+	void * buf = kmem_cache_alloc(kobj_serial_cache, gfp_flags | GFP_ATOMIC);
 
 	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
 		return;
@@ -1100,6 +1117,13 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	/* Grab the writer lock for the object_list */
 	write_lock_irqsave(&object_list_spinlock, flags);
+
+	/* Write the things out to the RelayFS */ 
+	len = sprintf(buf,"\t%p,%lu",kobj,jiffies);
+	__relay_write(relay_channel, buf, len);
+
+	kmem_cache_free(kobj_serial_cache,buf);
+	
 	lt_insert_kobj(kobj);
 	list_add_tail(&kobj->object_list, &object_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
@@ -1460,6 +1484,25 @@ static void init_mem_access_wls(void)
 	}
 }
 
+
+/* Callbacks for the RelayFS */
+static struct dentry *create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global)
+{
+	return debugfs_create_file(filename, mode, parent, buf, &relay_file_operations);
+}
+
+static int remove_buf_file_handler(struct dentry *dentry)
+{
+	debugfs_remove(dentry);
+	return 0;
+}
+
+static struct rchan_callbacks relay_callbacks =
+{
+	.create_buf_file = create_buf_file_handler,
+	.remove_buf_file = remove_buf_file_handler,
+};
+
 /**
  * memorizer_init() - initialize memorizer state
  *
@@ -1469,6 +1512,7 @@ static void init_mem_access_wls(void)
 void __init memorizer_init(void)
 {
 	unsigned long flags;
+	wq = create_single_workqueue("common_work_queue");
 	__memorizer_enter();
 	init_mem_access_wls();
 	create_obj_kmem_cache();
@@ -1523,6 +1567,9 @@ static int memorizer_late_init(void)
 				     dentryMemDir, &print_live_obj);
 	if (!dentry)
 		pr_warning("Failed to create debugfs print_live_obj\n");
+
+
+	relay_channel = relay_open("Relay", dentryMemDir, sizeof(memorizer_kobj), 1024*1024*1024*4, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;

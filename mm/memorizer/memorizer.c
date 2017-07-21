@@ -233,7 +233,7 @@ static struct kmem_cache *kobj_cache;
 static struct kmem_cache *access_from_counts_cache;
 
 /* Object Cache for Serialized KObjects to be printed out to the RelayFS */
-static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial_Cache", sizeof(struct memorizer_kobj), 0, SLAB_PANIC, NULL, NULL);
+static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial_Cache", sizeof(struct memorizer_kobj), 0, SLAB_PANIC,  NULL);
 
 /* active kobj metadata rb tree */
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
@@ -789,7 +789,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	ma.jiffies = jiffies;
 
 	/* Write the things out to the RelayFS */
-	len = sprintf(buf,"\t%p,%lu,%lu,%lu,%lu,%lu",&current,write,addr,size,ip,jiffies);
+	len = sprintf(buf,"\t%p,%lu,%lu,%lu,%lu,%lu",(void *)&current,write,addr,size,ip,jiffies);
 	__relay_write(relay_channel, buf, len);
 	kmem_cache_free(kobj_serial_cache,buf);
 

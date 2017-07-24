@@ -238,7 +238,7 @@ static struct kmem_cache *kobj_cache;
 static struct kmem_cache *access_from_counts_cache;
 
 /* Object Cache for Serialized KObjects to be printed out to the RelayFS */
-static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial", sizeof(struct memorizer_kobj), 0, SLAB_PANIC,  NULL);
+//static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial", sizeof(struct memorizer_kobj), 0, SLAB_PANIC,  NULL);
 
 /* active kobj metadata rb tree */
 static struct rb_root active_kobj_rbtree_root = RB_ROOT;
@@ -794,10 +794,11 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	ma.jiffies = jiffies;
 
 	/* Write the things out to the RelayFS */
+	/*
 	len = sprintf(buf,"\t%p,%lu,%lu,%lu,%lu,%lu",(void *)current,write,addr,size,ip,jiffies);
 	__relay_write(relay_channel, buf, len);
 	kmem_cache_free(kobj_serial_cache,buf);
-
+	*/
 	find_and_update_kobj_access(&ma);
 
 	/* put the cpu vars and reenable interrupts */
@@ -1124,12 +1125,13 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	/* Grab the writer lock for the object_list */
 	write_lock_irqsave(&object_list_spinlock, flags);
 
-	/* Write the things out to the RelayFS */ 
+	/* Write the things out to the RelayFS */
+       /*	
 	len = sprintf(buf,"\t%p,%lu",kobj,jiffies);
 	__relay_write(relay_channel, buf, len);
 
 	kmem_cache_free(kobj_serial_cache,buf);
-	
+	*/
 	lt_insert_kobj(kobj);
 	list_add_tail(&kobj->object_list, &object_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
@@ -1492,6 +1494,7 @@ static void init_mem_access_wls(void)
 
 
 /* Callbacks for the RelayFS */
+/*
 static struct dentry * create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global)
 {
 	return debugfs_create_file(filename, mode, parent, buf, &relay_file_operations);
@@ -1508,7 +1511,7 @@ static struct rchan_callbacks relay_callbacks =
 	.create_buf_file = create_buf_file_handler,
 	.remove_buf_file = remove_buf_file_handler,
 };
-
+*/
 /**
  * memorizer_init() - initialize memorizer state
  *
@@ -1574,7 +1577,7 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create debugfs print_live_obj\n");
 
 
-	relay_channel = relay_open("Relay", dentryMemDir, sizeof(struct memorizer_kobj), 1024*4, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
+	// relay_channel = relay_open("Relay", dentryMemDir, sizeof(struct memorizer_kobj), 1024*4, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;

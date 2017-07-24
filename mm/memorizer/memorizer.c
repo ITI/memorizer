@@ -180,6 +180,22 @@ struct print_alloc_struct{
 	struct work_struct *w;
 };
 
+/* Deferred Work of Printing */
+static void deferredWorkAccess(struct work_struct *work)
+{
+	/* Print Out Stuff From ma */
+	//struct memorizer_mem_access ma = container_of(work,struct print_access_struct, ma);
+}
+
+static void deferredWorkAlloc(struct work_struct *work)
+{
+	/* Print out Ptr and Jiffies(For Later Using Container Of */
+	//unsigned long jiffies = container_of(work,struct print_alloc_struct, jiffies);
+	//void *ptr = container_of(work,struct print_alloc_struct, ptr);
+
+
+}
+
 
 
 /**
@@ -1169,7 +1185,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
         cur.jiffies = jiffies;
 	cur.ptr = kobj;
 	cur.w = currentWork;	
-	INIT_WORK(currentWork,deferredWorkAlloc,&kobj); // WHAT TO PASS FOR THE DATA
+	INIT_WORK(currentWork,deferredWorkAlloc); // WHAT TO PASS FOR THE DATA
 	queue_work(wq,currentwork);
 	kmem_cache_free(work_cache,currentWork);
 
@@ -1558,22 +1574,6 @@ static struct rchan_callbacks relay_callbacks =
 
 
 
-
-/* Deferred Work of Printing */
-static void deferredWorkAccess(struct work_struct *work)
-{
-	/* Print Out Stuff From ma */
-	struct memorizer_mem_access ma = container_of(work,struct print_access_struct, ma);
-}
-
-static void deferredWorkAlloc(struct work_struct *work)
-{
-	/* Print out Ptr and Jiffies(For Later Using Container Of */
-	unsigned long jiffies = container_of(work,struct print_alloc_struct, jiffies);
-	void *ptr = container_of(work,struct print_alloc_struct, ptr);
-
-
-}
 
 
 

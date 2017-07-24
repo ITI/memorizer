@@ -843,7 +843,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	curAccess.w = currentWork;
 
 	INIT_WORK(currentWork,deferredWorkAccess); // WHAT TO PASS FOR THE DATA 
-	queue_work(wq,currentwork);
+	queue_work(wq,currentWork);
 	kmem_cache_free(work_cache,currentWork);
 
 	find_and_update_kobj_access(&ma);
@@ -1186,7 +1186,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	cur.ptr = kobj;
 	cur.w = currentWork;	
 	INIT_WORK(currentWork,deferredWorkAlloc); // WHAT TO PASS FOR THE DATA
-	queue_work(wq,currentwork);
+	queue_work(wq,currentWork);
 	kmem_cache_free(work_cache,currentWork);
 
 
@@ -1599,7 +1599,7 @@ void __init memorizer_init(void)
 	wq = create_singlethread_workqueue("Workqueue");
 
 	/* Initialize the Work_Struct Cache */
-	work_cache = KMEM_CACHE(struct work_struct,SLAB_PANIC);
+	work_cache = KMEM_CACHE(work_struct,SLAB_PANIC);
 
 
 	lt_init();

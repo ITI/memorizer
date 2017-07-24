@@ -138,9 +138,6 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
 
-/* Prototypes for Relay FS Callbacks */
-static struct dentry *create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global);
-static int remove_buf_file_handler(struct dentry *dentry);
 
 
 /**
@@ -162,6 +159,28 @@ struct memorizer_mem_access {
 	pid_t pid;			/* pid of the current task */
 	char comm[TASK_COMM_LEN];	/* executable name */
 };
+
+
+
+/* Define a single threaded workqueue for printing out objects */
+struct workqueue_struct *wq;
+
+/* Define a kmem_cache for Work Objects */
+struct kmem_cache *work_cache;
+
+/* Structs for passing values to be printed using container_of macro */
+struct print_access_struct{
+	struct memorizer_mem_access ma;
+	struct work_struct *w;
+};
+
+struct print_alloc_struct{
+	unsigned long jiffies;
+	void * ptr;
+	struct work_struct *w;
+};
+
+
 
 /**
  * mem_access_wlists - This struct contains work queues holding accesses
@@ -733,7 +752,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 {
 	unsigned long flags;
 	unsigned long len;
-	void *buf = kmem_cache_alloc(kobj_serial_cache, GFP_ATOMIC);
 
 	struct memorizer_mem_access ma;
 	struct mem_access_worklists * ma_wls;
@@ -799,6 +817,19 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	__relay_write(relay_channel, buf, len);
 	kmem_cache_free(kobj_serial_cache,buf);
 	*/
+
+
+	/* Make Work Struct with the Deferred Work and Push it onto the Workqueue */
+
+	struct work_struct *currentWork = kmem_cache_alloc(work_cache,GFP_ATOMIC);
+	struct print_access_struct curAccess;
+	curAccess.ma = ma;
+	curAccess.w = currentWork;
+
+	INIT_WORK(currentWork,deferredWorkAccess); // WHAT TO PASS FOR THE DATA 
+	queue_work(wq,currentwork);
+	kmem_cache_free(work_cache,currentWork);
+
 	find_and_update_kobj_access(&ma);
 
 	/* put the cpu vars and reenable interrupts */
@@ -1091,7 +1122,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	unsigned long flags;
 	unsigned long len;
 	struct memorizer_kobj *kobj;
-	void * buf = kmem_cache_alloc(kobj_serial_cache, GFP_ATOMIC);
 
 	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
 		return;
@@ -1132,6 +1162,19 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	kmem_cache_free(kobj_serial_cache,buf);
 	*/
+
+	/* Make Work Struct with the Deferred Work and Push it onto the Workqueue */
+	struct work_struct *currentWork = kmem_cache_alloc(work_cache,GFP_ATOMIC);
+	struct print_alloc_struct cur;
+        cur.jiffies = jiffies;
+	cur.ptr = kobj;
+	cur.w = currentWork;	
+	INIT_WORK(currentWork,deferredWorkAlloc,&kobj); // WHAT TO PASS FOR THE DATA
+	queue_work(wq,currentwork);
+	kmem_cache_free(work_cache,currentWork);
+
+
+
 	lt_insert_kobj(kobj);
 	list_add_tail(&kobj->object_list, &object_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
@@ -1512,6 +1555,29 @@ static struct rchan_callbacks relay_callbacks =
 	.remove_buf_file = remove_buf_file_handler,
 };
 */
+
+
+
+
+/* Deferred Work of Printing */
+static void deferredWorkAccess(struct work_struct *work)
+{
+	/* Print Out Stuff From ma */
+	struct memorizer_mem_access ma = container_of(work,struct print_access_struct, ma);
+}
+
+static void deferredWorkAlloc(struct work_struct *work)
+{
+	/* Print out Ptr and Jiffies(For Later Using Container Of */
+	unsigned long jiffies = container_of(work,struct print_alloc_struct, jiffies);
+	void *ptr = container_of(work,struct print_alloc_struct, ptr);
+
+
+}
+
+
+
+
 /**
  * memorizer_init() - initialize memorizer state
  *
@@ -1523,8 +1589,19 @@ void __init memorizer_init(void)
 	unsigned long flags;
 	__memorizer_enter();
 	init_mem_access_wls();
+
+
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
+
+
+	/* Initialize the WorkQueue */
+	wq = create_singlethread_workqueue("Workqueue");
+
+	/* Initialize the Work_Struct Cache */
+	work_cache = KMEM_CACHE(struct work_struct,SLAB_PANIC);
+
+
 	lt_init();
 	local_irq_save(flags);
 	memorizer_enabled = true;

@@ -135,6 +135,9 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 /* Size of the memory access recording worklist arrays */
 #define MEM_ACC_L_SIZE 1
 
+/* Defining the maximum length for the event lists */
+#define ML 100000
+
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
 
@@ -183,18 +186,29 @@ struct print_alloc_struct{
 /* Deferred Work of Printing */
 static void deferredWorkAccess(struct work_struct *work)
 {
-	/* Print Out Stuff From ma */
+	/* Print Out Stuff From ma using __relay_write and container_of */
 	//struct memorizer_mem_access ma = container_of(work,struct print_access_struct, ma);
 }
 
 static void deferredWorkAlloc(struct work_struct *work)
 {
-	/* Print out Ptr and Jiffies(For Later Using Container Of */
+	/* Print out Ptr using __relay_write and container_of */
 	//unsigned long jiffies = container_of(work,struct print_alloc_struct, jiffies);
 	//void *ptr = container_of(work,struct print_alloc_struct, ptr);
 
 
 }
+
+/* Struct for Holding Events to Be Added to a Work Struct and Queued */
+struct event{
+	list_head *list;
+	unsigned int length;
+	void *data;
+	struct work_struct *w;
+
+};
+struct event lh[4];
+static unsigned long currentList = 0;
 
 
 
@@ -827,6 +841,24 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	ma.src_ip = ip;
 	ma.jiffies = jiffies;
 
+
+	/* Add the event into the event list. If the list is full, queue the work and change the list */
+	if(!(lh[currentList].length<ML)){
+		// Add things to a work_struct and push it to the workqueue
+		lh[currentList].w = kmem_cache_alloc(work_cache,GFP_ATOMIC);
+		INIT_WORK(lh[currentList].w,deferredWorkAccess);
+		queue_work(wq,lh[currentList].w);
+		currentList = (currentList + 1) % 4;
+
+	}
+	struct event accessEvent;
+	accessEvent.data = &ma;
+
+	list_add(&lh[currentList].list,&accessEvent.list);
+	lh[currentList].length++;
+	
+
+
 	/* Write the things out to the RelayFS */
 	/*
 	len = sprintf(buf,"\t%p,%lu,%lu,%lu,%lu,%lu",(void *)current,write,addr,size,ip,jiffies);
@@ -1170,6 +1202,22 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	/* Grab the writer lock for the object_list */
 	write_lock_irqsave(&object_list_spinlock, flags);
+	
+	/* Add the event into the event list. If the list is full, queue the work and change the list */
+	if(!(lh[currentList].length<ML)){
+		// Add things to a work_struct and push it to the workqueue
+		lh[currentList].w = kmem_cache_alloc(work_cache,GFP_ATOMIC);
+		INIT_WORK(lh[currentList].w,deferredWorkAccess);
+		queue_work(wq,lh[currentList].w);
+		currentList = (currentList + 1) % 4;
+	}
+	struct event allocEvent;
+	allocEvent.data = kobj;
+
+	list_add(&lh[currentList].list,&allocEvent.list);
+	lh[currentList].length++;
+	
+
 
 	/* Write the things out to the RelayFS */
        /*	
@@ -1593,6 +1641,11 @@ void __init memorizer_init(void)
 
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
+
+	int i=0;
+	for(i-0;i<4;i++){
+		INIT_LIST_HEAD(&lh[i].list);
+	}
 
 
 	/* Initialize the WorkQueue */

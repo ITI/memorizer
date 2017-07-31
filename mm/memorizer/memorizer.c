@@ -856,7 +856,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	struct event accessEvent;
 	accessEvent.data = &ma;
 
-	list_add(lh[currentList].list,&accessEvent.list);
+	list_add(lh[currentList].list,accessEvent.list);
 	lh[currentList].length++;
 	
 
@@ -1217,7 +1217,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	struct event allocEvent;
 	allocEvent.data = kobj;
 
-	list_add(lh[currentList].list,&allocEvent.list);
+	list_add(lh[currentList].list,allocEvent.list);
 	lh[currentList].length++;
 	
 
@@ -1655,6 +1655,9 @@ void __init memorizer_init(void)
 	/* Initialize the Work_Struct Cache */
 	work_cache = KMEM_CACHE(work_struct,SLAB_PANIC);
 
+	/* Initialize the relay channel */
+	relay_channel = relay_open("Relay",NULL , sizeof(struct memorizer_kobj), ML, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
+
 
 	lt_init();
 	local_irq_save(flags);
@@ -1708,7 +1711,6 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create debugfs print_live_obj\n");
 
 
-	relay_channel = relay_open("Relay",NULL , sizeof(struct memorizer_kobj), ML, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;

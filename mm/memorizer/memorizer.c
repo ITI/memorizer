@@ -856,7 +856,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	struct event accessEvent;
 	accessEvent.data = &ma;
 
-	list_add(&lh[currentList].list,&accessEvent.list);
+	list_add(lh[currentList].list,&accessEvent.list);
 	lh[currentList].length++;
 	
 
@@ -1217,7 +1217,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	struct event allocEvent;
 	allocEvent.data = kobj;
 
-	list_add(&lh[currentList].list,&allocEvent.list);
+	list_add(lh[currentList].list,&allocEvent.list);
 	lh[currentList].length++;
 	
 
@@ -1645,7 +1645,7 @@ void __init memorizer_init(void)
 
 	int i=0;
 	for(i-0;i<4;i++){
-		INIT_LIST_HEAD(&lh[i].list);
+		INIT_LIST_HEAD(lh[i].list);
 	}
 
 

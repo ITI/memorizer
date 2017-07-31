@@ -201,7 +201,7 @@ static void deferredWorkAlloc(struct work_struct *work)
 
 /* Struct for Holding Events to Be Added to a Work Struct and Queued */
 struct event{
-	list_head *list;
+	struct list_head *list;
 	unsigned int length;
 	void *data;
 	struct work_struct *w;

@@ -848,7 +848,9 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		lh[currentList].w = kmem_cache_alloc(work_cache,GFP_ATOMIC);
 		INIT_WORK(lh[currentList].w,deferredWorkAccess);
 		queue_work(wq,lh[currentList].w);
+		lh[currentList].length = 0;
 		currentList = (currentList + 1) % 4;
+
 
 	}
 	struct event accessEvent;
@@ -1209,6 +1211,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		lh[currentList].w = kmem_cache_alloc(work_cache,GFP_ATOMIC);
 		INIT_WORK(lh[currentList].w,deferredWorkAccess);
 		queue_work(wq,lh[currentList].w);
+		lh[currentList].length = 0;
 		currentList = (currentList + 1) % 4;
 	}
 	struct event allocEvent;
@@ -1601,7 +1604,6 @@ static void init_mem_access_wls(void)
 
 
 /* Callbacks for the RelayFS */
-/*
 static struct dentry * create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global)
 {
 	return debugfs_create_file(filename, mode, parent, buf, &relay_file_operations);
@@ -1618,7 +1620,6 @@ static struct rchan_callbacks relay_callbacks =
 	.create_buf_file = create_buf_file_handler,
 	.remove_buf_file = remove_buf_file_handler,
 };
-*/
 
 
 
@@ -1707,7 +1708,7 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create debugfs print_live_obj\n");
 
 
-	// relay_channel = relay_open("Relay", dentryMemDir, sizeof(struct memorizer_kobj), 1024*4, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
+	relay_channel = relay_open("Relay",NULL , sizeof(struct memorizer_kobj), ML, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;

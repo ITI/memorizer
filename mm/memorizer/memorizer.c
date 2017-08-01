@@ -1692,7 +1692,7 @@ void __init memorizer_init(void)
 	dev = kmalloc(sizeof(dev_t), GFP_KERNEL);
 	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);
 
-	alloc_chrdev_region(0,1,"char_dev");
+	alloc_chrdev_region(dev,0,1,"char_dev");
 	cdev_init(cd &char_driver);
 	cdev_add(cd, *dev, 1);
 

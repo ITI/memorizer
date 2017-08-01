@@ -1630,12 +1630,6 @@ static struct rchan_callbacks relay_callbacks =
 */
 
 /* Fops and Callbacks for char_driver */
-static const struct file_operations char_driver={
-	.owner = THIS_MODULE,
-	.open = char_open,
-	.release = char_close,
-	.mmap = char_mmap,
-};
 
 static int char_open(struct inode *inode, struct file* file){
 	   return 0;
@@ -1660,6 +1654,14 @@ static int char_mmap(struct file *file, struct vm_area_struct * vm_struct){
 	*/
 	return 0;
 };
+
+static const struct file_operations char_driver={
+	.owner = THIS_MODULE,
+	.open = char_open,
+	.release = char_close,
+	.mmap = char_mmap,
+};
+
 
 
 

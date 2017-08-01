@@ -117,7 +117,8 @@
 #include <asm/percpu.h>
 #include <linux/relay.h>
 #include <asm-generic/bug.h>
-
+#include <linux/cdev.h>
+#include <linux/vmalloc.h>
 #include "kobj_metadata.h"
 
 //==-- Debugging and print information ------------------------------------==//
@@ -135,8 +136,13 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 /* Size of the memory access recording worklist arrays */
 #define MEM_ACC_L_SIZE 1
 
-/* Defining the maximum length for the event lists */
+/* Defining the maximum length for the event lists along with variables for character device driver */
 #define ML 100000
+static dev_t *dev;
+static struct cdev *cd;
+static void *pages;
+static long *buff_end;
+
 
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
@@ -1604,6 +1610,7 @@ static void init_mem_access_wls(void)
 
 
 /* Callbacks for the RelayFS */
+/*
 static struct dentry * create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global)
 {
 	return debugfs_create_file(filename, mode, parent, buf, &relay_file_operations);
@@ -1620,6 +1627,40 @@ static struct rchan_callbacks relay_callbacks =
 	.create_buf_file = create_buf_file_handler,
 	.remove_buf_file = remove_buf_file_handler,
 };
+*/
+
+/* Fops and Callbacks for char_driver */
+static const struct file_operations char_driver={
+	.owner = THIS_MODULE,
+	.open = char_open,
+	.release = char_close,
+	.mmap = char_mmap,
+};
+
+static int char_open(struct inode *inode, struct file* file){
+	   return 0;
+};
+
+static int char_close(struct inode *inode, struct file* file){
+	   return 0;
+};
+
+static int char_mmap(struct file *file, struct vm_area_struct * vm_struct){
+	unsigned long pfn;
+	int i = 0;
+
+	/* Remap the pages, change the size and do the remapping page by page. The current code is for a different buffer size */
+	/*
+	for(i=0; i<128;i++)
+	{
+		pfn = vmalloc_to_pfn(pages+i*PAGE_SIZE);
+		remap_pfn_range(vm_struct, vm_struct->vm_start+i*PAGE_SIZE, pfn, PAGE_SIZE, PAGE_SHARED);
+	}
+	return 0;
+	*/
+	return 0;
+};
+
 
 
 
@@ -1643,6 +1684,16 @@ void __init memorizer_init(void)
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 
+	pages = vmalloc(sizeof(struct memorizer_kobj)*ML);
+	memset(pages,0,sizeof(struct memorizer_koj)*ML);
+
+	dev = kmalloc(sizeof(dev_t), GFP_KERNEL);
+	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);
+
+	alloc_chrdev_region(0,1,"char_dev");
+	cdev_init(cd &char_driver);
+	cdev_add(cd, *dev, 1);
+
 	int i=0;
 	for(i-0;i<4;i++){
 		INIT_LIST_HEAD(lh[i].list);
@@ -1656,7 +1707,7 @@ void __init memorizer_init(void)
 	work_cache = KMEM_CACHE(work_struct,SLAB_PANIC);
 
 	/* Initialize the relay channel */
-	relay_channel = relay_open("Relay",NULL , sizeof(struct memorizer_kobj), ML, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
+	//relay_channel = relay_open("Relay",NULL , sizeof(struct memorizer_kobj), ML, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
 
 
 	lt_init();

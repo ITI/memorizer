@@ -1687,13 +1687,13 @@ void __init memorizer_init(void)
 	create_access_counts_kmem_cache();
 
 	pages = vmalloc(sizeof(struct memorizer_kobj)*ML);
-	memset(pages,0,sizeof(struct memorizer_koj)*ML);
+	memset(pages,0,sizeof(struct memorizer_kobj)*ML);
 
 	dev = kmalloc(sizeof(dev_t), GFP_KERNEL);
 	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);
 
 	alloc_chrdev_region(dev,0,1,"char_dev");
-	cdev_init(cd &char_driver);
+	cdev_init(cd, &char_driver);
 	cdev_add(cd, *dev, 1);
 
 	int i=0;

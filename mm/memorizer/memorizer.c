@@ -138,10 +138,12 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 
 /* Defining the maximum length for the event lists along with variables for character device driver */
 #define ML 100000
+#define PAGE_SIZE 4096
+
 static dev_t *dev;
 static struct cdev *cd;
 static void *pages;
-static long *buff_end;
+static unsigned long long *buff_end;
 
 
 /* Types for events */
@@ -849,6 +851,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 
 	/* Add the event into the event list. If the list is full, queue the work and change the list */
+	/*
 	if(!(lh[currentList].length<ML)){
 		// Add things to a work_struct and push it to the workqueue
 		lh[currentList].w = kmem_cache_alloc(work_cache,GFP_ATOMIC);
@@ -859,12 +862,13 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 
 	}
+	
 	struct event accessEvent;
 	accessEvent.data = &ma;
 
 	list_add(lh[currentList].list,accessEvent.list);
 	lh[currentList].length++;
-	
+	*/
 
 
 	/* Write the things out to the RelayFS */
@@ -874,9 +878,26 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	kmem_cache_free(kobj_serial_cache,buf);
 	*/
 
+	/* Print things out to the MMaped Region */
+
+	*buff_end = (unsigned long long)0xbb;
+	buff_end++;
+	*buff_end = (unsigned long long)&current;
+	buff_end++;
+	*buff_end = (unsigned long long)write;
+	buff_end++;
+	*buff_end = (unsigned long long)addr;
+	buff_end++;
+	*buff_end = (unsigned long long)size;
+	buff_end++;
+	*buff_end = (unsigned long long)ip;
+	buff_end++;
+	*buff_end = (unsigned long long)jiffies;
+	buff_end++;
+
 
 	/* Make Work Struct with the Deferred Work and Push it onto the Workqueue */
-
+	/*
 	struct work_struct *currentWork = kmem_cache_alloc(work_cache,GFP_ATOMIC);
 	struct print_access_struct curAccess;
 	curAccess.ma = ma;
@@ -885,7 +906,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	INIT_WORK(currentWork,deferredWorkAccess); // WHAT TO PASS FOR THE DATA 
 	queue_work(wq,currentWork);
 	kmem_cache_free(work_cache,currentWork);
-
+	*/
 	find_and_update_kobj_access(&ma);
 
 	/* put the cpu vars and reenable interrupts */
@@ -1212,6 +1233,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	write_lock_irqsave(&object_list_spinlock, flags);
 	
 	/* Add the event into the event list. If the list is full, queue the work and change the list */
+	/*
 	if(!(lh[currentList].length<ML)){
 		// Add things to a work_struct and push it to the workqueue
 		lh[currentList].w = kmem_cache_alloc(work_cache,GFP_ATOMIC);
@@ -1225,7 +1247,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	list_add(lh[currentList].list,allocEvent.list);
 	lh[currentList].length++;
-	
+	*/
 
 
 	/* Write the things out to the RelayFS */
@@ -1236,7 +1258,18 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	kmem_cache_free(kobj_serial_cache,buf);
 	*/
 
+
+	/* Write things out to the MMaped Buffer */
+	*buff_end = (unsigned long long)0xaa;
+	buff_end++;
+	*buff_end = (unsigned long long)jiffies;
+	buff_end++;
+	*buff_end = (unsigned long long)&kobj;
+	
+
+
 	/* Make Work Struct with the Deferred Work and Push it onto the Workqueue */
+	/*
 	struct work_struct *currentWork = kmem_cache_alloc(work_cache,GFP_ATOMIC);
 	struct print_alloc_struct cur;
         cur.jiffies = jiffies;
@@ -1245,7 +1278,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	INIT_WORK(currentWork,deferredWorkAlloc); // WHAT TO PASS FOR THE DATA
 	queue_work(wq,currentWork);
 	kmem_cache_free(work_cache,currentWork);
-
+	*/
 
 
 	lt_insert_kobj(kobj);
@@ -1644,15 +1677,14 @@ static int char_mmap(struct file *file, struct vm_area_struct * vm_struct){
 	int i = 0;
 
 	/* Remap the pages, change the size and do the remapping page by page. The current code is for a different buffer size */
-	/*
-	for(i=0; i<128;i++)
+
+	for(i=0; i<ML;i++)
 	{
 		pfn = vmalloc_to_pfn(pages+i*PAGE_SIZE);
 		remap_pfn_range(vm_struct, vm_struct->vm_start+i*PAGE_SIZE, pfn, PAGE_SIZE, PAGE_SHARED);
 	}
 	return 0;
-	*/
-	return 0;
+
 };
 
 static const struct file_operations char_driver={
@@ -1686,8 +1718,10 @@ void __init memorizer_init(void)
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 
-	pages = vmalloc(sizeof(struct memorizer_kobj)*ML);
-	memset(pages,0,sizeof(struct memorizer_kobj)*ML);
+	pages = vmalloc(PAGE_SIZE*ML);
+	memset(pages,0,PAGE_SIZE*ML);
+	buff_end = (unsigned long long *)pages;
+
 
 	dev = kmalloc(sizeof(dev_t), GFP_KERNEL);
 	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);

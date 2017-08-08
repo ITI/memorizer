@@ -882,7 +882,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 	*buff_end = (unsigned long long)0xbb;
 	buff_end++;
-	*buff_end = (unsigned long long)&current;
+	*buff_end = (unsigned long long)current;
 	buff_end++;
 	*buff_end = (unsigned long long)write;
 	buff_end++;

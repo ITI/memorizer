@@ -173,53 +173,6 @@ struct memorizer_mem_access {
 
 
 
-/* Define a single threaded workqueue for printing out objects */
-struct workqueue_struct *wq;
-
-/* Define a kmem_cache for Work Objects */
-struct kmem_cache *work_cache;
-
-/* Structs for passing values to be printed using container_of macro */
-struct print_access_struct{
-	struct memorizer_mem_access ma;
-	struct work_struct *w;
-};
-
-struct print_alloc_struct{
-	unsigned long jiffies;
-	void * ptr;
-	struct work_struct *w;
-};
-
-/* Deferred Work of Printing */
-static void deferredWorkAccess(struct work_struct *work)
-{
-	/* Print Out Stuff From ma using __relay_write and container_of */
-	//struct memorizer_mem_access ma = container_of(work,struct print_access_struct, ma);
-}
-
-static void deferredWorkAlloc(struct work_struct *work)
-{
-	/* Print out Ptr using __relay_write and container_of */
-	//unsigned long jiffies = container_of(work,struct print_alloc_struct, jiffies);
-	//void *ptr = container_of(work,struct print_alloc_struct, ptr);
-
-
-}
-
-/* Struct for Holding Events to Be Added to a Work Struct and Queued */
-struct event{
-	struct list_head *list;
-	unsigned int length;
-	void *data;
-	struct work_struct *w;
-
-};
-struct event lh[4];
-static unsigned long currentList = 0;
-
-
-
 /**
  * mem_access_wlists - This struct contains work queues holding accesses
  *
@@ -269,8 +222,6 @@ struct code_region crypto_code_region = {
 };
 
 
-/* RelayFS Channel to Shuttle Data Out of Kernel Space */
-struct rchan *relay_channel = NULL;
 
 /* TODO make this dynamically allocated based upon free memory */
 //DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls = {.selector = 0, .head = 0, .tail = 0 });
@@ -825,7 +776,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 	local_irq_save(flags);
 
-	// TODO: Make work and push it onto Workqueue
 	/* Get the local cpu data structure */
 	//ma_wls = &get_cpu_var(mem_access_wls);
 	/* Head points to the last inserted element, except for -1 on init */
@@ -850,39 +800,12 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	ma.jiffies = jiffies;
 
 
-	/* Add the event into the event list. If the list is full, queue the work and change the list */
-	/*
-	if(!(lh[currentList].length<ML)){
-		// Add things to a work_struct and push it to the workqueue
-		lh[currentList].w = kmem_cache_alloc(work_cache,GFP_ATOMIC);
-		INIT_WORK(lh[currentList].w,deferredWorkAccess);
-		queue_work(wq,lh[currentList].w);
-		lh[currentList].length = 0;
-		currentList = (currentList + 1) % 4;
-
-
-	}
-	
-	struct event accessEvent;
-	accessEvent.data = &ma;
-
-	list_add(lh[currentList].list,accessEvent.list);
-	lh[currentList].length++;
-	*/
-
-
-	/* Write the things out to the RelayFS */
-	/*
-	len = sprintf(buf,"\t%p,%lu,%lu,%lu,%lu,%lu",(void *)current,write,addr,size,ip,jiffies);
-	__relay_write(relay_channel, buf, len);
-	kmem_cache_free(kobj_serial_cache,buf);
-	*/
 
 	/* Print things out to the MMaped Region */
 
 	*buff_end = (unsigned long long)0xbb;
 	buff_end++;
-	*buff_end = (unsigned long long)current;
+	*buff_end = (unsigned long long)task_pid_nr(current);
 	buff_end++;
 	*buff_end = (unsigned long long)write;
 	buff_end++;
@@ -896,17 +819,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	buff_end++;
 
 
-	/* Make Work Struct with the Deferred Work and Push it onto the Workqueue */
-	/*
-	struct work_struct *currentWork = kmem_cache_alloc(work_cache,GFP_ATOMIC);
-	struct print_access_struct curAccess;
-	curAccess.ma = ma;
-	curAccess.w = currentWork;
-
-	INIT_WORK(currentWork,deferredWorkAccess); // WHAT TO PASS FOR THE DATA 
-	queue_work(wq,currentWork);
-	kmem_cache_free(work_cache,currentWork);
-	*/
 	find_and_update_kobj_access(&ma);
 
 	/* put the cpu vars and reenable interrupts */
@@ -1232,31 +1144,8 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	/* Grab the writer lock for the object_list */
 	write_lock_irqsave(&object_list_spinlock, flags);
 	
-	/* Add the event into the event list. If the list is full, queue the work and change the list */
-	/*
-	if(!(lh[currentList].length<ML)){
-		// Add things to a work_struct and push it to the workqueue
-		lh[currentList].w = kmem_cache_alloc(work_cache,GFP_ATOMIC);
-		INIT_WORK(lh[currentList].w,deferredWorkAccess);
-		queue_work(wq,lh[currentList].w);
-		lh[currentList].length = 0;
-		currentList = (currentList + 1) % 4;
-	}
-	struct event allocEvent;
-	allocEvent.data = kobj;
-
-	list_add(lh[currentList].list,allocEvent.list);
-	lh[currentList].length++;
-	*/
 
 
-	/* Write the things out to the RelayFS */
-       /*	
-	len = sprintf(buf,"\t%p,%lu",kobj,jiffies);
-	__relay_write(relay_channel, buf, len);
-
-	kmem_cache_free(kobj_serial_cache,buf);
-	*/
 
 
 	/* Write things out to the MMaped Buffer */
@@ -1267,18 +1156,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	*buff_end = (unsigned long long)&kobj;
 	
 
-
-	/* Make Work Struct with the Deferred Work and Push it onto the Workqueue */
-	/*
-	struct work_struct *currentWork = kmem_cache_alloc(work_cache,GFP_ATOMIC);
-	struct print_alloc_struct cur;
-        cur.jiffies = jiffies;
-	cur.ptr = kobj;
-	cur.w = currentWork;	
-	INIT_WORK(currentWork,deferredWorkAlloc); // WHAT TO PASS FOR THE DATA
-	queue_work(wq,currentWork);
-	kmem_cache_free(work_cache,currentWork);
-	*/
 
 
 	lt_insert_kobj(kobj);
@@ -1642,25 +1519,6 @@ static void init_mem_access_wls(void)
 }
 
 
-/* Callbacks for the RelayFS */
-/*
-static struct dentry * create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global)
-{
-	return debugfs_create_file(filename, mode, parent, buf, &relay_file_operations);
-}
-
-static int remove_buf_file_handler(struct dentry *dentry)
-{
-	debugfs_remove(dentry);
-	return 0;
-}
-
-static struct rchan_callbacks relay_callbacks =
-{
-	.create_buf_file = create_buf_file_handler,
-	.remove_buf_file = remove_buf_file_handler,
-};
-*/
 
 /* Fops and Callbacks for char_driver */
 
@@ -1730,20 +1588,6 @@ void __init memorizer_init(void)
 	cdev_init(cd, &char_driver);
 	cdev_add(cd, *dev, 1);
 
-	int i=0;
-	for(i-0;i<4;i++){
-		INIT_LIST_HEAD(lh[i].list);
-	}
-
-
-	/* Initialize the WorkQueue */
-	wq = create_singlethread_workqueue("Workqueue");
-
-	/* Initialize the Work_Struct Cache */
-	work_cache = KMEM_CACHE(work_struct,SLAB_PANIC);
-
-	/* Initialize the relay channel */
-	//relay_channel = relay_open("Relay",NULL , sizeof(struct memorizer_kobj), ML, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
 
 
 	lt_init();

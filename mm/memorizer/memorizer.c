@@ -117,7 +117,8 @@
 #include <asm/percpu.h>
 #include <linux/relay.h>
 #include <asm-generic/bug.h>
-
+#include <linux/cdev.h>
+#include <linux/vmalloc.h>
 #include "kobj_metadata.h"
 
 //==-- Debugging and print information ------------------------------------==//
@@ -134,6 +135,16 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 
 /* Size of the memory access recording worklist arrays */
 #define MEM_ACC_L_SIZE 1
+
+/* Defining the maximum length for the event lists along with variables for character device driver */
+#define ML 100000
+#define PAGE_SIZE 4096
+
+static dev_t *dev;
+static struct cdev *cd;
+static void *pages;
+static unsigned long long *buff_end;
+
 
 /* Types for events */
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
@@ -159,42 +170,6 @@ struct memorizer_mem_access {
 	pid_t pid;			/* pid of the current task */
 	char comm[TASK_COMM_LEN];	/* executable name */
 };
-
-
-
-/* Define a single threaded workqueue for printing out objects */
-struct workqueue_struct *wq;
-
-/* Define a kmem_cache for Work Objects */
-struct kmem_cache *work_cache;
-
-/* Structs for passing values to be printed using container_of macro */
-struct print_access_struct{
-	struct memorizer_mem_access ma;
-	struct work_struct *w;
-};
-
-struct print_alloc_struct{
-	unsigned long jiffies;
-	void * ptr;
-	struct work_struct *w;
-};
-
-/* Deferred Work of Printing */
-static void deferredWorkAccess(struct work_struct *work)
-{
-	/* Print Out Stuff From ma */
-	//struct memorizer_mem_access ma = container_of(work,struct print_access_struct, ma);
-}
-
-static void deferredWorkAlloc(struct work_struct *work)
-{
-	/* Print out Ptr and Jiffies(For Later Using Container Of */
-	//unsigned long jiffies = container_of(work,struct print_alloc_struct, jiffies);
-	//void *ptr = container_of(work,struct print_alloc_struct, ptr);
-
-
-}
 
 
 
@@ -247,8 +222,6 @@ struct code_region crypto_code_region = {
 };
 
 
-/* RelayFS Channel to Shuttle Data Out of Kernel Space */
-struct rchan *relay_channel = NULL;
 
 /* TODO make this dynamically allocated based upon free memory */
 //DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls = {.selector = 0, .head = 0, .tail = 0 });
@@ -803,7 +776,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 	local_irq_save(flags);
 
-	// TODO: Make work and push it onto Workqueue
 	/* Get the local cpu data structure */
 	//ma_wls = &get_cpu_var(mem_access_wls);
 	/* Head points to the last inserted element, except for -1 on init */
@@ -827,24 +799,25 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	ma.src_ip = ip;
 	ma.jiffies = jiffies;
 
-	/* Write the things out to the RelayFS */
-	/*
-	len = sprintf(buf,"\t%p,%lu,%lu,%lu,%lu,%lu",(void *)current,write,addr,size,ip,jiffies);
-	__relay_write(relay_channel, buf, len);
-	kmem_cache_free(kobj_serial_cache,buf);
-	*/
 
 
-	/* Make Work Struct with the Deferred Work and Push it onto the Workqueue */
+	/* Print things out to the MMaped Region */
 
-	struct work_struct *currentWork = kmem_cache_alloc(work_cache,GFP_ATOMIC);
-	struct print_access_struct curAccess;
-	curAccess.ma = ma;
-	curAccess.w = currentWork;
+	*buff_end = (unsigned long long)0xbb;
+	buff_end++;
+	*buff_end = (unsigned long long)task_pid_nr(current);
+	buff_end++;
+	*buff_end = (unsigned long long)write;
+	buff_end++;
+	*buff_end = (unsigned long long)addr;
+	buff_end++;
+	*buff_end = (unsigned long long)size;
+	buff_end++;
+	*buff_end = (unsigned long long)ip;
+	buff_end++;
+	*buff_end = (unsigned long long)jiffies;
+	buff_end++;
 
-	INIT_WORK(currentWork,deferredWorkAccess); // WHAT TO PASS FOR THE DATA 
-	queue_work(wq,currentWork);
-	kmem_cache_free(work_cache,currentWork);
 
 	find_and_update_kobj_access(&ma);
 
@@ -1170,24 +1143,18 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	/* Grab the writer lock for the object_list */
 	write_lock_irqsave(&object_list_spinlock, flags);
+	
 
-	/* Write the things out to the RelayFS */
-       /*	
-	len = sprintf(buf,"\t%p,%lu",kobj,jiffies);
-	__relay_write(relay_channel, buf, len);
 
-	kmem_cache_free(kobj_serial_cache,buf);
-	*/
 
-	/* Make Work Struct with the Deferred Work and Push it onto the Workqueue */
-	struct work_struct *currentWork = kmem_cache_alloc(work_cache,GFP_ATOMIC);
-	struct print_alloc_struct cur;
-        cur.jiffies = jiffies;
-	cur.ptr = kobj;
-	cur.w = currentWork;	
-	INIT_WORK(currentWork,deferredWorkAlloc); // WHAT TO PASS FOR THE DATA
-	queue_work(wq,currentWork);
-	kmem_cache_free(work_cache,currentWork);
+
+	/* Write things out to the MMaped Buffer */
+	*buff_end = (unsigned long long)0xaa;
+	buff_end++;
+	*buff_end = (unsigned long long)jiffies;
+	buff_end++;
+	*buff_end = (unsigned long long)&kobj;
+	
 
 
 
@@ -1552,25 +1519,40 @@ static void init_mem_access_wls(void)
 }
 
 
-/* Callbacks for the RelayFS */
-/*
-static struct dentry * create_buf_file_handler(const char *filename, struct dentry *parent, int mode, struct rchan_buf *buf, int *is_global)
-{
-	return debugfs_create_file(filename, mode, parent, buf, &relay_file_operations);
-}
 
-static int remove_buf_file_handler(struct dentry *dentry)
-{
-	debugfs_remove(dentry);
-	return 0;
-}
+/* Fops and Callbacks for char_driver */
 
-static struct rchan_callbacks relay_callbacks =
-{
-	.create_buf_file = create_buf_file_handler,
-	.remove_buf_file = remove_buf_file_handler,
+static int char_open(struct inode *inode, struct file* file){
+	   return 0;
 };
-*/
+
+static int char_close(struct inode *inode, struct file* file){
+	   return 0;
+};
+
+static int char_mmap(struct file *file, struct vm_area_struct * vm_struct){
+	unsigned long pfn;
+	int i = 0;
+
+	/* Remap the pages, change the size and do the remapping page by page. The current code is for a different buffer size */
+
+	for(i=0; i<ML;i++)
+	{
+		pfn = vmalloc_to_pfn(pages+i*PAGE_SIZE);
+		remap_pfn_range(vm_struct, vm_struct->vm_start+i*PAGE_SIZE, pfn, PAGE_SIZE, PAGE_SHARED);
+	}
+	return 0;
+
+};
+
+static const struct file_operations char_driver={
+	.owner = THIS_MODULE,
+	.open = char_open,
+	.release = char_close,
+	.mmap = char_mmap,
+};
+
+
 
 
 
@@ -1594,12 +1576,18 @@ void __init memorizer_init(void)
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 
+	pages = vmalloc(PAGE_SIZE*ML);
+	memset(pages,0,PAGE_SIZE*ML);
+	buff_end = (unsigned long long *)pages;
 
-	/* Initialize the WorkQueue */
-	wq = create_singlethread_workqueue("Workqueue");
 
-	/* Initialize the Work_Struct Cache */
-	work_cache = KMEM_CACHE(work_struct,SLAB_PANIC);
+	dev = kmalloc(sizeof(dev_t), GFP_KERNEL);
+	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);
+
+	alloc_chrdev_region(dev,0,1,"char_dev");
+	cdev_init(cd, &char_driver);
+	cdev_add(cd, *dev, 1);
+
 
 
 	lt_init();
@@ -1654,7 +1642,6 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create debugfs print_live_obj\n");
 
 
-	// relay_channel = relay_open("Relay", dentryMemDir, sizeof(struct memorizer_kobj), 1024*4, &relay_callbacks, NULL); // DEFINE SUBBUF_SIZE AND N_SUBBUFS
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;

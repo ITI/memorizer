@@ -1588,10 +1588,7 @@ void __init memorizer_init(void)
 	{
 		printk("Something Went Wrong with Registering a Device Driver");
 	}
-	if(!cdev_init(cd, &char_driver))
-	{
-		printk("Couldn't initialize the driver");
-	}
+	printk("Couldn't initialize the driver");
 	if(!cdev_add(cd, *dev, 1))
 	{
 		printk("Couldn't add the char driver");

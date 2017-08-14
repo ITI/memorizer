@@ -120,6 +120,7 @@
 #include <linux/cdev.h>
 #include <linux/vmalloc.h>
 #include "kobj_metadata.h"
+#include <linux/fs.h> 
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
@@ -1595,7 +1596,7 @@ void __init memorizer_init(void)
 	if(!cdev_add(cd, *dev, 1))
 	{
 		printk("Couldn't add the char driver");
-	}
+}
 	
 
 

@@ -1581,7 +1581,6 @@ void __init memorizer_init(void)
 
 
 	dev = kmalloc(sizeof(dev_t), GFP_KERNEL);
-	dev<0
 
 	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);
 

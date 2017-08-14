@@ -9,7 +9,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 
-#define ML (10000)   // The size of profiler buffer (Unit: memory page)
+#define ML (100000)   // The size of profiler buffer (Unit: memory page)
 #define BUFD_MAX 48000 // The max number of profiled samples stored in the profiler buffer
 
 
@@ -55,7 +55,7 @@ int main ()
 {
 	unsigned long long *buf;
 	int index = 0;
-	int i;
+	unsigned lonng long i;
 
 	// Open the Character Device and MMap 
 	buf = buf_init("node");
@@ -69,7 +69,8 @@ int main ()
 	}
 
 	
-	buf_exit();	
+	buf_exit();
+	printf("%ull",i);	
 	
 	return 0;
 }

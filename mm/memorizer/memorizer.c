@@ -1580,12 +1580,23 @@ void __init memorizer_init(void)
 
 
 	dev = kmalloc(sizeof(dev_t), GFP_KERNEL);
+	dev<0
+
 	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);
 
-	alloc_chrdev_region(dev,0,1,"char_dev");
-	cdev_init(cd, &char_driver);
-	cdev_add(cd, *dev, 1);
-
+	if(!alloc_chrdev_region(dev,0,1,"char_dev"))
+	{
+		printk("Something Went Wrong with Registering a Device Driver");
+	}
+	if(!cdev_init(cd, &char_driver))
+	{
+		print("Couldn't initialize the driver");
+	}
+	if(!cdev_add(cd, *dev, 1))
+	{
+		printk("Couldn't add the char driver");
+	}
+	
 
 
 	lt_init();

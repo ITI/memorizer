@@ -740,7 +740,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 					  write, uintptr_t ip)
 {
 	unsigned long flags;
-	unsigned long len;
 
 	struct memorizer_mem_access ma;
 	struct mem_access_worklists * ma_wls;
@@ -1109,7 +1108,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 				       gfp_t gfp_flags)
 {
 	unsigned long flags;
-	unsigned long len;
 	struct memorizer_kobj *kobj;
 
 	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))

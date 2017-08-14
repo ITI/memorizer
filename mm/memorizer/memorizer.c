@@ -1590,7 +1590,7 @@ void __init memorizer_init(void)
 	}
 	if(!cdev_init(cd, &char_driver))
 	{
-		print("Couldn't initialize the driver");
+		printk("Couldn't initialize the driver");
 	}
 	if(!cdev_add(cd, *dev, 1))
 	{

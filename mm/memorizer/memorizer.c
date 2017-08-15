@@ -1575,24 +1575,6 @@ void __init memorizer_init(void)
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 
-	pages = vmalloc(PAGE_SIZE*ML);
-	memset(pages,0,PAGE_SIZE*ML);
-	buff_end = (unsigned long long *)pages;
-
-
-	dev = kmalloc(sizeof(dev_t), GFP_KERNEL);
-
-	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);
-
-	if(!alloc_chrdev_region(dev,0,1,"char_dev"))
-	{
-		printk("Something Went Wrong with Registering a Device Driver");
-	}
-	cdev_init(cd,&char_driver);
-	if(!cdev_add(cd, *dev, 1))
-	{
-		printk("Couldn't add the char driver");
-	}
 	
 
 
@@ -1646,6 +1628,26 @@ static int memorizer_late_init(void)
 				     dentryMemDir, &print_live_obj);
 	if (!dentry)
 		pr_warning("Failed to create debugfs print_live_obj\n");
+
+
+	pages = vmalloc(PAGE_SIZE*ML);
+	memset(pages,0,PAGE_SIZE*ML);
+	buff_end = (unsigned long long *)pages;
+
+
+	dev = kmalloc(sizeof(dev_t), GFP_KERNEL);
+
+	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);
+
+	if(!alloc_chrdev_region(dev,0,1,"char_dev"))
+	{
+		printk("Something Went Wrong with Registering a Device Driver");
+	}
+	cdev_init(cd,&char_driver);
+	if(!cdev_add(cd, *dev, 1))
+	{
+		printk("Couldn't add the char driver");
+	}
 
 
 	local_irq_save(flags);

@@ -1641,12 +1641,20 @@ static int memorizer_late_init(void)
 
 	if(alloc_chrdev_region(dev,0,1,"char_dev")<0)
 	{
-		printk("Something Went Wrong with Registering a Device Driver");
+		printk("Something Went Wrong with allocating char device");
+	}
+	else
+	{
+		printk("Allocated Region for char device");
 	}
 	cdev_init(cd,&char_driver);
 	if(cdev_add(cd, *dev, 1)<0)
 	{
-		printk("Couldn't add the char driver");
+		printk("Couldn't add the char device");
+	}
+	else
+	{
+		printk("Added the char device");
 	}
 
 

@@ -1639,12 +1639,12 @@ static int memorizer_late_init(void)
 
 	cd = kmalloc(sizeof(struct cdev), GFP_KERNEL);
 
-	if(!alloc_chrdev_region(dev,0,1,"char_dev"))
+	if(alloc_chrdev_region(dev,0,1,"char_dev")<0)
 	{
 		printk("Something Went Wrong with Registering a Device Driver");
 	}
 	cdev_init(cd,&char_driver);
-	if(!cdev_add(cd, *dev, 1))
+	if(cdev_add(cd, *dev, 1)<0)
 	{
 		printk("Couldn't add the char driver");
 	}

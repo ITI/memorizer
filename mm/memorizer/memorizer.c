@@ -239,6 +239,7 @@ static bool memorizer_log_access = false;
 
 /* flag enable/disable printing of live objects */
 static bool print_live_obj = false;
+static bool test_obj = false;
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
@@ -1631,7 +1632,7 @@ static int memorizer_late_init(void)
 
 
 	dentry = debugfs_create_bool("test_bool_object", S_IRUGO | S_IWUGO,
-				     dentryMemDir, &print_live_obj);
+				     dentryMemDir, &test_obj);
 	if (!dentry)
 		pr_warning("Failed to create test bool object\n");
 

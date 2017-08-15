@@ -1630,6 +1630,14 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create debugfs print_live_obj\n");
 
 
+	dentry = debugfs_create_bool("test_bool_object", S_IRUGO | S_IWUGO,
+				     dentryMemDir, &print_live_obj);
+	if (!dentry)
+		pr_warning("Failed to create test bool object\n");
+
+
+
+
 	pages = vmalloc(PAGE_SIZE*ML);
 	memset(pages,0,PAGE_SIZE*ML);
 	buff_end = (unsigned long long *)pages;
@@ -1641,22 +1649,23 @@ static int memorizer_late_init(void)
 
 	if(alloc_chrdev_region(dev,0,1,"char_dev")<0)
 	{
-		printk("Something Went Wrong with allocating char device");
+		pr_warning("Something Went Wrong with allocating char device\n");
 	}
 	else
 	{
-		printk("Allocated Region for char device");
+		pr_info("Allocated Region for char device\n");
 	}
 	cdev_init(cd,&char_driver);
 	if(cdev_add(cd, *dev, 1)<0)
 	{
-		printk("Couldn't add the char device");
+		pr_warning("Couldn't add the char device\n");
 	}
 	else
 	{
-		printk("Added the char device");
+		pr_info("Added the char device\n");
 	}
-	printk("POOP");
+
+	pr_info("This is a test\n");
 
 
 	local_irq_save(flags);

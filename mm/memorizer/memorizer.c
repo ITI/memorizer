@@ -1656,6 +1656,7 @@ static int memorizer_late_init(void)
 	{
 		printk("Added the char device");
 	}
+	printk("POOP");
 
 
 	local_irq_save(flags);

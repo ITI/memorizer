@@ -1146,7 +1146,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	
 
 
-	/* Write things out to the MMaped Buffer */i
+	/* Write things out to the MMaped Buffer */
 	/*
 
 	*buff_end = (unsigned long long)0xaa;

@@ -138,8 +138,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 #define MEM_ACC_L_SIZE 1
 
 /* Defining the maximum length for the event lists along with variables for character device driver */
-#define ML 100000
-#define PAGE_SIZE 4096
+#define ML 10000
 
 static dev_t *dev;
 static struct cdev *cd;
@@ -1638,7 +1637,7 @@ static int memorizer_late_init(void)
 
 
 
-	/*
+	
 	pages = vmalloc(PAGE_SIZE*ML);
 	memset(pages,0,PAGE_SIZE*ML);
 	buff_end = (unsigned long long *)pages;
@@ -1667,7 +1666,7 @@ static int memorizer_late_init(void)
 	}
 
 	pr_info("This is a test\n");
-	*/
+	
 
 	local_irq_save(flags);
 	memorizer_enabled = true;

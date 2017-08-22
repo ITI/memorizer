@@ -803,7 +803,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 
 	/* Print things out to the MMaped Region */
-
+	/*
 	*buff_end = (unsigned long long)0xbb;
 	buff_end++;
 	*buff_end = (unsigned long long)task_pid_nr(current);
@@ -818,7 +818,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	buff_end++;
 	*buff_end = (unsigned long long)jiffies;
 	buff_end++;
-
+	*/
 
 	find_and_update_kobj_access(&ma);
 
@@ -1146,16 +1146,15 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	
 
 
+	/* Write things out to the MMaped Buffer */i
+	/*
 
-
-	/* Write things out to the MMaped Buffer */
 	*buff_end = (unsigned long long)0xaa;
 	buff_end++;
 	*buff_end = (unsigned long long)jiffies;
 	buff_end++;
 	*buff_end = (unsigned long long)&kobj;
-	
-
+	*/
 
 
 	lt_insert_kobj(kobj);
@@ -1639,7 +1638,7 @@ static int memorizer_late_init(void)
 
 
 
-
+	/*
 	pages = vmalloc(PAGE_SIZE*ML);
 	memset(pages,0,PAGE_SIZE*ML);
 	buff_end = (unsigned long long *)pages;
@@ -1668,7 +1667,7 @@ static int memorizer_late_init(void)
 	}
 
 	pr_info("This is a test\n");
-
+	*/
 
 	local_irq_save(flags);
 	memorizer_enabled = true;

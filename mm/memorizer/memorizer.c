@@ -1627,7 +1627,7 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create debugfs memorizer_log_access\n");
 	dentry = debugfs_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
 				     dentryMemDir, &print_live_obj);
-	/*
+
 	if (!dentry)
 		pr_warning("Failed to create debugfs print_live_obj\n");
 
@@ -1637,7 +1637,7 @@ static int memorizer_late_init(void)
 	if (!dentry)
 		pr_warning("Failed to create test bool object\n");
 
-	*/
+
 
 
 	pages = vmalloc(PAGE_SIZE*ML);

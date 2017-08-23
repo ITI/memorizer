@@ -802,40 +802,42 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 
 	/* Print things out to the MMaped Region */
-	
+
 	*buff_end = (unsigned long long)0xbb;
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long) pages) = 0; 
+
 	*buff_end = (unsigned long long)task_pid_nr(current);
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long) pages) = 0; 
+
 
 	*buff_end = (unsigned long long)write;
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long) pages) = 0; 
 
 	*buff_end = (unsigned long long)addr;
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long) pages) = 0; 
 
 	*buff_end = (unsigned long long)size;
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long) pages) = 0; 
 
 	*buff_end = (unsigned long long)ip;
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long) pages) = 0; 
 
 	*buff_end = (unsigned long long)jiffies;
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long) pages) = 0; 
 
 	
 
@@ -1169,18 +1171,18 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	*buff_end = (unsigned long long)0xaa;
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long *) pages) = 0; 
 
 	*buff_end = (unsigned long long)jiffies;
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long *) pages) = 0; 
 
 	*buff_end = (unsigned long long)&kobj;
 	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long) pages == ML)
-		(unsigned long long *) *pages = 0; 
+	if(buff_end - (unsigned long long *) pages == ML)
+		*((unsigned long long *) pages) = 0; 
 
 
 	lt_insert_kobj(kobj);

@@ -802,7 +802,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 
 	/* Print things out to the MMaped Region */
-
+	/*
 	*buff_end = (unsigned long long)0xbb;
 	buff_end = (buff_end+1);
 	//if(buff_end - (unsigned long long *) pages == ML)
@@ -839,7 +839,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	//if(buff_end - (unsigned long long *) pages == ML)
 	//	*((unsigned long long *) pages) = 0; 
 
-
+	*/
 
 	find_and_update_kobj_access(&ma);
 
@@ -1168,7 +1168,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 
 	/* Write things out to the MMaped Buffer */
-
+	/*
 	*buff_end = (unsigned long long)0xaa;
 	buff_end = (buff_end+1);
 	//if(buff_end - (unsigned long long *) pages == ML)
@@ -1183,7 +1183,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	buff_end = (buff_end+1);
 	//if(buff_end - (unsigned long long *) pages == ML)
 	//	*((unsigned long long *) pages) = 0; 
-
+	*/
 
 	lt_insert_kobj(kobj);
 	list_add_tail(&kobj->object_list, &object_list);

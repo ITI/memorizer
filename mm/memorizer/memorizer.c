@@ -1695,8 +1695,6 @@ static int memorizer_late_init(void)
 	}
 
 	
-	*buff_end = 1;
-	buff_end++;
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;

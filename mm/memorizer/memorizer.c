@@ -802,7 +802,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 
 	/* Print things out to the MMaped Region */
-	
+/*	
 	*buff_end = (unsigned long long)0xbb;
 	buff_end = (buff_end+1);
 	if(buff_end - (unsigned long long *) pages == ML)
@@ -839,7 +839,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	if(buff_end - (unsigned long long *) pages == ML)
 		buff_end = (unsigned long long *) pages;
 
-	
+*/	
 
 	find_and_update_kobj_access(&ma);
 
@@ -1168,7 +1168,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 
 	/* Write things out to the MMaped Buffer */
-	
+/*	
 	*buff_end = (unsigned long long)0xaa;
 	buff_end = (buff_end+1);
 	if(buff_end - (unsigned long long *) pages == ML)
@@ -1184,7 +1184,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	if(buff_end - (unsigned long long *) pages == ML)
 		buff_end = (unsigned long long *) pages;
 
-
+*/
 	lt_insert_kobj(kobj);
 	list_add_tail(&kobj->object_list, &object_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
@@ -1666,7 +1666,7 @@ static int memorizer_late_init(void)
 
 
 
-	
+	/*
 	pages = vmalloc(PAGE_SIZE*ML);
 	memset(pages,0,PAGE_SIZE*ML);
 	buff_end = (unsigned long long *)pages;
@@ -1694,7 +1694,7 @@ static int memorizer_late_init(void)
 		pr_info("Added the char device\n");
 	}
 
-	
+	*/
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = false;

@@ -138,7 +138,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 #define MEM_ACC_L_SIZE 1
 
 /* Defining the maximum length for the event lists along with variables for character device driver */
-#define ML 100000
+#define ML 10000
 
 static dev_t *dev;
 static struct cdev *cd;

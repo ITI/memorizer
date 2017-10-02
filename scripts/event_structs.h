@@ -20,7 +20,8 @@ struct memorizer_kernel_event {
 	unsigned long	event_jiffies;
 	pid_t		pid;
 	enum		AccessType access_type;
-	char		comm[TASK_COMM_LEN];
-	char		funcstr[KSYM_NAME_LEN];
+	char		comm[16];
+	char		funcstr[128];
 
+			
 };

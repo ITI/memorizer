@@ -1771,8 +1771,6 @@ void __init memorizer_init(void)
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 
-	
-
 
 	lt_init();
 	local_irq_save(flags);
@@ -1833,14 +1831,13 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create test bool object\n");
 
 
-
-	
+		
 	pages = vmalloc(ML*4096);
 	if(!pages)
 	{
 		pr_info("Could not allocate all the memory for the Memorizer Buffer");
 	}
-	memset(pages,0x69,ML*4096);
+	memset(pages,0,ML*4096);
 	buff_end = (char *)pages + ML*4096-1;
 	buff_write_end = (char *)pages;
 	buff_fill = buff_write_end;
@@ -1891,6 +1888,9 @@ static int memorizer_late_init(void)
 	pr_info("Memorizer initialized\n");
 
 	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
+
+	
+
 
 	print_stats();
 	//__memorizer_print_events(10);

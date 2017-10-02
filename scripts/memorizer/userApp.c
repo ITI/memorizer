@@ -8,9 +8,12 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include "event_structs.h"
+
 
 #define ML 100000  // The size of profiler buffer (Unit: memory page)
-#define BUFD_MAX 48000 // The max number of profiled samples stored in the profiler buffer
 
 #define BUFF_MUTEX_LOCK { \
 		while(*buff_mutex); \
@@ -64,6 +67,7 @@ int main (int argc, char *argv[])
 	char *buf;
 	char *buff_end;
 	char *buff_fill;
+	struct memorizer_kernel_event *mke_ptr;
 	unsigned int *buff_free_size; 
 	unsigned long long index = 0;
 	unsigned long long i;
@@ -85,6 +89,7 @@ int main (int argc, char *argv[])
 	buff_free_size = (unsigned int *)buf;
 	buf = buf + sizeof(unsigned int);
 
+	mke_ptr = (struct memorizer_kernel_event *)buf;
 	if(*argv[1]=='c')
 	{
 		printf("Remaining Bytes: ");
@@ -92,18 +97,36 @@ int main (int argc, char *argv[])
 	}
 	else if(*argv[1]=='p')
 	{
+	
+	
+	while(index<100)
+	{
+		printf("%x, ",mke_ptr->event_type);
+		printf("%llx, ",(unsigned long long)mke_ptr->event_ip);
+		printf("%llx, ",(unsigned long long)mke_ptr->src_va_ptr);
+		printf("%llx, ",(unsigned long long)mke_ptr->src_pa_ptr);
+		printf("%u, ",mke_ptr->event_size);
+		printf("%lu, ",mke_ptr->event_jiffies);	
+		printf("%u, ",mke_ptr->pid);
+		printf("%u, ",mke_ptr->access_type);
+		printf("%s, ",mke_ptr->comm);
+		printf("%s\n",mke_ptr->funcstr);
+
+		mke_ptr = mke_ptr + sizeof(struct memorizer_kernel_event);
+		index++;
+	}
 	//while(1)
 	//{
 		//BUFF_MUTEX_LOCK;
 		//while(!*buff_fill);
-		while(buf+index != buff_end)
-		{
-			printf("%u",buf[index]);
-			index++;
-			*buff_free_size = *buff_free_size + 1;
+	//	while(buf+index != buff_end)
+	//	{
+	//		printf("%u",buf[index]);
+	//		index++;
+	//		*buff_free_size = *buff_free_size + 1;
 			//BUFF_FILL_RESET;
 
-		}
+	//	}
 		/**buff_free_size = *buff_free_size +1;
 		if(buf + index == buff_end)
 			index = 0;

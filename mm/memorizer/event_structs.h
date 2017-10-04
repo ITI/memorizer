@@ -8,7 +8,7 @@
 #include <linux/sched.h>
 
 /* Event and Access type  enumerations */
-enum EventType {Memorizer_Mem_Alloc = 0xaa, Memorizer_Mem_Free = 0xbb, Memorizer_Mem_Access = 0xcc};
+enum EventType {Memorizer_Mem_Alloc = 0xaa, Memorizer_Mem_Free = 0xbb, Memorizer_Mem_Read = 0xcc, Memorizer_Mem_Write = 0xdd, Memorizer_Fork = 0xee};
 enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
 
 struct memorizer_kernel_event {
@@ -23,4 +23,41 @@ struct memorizer_kernel_event {
 	char		comm[TASK_COMM_LEN];
 	char		funcstr[KSYM_NAME_LEN];
 
+};
+
+
+// TODO: Different Structs for Allocs, Frees and Accesses
+struct memorizer_kernel_alloc {
+	char		event_type;
+	uintptr_t	event_ip;
+	uintptr_t	src_va_ptr;
+	uintptr_t	src_pa_ptr;
+	size_t		event_size;
+	unsigned long	event_jiffies;
+	pid_t		pid;
+	char		comm[TASK_COMM_LEN];
+	char		funcstr[KSYM_NAME_LEN];
+};
+
+struct memorizer_kernel_free {
+	char		event_type;
+	uintptr_t	event_ip;
+	uintptr_t	src_va_ptr;
+	unsigned long	event_jiffies;
+	pid_t		pid;
+};
+
+struct memorizer_kernel_access {
+	char		event_type;
+	uintptr_t	event_ip;
+	uintptr_t	src_va_ptr;
+	size_t		event_size;
+	unsigned long	event_jiffies;
+	pid_t		pid;
+};
+
+struct memorizer_kernel_fork {
+	char		event_type;
+	long		pid;
+	char		comm[TASK_COMM_LEN];
 };

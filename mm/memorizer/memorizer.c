@@ -139,7 +139,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 #define MEM_ACC_L_SIZE 1
 
 /* Defining the maximum length for the event lists along with variables for character device driver */
-#define ML 100000
+#define ML 400000
 
 #define BUFF_MUTEX_LOCK { \
 		while(*buff_mutex); \
@@ -762,17 +762,18 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 	//struct memorizer_mem_access ma;
 	//struct memorizer_mem_access *ma_ptr;
-	struct memorizer_kernel_event mke;
-	struct memorizer_kernel_event *mke_ptr;
+	struct memorizer_kernel_access mke;
+	struct memorizer_kernel_access *mke_ptr;
 	//struct mem_access_worklists * ma_wls;
+
 
 #if MEMORIZER_STATS // Stats take time per access
 	atomic_long_inc(&memorizer_num_accesses);
 
-	if(!(lt_get_kobj(addr))){
-		atomic_long_inc(&memorizer_num_untracked_accesses);
-		return;
-	}
+	//if(!(lt_get_kobj(addr))){
+	//	atomic_long_inc(&memorizer_num_untracked_accesses);
+	//	return;
+	//}
 
 	if(!memorizer_log_access){
 		atomic_long_inc(&memorizer_num_untracked_accesses);
@@ -785,13 +786,14 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		return;
 	}
 #else
-	if(!(lt_get_kobj(addr)))
-		return;
+	//if(!(lt_get_kobj(addr)))
+	//	return;
 	if(!memorizer_log_access)
 		return;
 	if(in_memorizer())
 		return;
 #endif
+
 
 	__memorizer_enter();
 
@@ -819,30 +821,40 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	//ma.access_size = size;
 	//ma.src_ip = ip;
 	//ma.jiffies = jiffies;
-
-
-	mke.event_type = Memorizer_Mem_Access;
-	mke.pid = task_pid_nr(current);
-	mke.access_type = write;
-	mke.event_size = size;
-	mke.src_va_ptr = ip;
-	mke.event_jiffies = jiffies;
-	
-	//*buff_end = *buff_end + 1;
-	
-	//ma_ptr = (struct memorizer_mem_access *)buff_write_end;
-	mke_ptr = (struct memorizer_kernel_event *)buff_write_end;
-	//*ma_ptr = ma;
-	*mke_ptr = mke;
-	//buff_write_end = buff_write_end + sizeof(struct memorizer_mem_access);
-	buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_event);	
-//	*buff_write_end = 'b';
-	//*buff_free_size = *buff_free_size - sizeof(struct memorizer_mem_access);
-	*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_event);
-	if(*buff_free_size == 0)
+	if(buff_init && *buff_free_size>sizeof(struct memorizer_kernel_access))
 	{
-		BUFF_FILL_SET;
+		if(write)
+			mke.event_type = Memorizer_Mem_Write;
+		else
+			mke.event_type = Memorizer_Mem_Read;
+
+		mke.pid = task_pid_nr(current);
+		mke.event_size = size;
+		mke.src_va_ptr = ip;
+		mke.event_jiffies = jiffies;
+
+	
+		//*buff_end = *buff_end + 1;
+		
+		//ma_ptr = (struct memorizer_mem_access *)buff_write_end;
+		mke_ptr = (struct memorizer_kernel_access *)buff_write_end;
+		//*ma_ptr = ma;
+		*mke_ptr = mke;
+		//buff_write_end = buff_write_end + sizeof(struct memorizer_mem_access);
+		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_access);	
+		//*buff_write_end = 'b';
+		//*buff_free_size = *buff_free_size - sizeof(struct memorizer_mem_access);
+		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_access);
+		if(*buff_free_size == 0)
+		{
+			BUFF_FILL_SET;
+		}
+	
+		atomic_long_inc(&memorizer_num_tracked_allocs);
 	}
+	
+
+
 	/*
 	if(buff_write_end == buff_end-1)
 			buff_write_end = buff_start;
@@ -902,6 +914,65 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 	__memorizer_exit();
 }
+
+
+
+
+
+void __always_inline memorizer_fork(struct task_struct *p, long nr){
+	struct memorizer_kernel_fork mke;
+	struct memorizer_kernel_fork *mke_ptr;
+
+	unsigned long flags;
+
+
+	__memorizer_enter();
+
+	local_irq_save(flags);
+	if(buff_init && *buff_free_size>sizeof(struct memorizer_kernel_fork))
+	{
+
+		mke.event_type = Memorizer_Fork;
+		if (in_irq()) {
+			mke.pid = 0;
+			strncpy(mke.comm, "hardirq", sizeof(mke.comm));
+		} else if (in_softirq()) {
+			mke.pid = 0;
+			strncpy(mke.comm, "softirq", sizeof(mke.comm));
+		} else {
+			mke.pid = nr;
+		/*
+		 * There is a small chance of a race with set_task_comm(),
+		 * however using get_task_comm() here may cause locking
+		 * dependency issues with current->alloc_lock. In the worst
+		 *	 case, the command line is not correct.
+		 */
+		strncpy(mke.comm, p->comm, sizeof(mke.comm));
+		}
+	
+		mke_ptr = (struct memorizer_kernel_fork *)buff_write_end;
+		//*ma_ptr = ma;
+		*mke_ptr = mke;
+		//buff_write_end = buff_write_end + sizeof(struct memorizer_mem_access);
+		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_fork);	
+		//*buff_write_end = 'b';
+		//*buff_free_size = *buff_free_size - sizeof(struct memorizer_mem_access);
+		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_fork);
+		if(*buff_free_size == 0)
+		{
+			BUFF_FILL_SET;
+		}
+	}
+
+
+
+
+	local_irq_restore(flags);
+
+
+
+}
+
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
 
@@ -1146,11 +1217,11 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
 	struct memorizer_kobj *kobj;
-	struct memorizer_kernel_event mke;
-	struct memorizer_kernel_event *mke_ptr;
+	struct memorizer_kernel_free mke;
+	struct memorizer_kernel_free *mke_ptr;
 	unsigned long flags;
 	
-	if(buff_init)
+	if(buff_init && *buff_free_size>sizeof(struct memorizer_kernel_free))
 	{
 
 		local_irq_save(flags);
@@ -1162,14 +1233,14 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		mke.event_jiffies = jiffies;
 	
 		//ma_ptr = (struct memorizer_mem_access *)buff_write_end;
-		mke_ptr = (struct memorizer_kernel_event *)buff_write_end;
+		mke_ptr = (struct memorizer_kernel_free *)buff_write_end;
 		//*ma_ptr = ma;
 		*mke_ptr = mke;
 		//buff_write_end = buff_write_end + sizeof(struct memorizer_mem_access);
-		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_event);	
+		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_free);	
 		//*buff_write_end = 'b';
 		//*buff_free_size = *buff_free_size - sizeof(struct memorizer_mem_access);
-		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_event);
+		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_free);
 		if(*buff_free_size == 0)
 		{
 			BUFF_FILL_SET;
@@ -1220,8 +1291,8 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	unsigned long flags;
 	struct memorizer_kobj *kobj;
 	struct memorizer_kobj *kobj_ptr;
-	struct memorizer_kernel_event mke;
-	struct memorizer_kernel_event *mke_ptr;
+	struct memorizer_kernel_alloc mke;
+	struct memorizer_kernel_alloc *mke_ptr;
 
 	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
 		return;
@@ -1241,7 +1312,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		return;
 #endif
 
-	atomic_long_inc(&memorizer_num_tracked_allocs);
 
 	__memorizer_enter();
 
@@ -1256,7 +1326,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	/* Grab the writer lock for the object_list */
 	local_irq_save(flags);
-	if(buff_init)
+	if(buff_init && *buff_free_size>sizeof(struct memorizer_kernel_alloc))
 	{
 		mke.event_type = Memorizer_Mem_Alloc;
 		mke.event_ip = call_site;
@@ -1301,19 +1371,20 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 	
 		//ma_ptr = (struct memorizer_mem_access *)buff_write_end;
-		mke_ptr = (struct memorizer_kernel_event *)buff_write_end;
+		mke_ptr = (struct memorizer_kernel_alloc *)buff_write_end;
 		//*ma_ptr = ma;
 		*mke_ptr = mke;
 		//buff_write_end = buff_write_end + sizeof(struct memorizer_mem_access);
-		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_event);	
+		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_alloc);	
 		//*buff_write_end = 'b';
 		//*buff_free_size = *buff_free_size - sizeof(struct memorizer_mem_access);
-		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_event);
+		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_alloc);
 		if(*buff_free_size == 0)
 		{
 			BUFF_FILL_SET;
 		}
 
+		atomic_long_inc(&memorizer_num_tracked_allocs);
 
 		/*
 		buff_write_end = buff_write_end + sizeof(struct memorizer_kobj);
@@ -1331,6 +1402,11 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		*/
 		//while(*buff_fill);
 	}
+	else
+	{
+		atomic_long_inc(&stats_num_allocs_while_disabled);
+	}
+
 
 	/* Write things out to the MMaped Buffer */
 /*	
@@ -1832,7 +1908,7 @@ static int memorizer_late_init(void)
 
 
 		
-	pages = vmalloc(ML*4096);
+	pages = vmalloc(ML*4096); 
 	if(!pages)
 	{
 		pr_info("Could not allocate all the memory for the Memorizer Buffer");

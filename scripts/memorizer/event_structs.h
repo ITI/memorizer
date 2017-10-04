@@ -25,3 +25,38 @@ struct memorizer_kernel_event {
 
 			
 };
+
+struct memorizer_kernel_alloc {
+	char		event_type;
+	uintptr_t	event_ip;
+	uintptr_t	src_va_ptr;
+	uintptr_t	src_pa_ptr;
+	size_t		event_size;
+	unsigned long	event_jiffies;
+	pid_t		pid;
+	char		comm[16];
+	char		funcstr[128];
+};
+
+struct memorizer_kernel_free {
+	char		event_type;
+	uintptr_t	event_ip;
+	uintptr_t	src_va_ptr;
+	unsigned long	event_jiffies;
+	pid_t		pid;
+};
+
+struct memorizer_kernel_access {
+	char		event_type;
+	uintptr_t	event_ip;
+	uintptr_t	src_va_ptr;
+	size_t		event_size;
+	unsigned long	event_jiffies;
+	pid_t		pid;
+};
+
+struct memorizer_kernel_fork {
+	char		event_type;
+	long		pid;
+	char		comm[16];
+};

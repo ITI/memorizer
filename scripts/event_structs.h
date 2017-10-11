@@ -1,4 +1,4 @@
-/* This file describes the structs to be used to describe the events happening inside the kernel:
+/*
  * 1. ALLOCATIONS
  * 2. DEALLOCATIONS
  * 3. ACCESSES
@@ -20,13 +20,12 @@ struct memorizer_kernel_event {
 	unsigned long	event_jiffies;
 	pid_t		pid;
 	enum		AccessType access_type;
-	char		comm[TASK_COMM_LEN];
-	char		funcstr[KSYM_NAME_LEN];
+	char		comm[16];
+	char		funcstr[128];
 
+			
 };
 
-
-// TODO: Different Structs for Allocs, Frees and Accesses
 struct memorizer_kernel_alloc {
 	char		event_type;
 	uintptr_t	event_ip;
@@ -35,8 +34,8 @@ struct memorizer_kernel_alloc {
 	size_t		event_size;
 	unsigned long	event_jiffies;
 	pid_t		pid;
-	char		comm[TASK_COMM_LEN];
-	char		funcstr[KSYM_NAME_LEN];
+	char		comm[16];
+	char		funcstr[128];
 };
 
 struct memorizer_kernel_free {
@@ -59,49 +58,6 @@ struct memorizer_kernel_access {
 struct memorizer_kernel_fork {
 	char		event_type;
 	long		pid;
-	char		comm[TASK_COMM_LEN];
-};
-
-
-/* This file describes the structs to be used to describe the events happening inside the kernel:
- * 1. ALLOCATIONS
- * 2. DEALLOCATIONS
- * 3. ACCESSES
- * These will be used to create stateless logs for Memorizer 2.0
- * */
-
-struct memorizer_kernel_alloc {
-	char		event_type;
-	uintptr_t	event_ip;
-	uintptr_t	src_va_ptr;
-	uintptr_t	src_pa_ptr;
-	size_t		event_size;
-	unsigned long	event_jiffies;
-	pid_t		pid;
-	char		comm[TASK_COMM_LEN];
-	char		funcstr[KSYM_NAME_LEN];
-};
-
-struct memorizer_kernel_free {
-	char		event_type;
-	uintptr_t	event_ip;
-	uintptr_t	src_va_ptr;
-	unsigned long	event_jiffies;
-	pid_t		pid;
-};
-
-struct memorizer_kernel_access {
-	char		event_type;
-	uintptr_t	event_ip;
-	uintptr_t	src_va_ptr;
-	size_t		event_size;
-	unsigned long	event_jiffies;
-	pid_t		pid;
-};
-
-struct memorizer_kernel_fork {
-	char		event_type;
-	long		pid;
-	char		comm[TASK_COMM_LEN];
+	char		comm[16];
 };
 

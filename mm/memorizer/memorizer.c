@@ -141,11 +141,9 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 #define MEM_ACC_L_SIZE 1
 
 /* Defining the maximum length for the event lists along with variables for character device driver */
-<<<<<<< HEAD
-#define ML 400000
-=======
+
 #define ML 500000
->>>>>>> Changing the Memorizer to use two buffers in place of just one
+
 
 #define BUFF_MUTEX_LOCK { \
 		while(*buff_mutex)\
@@ -833,18 +831,10 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 	unsigned long flags;
 
-<<<<<<< HEAD
-	//struct memorizer_mem_access ma;
-	//struct memorizer_mem_access *ma_ptr;
-	struct memorizer_kernel_access mke;
-	struct memorizer_kernel_access *mke_ptr;
-	//struct mem_access_worklists * ma_wls;
-=======
 	struct memorizer_kernel_access mke;
 	struct memorizer_kernel_access *mke_ptr;
 	
 	
->>>>>>> Changing the Memorizer to use two buffers in place of just one
 
 
 #if MEMORIZER_STATS // Stats take time per access
@@ -877,95 +867,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 	__memorizer_enter();
 
-<<<<<<< HEAD
-	local_irq_save(flags);
 
-	/* Get the local cpu data structure */
-	//ma_wls = &get_cpu_var(mem_access_wls);
-	/* Head points to the last inserted element, except for -1 on init */
-	//if(ma_wls->head >= MEM_ACC_L_SIZE - 1){
-		//drain_and_process_access_queue(ma_wls);
-	//}
-	//++ma_wls->head;
-	//ma_wls->head = 0;
-
-	/* if producer caught consumer overwrite, losing the oldest events */
-	//if(ma_wls->head == ma_wls->tail)
-		//++ma_wls->tail;
-	//ma = &(ma_wls->wls[ma_wls->selector][ma_wls->head]);
-
-	/* Initialize the event data */
-	//set_comm_and_pid(ma);
-	//ma.pid = task_pid_nr(current);
-	//ma.access_type = write;
-	//ma.access_addr = addr;
-	//ma.access_size = size;
-	//ma.src_ip = ip;
-	//ma.jiffies = jiffies;
-	if(buff_init && *buff_free_size>sizeof(struct memorizer_kernel_access))
-	{
-		if(write)
-			mke.event_type = Memorizer_Mem_Write;
-		else
-			mke.event_type = Memorizer_Mem_Read;
-
-		mke.pid = task_pid_nr(current);
-		mke.event_size = size;
-		mke.src_va_ptr = ip;
-		mke.event_jiffies = jiffies;
-
-	
-		//*buff_end = *buff_end + 1;
-		
-		//ma_ptr = (struct memorizer_mem_access *)buff_write_end;
-		mke_ptr = (struct memorizer_kernel_access *)buff_write_end;
-		//*ma_ptr = ma;
-		*mke_ptr = mke;
-		//buff_write_end = buff_write_end + sizeof(struct memorizer_mem_access);
-		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_access);	
-		//*buff_write_end = 'b';
-		//*buff_free_size = *buff_free_size - sizeof(struct memorizer_mem_access);
-		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_access);
-		if(*buff_free_size == 0)
-		{
-			BUFF_FILL_SET;
-		}
-	
-		atomic_long_inc(&memorizer_num_tracked_allocs);
-	}
-	
-
-
-	/*
-	if(buff_write_end == buff_end-1)
-			buff_write_end = buff_start;
-		else
-			buff_write_end++;
-	*/	
-
-	//while(*buff_fill);
-				
-
-
-	/* Print things out to the MMaped Region */
-/*	
-	*buff_end = (unsigned long long)0xbb;
-	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long *) pages == ML)
-		buff_end = (unsigned long long *) pages;
-
-	*buff_end = (unsigned long long)task_pid_nr(current);
-	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long *) pages == ML)
-		buff_end = (unsigned long long *) pages;
-
-
-	*buff_end = (unsigned long long)write;
-	buff_end = (buff_end+1);
-	if(buff_end - (unsigned long long *) pages == ML)
-		buff_end = (unsigned long long *) pages;
-=======
-	
 	if(buff_init)
 	{
 		local_irq_save(flags);
@@ -982,8 +884,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 			return;
 		}
 		
->>>>>>> Changing the Memorizer to use two buffers in place of just one
-
 		
 		//while(*buff_fill);		// Busy Wait until we have enough free space
 			//yield();
@@ -1334,15 +1234,10 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	struct memorizer_kernel_free mke;
 	struct memorizer_kernel_free *mke_ptr;
 	unsigned long flags;
-<<<<<<< HEAD
-	
-	if(buff_init && *buff_free_size>sizeof(struct memorizer_kernel_free))
-=======
 
 	__memorizer_enter();
 
 	if(buff_init)
->>>>>>> Changing the Memorizer to use two buffers in place of just one
 	{
 
 		local_irq_save(flags);
@@ -1370,25 +1265,12 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		mke.event_ip = kobj_ptr;
 		mke.event_jiffies = jiffies;
 	
-<<<<<<< HEAD
-		//ma_ptr = (struct memorizer_mem_access *)buff_write_end;
-		mke_ptr = (struct memorizer_kernel_free *)buff_write_end;
-		//*ma_ptr = ma;
-		*mke_ptr = mke;
-		//buff_write_end = buff_write_end + sizeof(struct memorizer_mem_access);
-		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_free);	
-		//*buff_write_end = 'b';
-		//*buff_free_size = *buff_free_size - sizeof(struct memorizer_mem_access);
-		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_free);
-		if(*buff_free_size == 0)
-=======
 		mke_ptr = (struct memorizer_kernel_free *)buff_write_end;
 		*mke_ptr = mke;
 		buff_write_end = buff_write_end + sizeof(struct memorizer_kernel_free);
 		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_free);
 
 		if(*buff_free_size < sizeof(struct memorizer_kernel_event))
->>>>>>> Changing the Memorizer to use two buffers in place of just one
 		{
 			*buff_fill = 1;
 			buff_write_end = buff_start;
@@ -1460,11 +1342,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	//init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
 	
 	/* Grab the writer lock for the object_list */
-<<<<<<< HEAD
-	local_irq_save(flags);
-	if(buff_init && *buff_free_size>sizeof(struct memorizer_kernel_alloc))
-	{
-=======
 	
 	if(buff_init)
 	{	
@@ -1487,7 +1364,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 		local_irq_save(flags);
 
->>>>>>> Changing the Memorizer to use two buffers in place of just one
 		mke.event_type = Memorizer_Mem_Alloc;
 		mke.event_ip = call_site;
 		mke.src_va_ptr = (uintptr_t)ptr;
@@ -1518,58 +1394,28 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		}
 
 	
-<<<<<<< HEAD
-		//ma_ptr = (struct memorizer_mem_access *)buff_write_end;
-		mke_ptr = (struct memorizer_kernel_alloc *)buff_write_end;
-		//*ma_ptr = ma;
-		*mke_ptr = mke;
-		//buff_write_end = buff_write_end + sizeof(struct memorizer_mem_access);
-		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_alloc);	
-		//*buff_write_end = 'b';
-		//*buff_free_size = *buff_free_size - sizeof(struct memorizer_mem_access);
-		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_alloc);
-		if(*buff_free_size == 0)
-		{
-			BUFF_FILL_SET;
-		}
-
-		atomic_long_inc(&memorizer_num_tracked_allocs);
-
-		/*
-		buff_write_end = buff_write_end + sizeof(struct memorizer_kobj);
-		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kobj);	
-		if(*buff_free_size == 0)
-=======
 		mke_ptr = (struct memorizer_kernel_alloc *)buff_write_end;
 		*mke_ptr = mke;
 		buff_write_end = buff_write_end + sizeof(struct memorizer_kernel_alloc);
 		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_alloc);
 
 		if(*buff_free_size < sizeof(struct memorizer_kernel_event))
->>>>>>> Changing the Memorizer to use two buffers in place of just one
 		{
 			*buff_fill = 1;
 			buff_write_end = buff_start;
-<<<<<<< HEAD
-		else
-			buff_write_end++;
-		*/
-		//while(*buff_fill);
+		}
+		local_irq_restore(flags);
 	}
 	else
 	{
 		atomic_long_inc(&stats_num_allocs_while_disabled);
 	}
 
-=======
-		}
->>>>>>> Changing the Memorizer to use two buffers in place of just one
 
 
 
-		local_irq_restore(flags);
-	}
-	//}
+		
+	
 
 	//*buff_end = (unsigned long long)0xaa;
 	
@@ -2007,11 +1853,6 @@ void __init memorizer_init(void)
 
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
-<<<<<<< HEAD
-=======
-	
->>>>>>> Changing the Memorizer to use two buffers in place of just one
-
 
 	lt_init();
 	local_irq_save(flags);
@@ -2072,23 +1913,8 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create test bool object\n");
 	
 
-<<<<<<< HEAD
-		
-	pages = vmalloc(ML*4096); 
-	if(!pages)
-	{
-		pr_info("Could not allocate all the memory for the Memorizer Buffer");
-	}
-	memset(pages,0,ML*4096);
-	buff_end = (char *)pages + ML*4096-1;
-	buff_write_end = (char *)pages;
-	buff_fill = buff_write_end;
-=======
-
-	
 	pages1 = vmalloc(ML*4096);
 	pages2 = vmalloc(ML*4096);
->>>>>>> Changing the Memorizer to use two buffers in place of just one
 
 	switchBuffer();
 

@@ -141,9 +141,9 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 #define MEM_ACC_L_SIZE 1
 
 /* Defining the maximum length for the event lists along with variables for character device driver */
-
+// NB refers to the number of buffers being vmalloced
 #define ML 500000
-
+#define NB 16
 
 #define BUFF_MUTEX_LOCK { \
 		while(*buff_mutex)\
@@ -157,10 +157,8 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 #define BUFF_FILL_SET {*buff_fill = 1;}
 
 
-static dev_t *dev1;
-static struct cdev *cd1;
-static dev_t *dev2;
-static struct cdev *cd2;
+static dev_t *dev[NB];
+static struct cdev *cd[NB];
 static void *pages1;
 static void *pages2;
 static char *buff_end;
@@ -170,7 +168,17 @@ static char *buff_fill;
 static char *buff_mutex;
 static unsigned int *buff_free_size;
 static bool buff_init = false;
-static char curBuf = 0;
+static unsigned int curBuff = 0;
+static char *buffList[NB];
+
+
+static dev_t *dev1;
+static dev_t *dev2;
+static struct cdev *cd1;
+static struct cdev *cd2;
+
+
+
 /* Types for events */
 //enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
 
@@ -195,9 +203,12 @@ struct memorizer_mem_access {
 	unsigned long jiffies;		/* creation timestamp */
 	pid_t pid;			/* pid of the current task */
 	char comm[TASK_COMM_LEN];	/* executable name */
+}cdList[NB];
+
+struct memorizer_cdev {
+	char idx;
+	struct cdev charDev;
 };
-
-
 
 /**
  * mem_access_wlists - This struct contains work queues holding accesses
@@ -229,57 +240,24 @@ struct mem_access_worklists {
  * switchBuffer - switches the the buffer being written to, when the buffer is full
  */
 void __always_inline switchBuffer()
-{
-	pr_info("Switching to Buffer %d\n",curBuf);
-	if(!curBuf)
-	{
-		memset(pages1,0,ML*4096);
-		buff_end = (char *)pages1 + ML*4096-1;
-		buff_write_end = (char *)pages1;
+{	
+	pr_info("Switching to Buffer %d\n",curBuff);
+
+
+	buff_end = (char *)buffList[curBuff] + ML*4096-1;
+	buff_write_end = (char *)buffList[curBuff];
 	
-		buff_fill = buff_write_end;
-		*buff_fill = 0;
-		buff_write_end = buff_write_end + 1;
+	buff_fill = buff_write_end;
+	buff_write_end = buff_write_end + 1;
+	buff_mutex = buff_write_end;
+	buff_write_end = buff_write_end + 1;
+		
+	buff_free_size = (unsigned int *)buff_write_end;
+	buff_write_end = buff_write_end + sizeof(unsigned int);
 	
-		buff_mutex = buff_write_end;
-		*buff_mutex = 0;
-		buff_write_end = buff_write_end + 1;
-	
-	
-		buff_free_size = (unsigned int *)buff_write_end;
-		*buff_free_size = (ML * 4096) - 6;
-		buff_write_end = buff_write_end + sizeof(unsigned int);
+	buff_start = buff_write_end;
 	
 
-		buff_start = buff_write_end;
-	
-
-		//Switch to the first buffer
-	}
-	else
-	{
-		memset(pages2,0,ML*4096);
-		buff_end = (char *)pages2 + ML*4096-1;
-		buff_write_end = (char *)pages2;
-	
-		buff_fill = buff_write_end;
-		*buff_fill = 0;
-		buff_write_end = buff_write_end + 1;
-	
-		buff_mutex = buff_write_end;
-		*buff_mutex = 0;
-		buff_write_end = buff_write_end + 1;
-	
-	
-		buff_free_size = (unsigned int *)buff_write_end;
-		*buff_free_size = (ML * 4096) - 6;
-		buff_write_end = buff_write_end + sizeof(unsigned int);
-	
-
-		buff_start = buff_write_end;
-
-		//Switch to the second buffer
-	}
 }
 
 
@@ -680,6 +658,8 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
 	return afc;
 }
 
+
+
 /**
  * access_from_counts - search kobj's access_from for an entry from src_ip
  * @src_ip:	the ip to search for
@@ -863,30 +843,26 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	if(in_memorizer())
 		return;
 #endif
+	if(!strcmp(current->comm,"userApp"))
+		return;
 
-
+	
 	__memorizer_enter();
+
 
 
 	if(buff_init)
 	{
-		local_irq_save(flags);
-		if(*buff_fill)
+
+
+		
+		while(*buff_fill)
 		{
-			curBuf = !curBuf;
+			curBuff = (curBuff + 1)%NB;
 			switchBuffer();
 		}
-		local_irq_restore(flags);
 		
-		if(*buff_mutex)
-		{	
-			// The userspace is reading the buffer so we don't need to track the accesses created at the moment	
-			return;
-		}
-		
-		
-		//while(*buff_fill);		// Busy Wait until we have enough free space
-			//yield();
+
 		local_irq_save(flags);
 
 		if(write)
@@ -932,18 +908,28 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 
 void __always_inline memorizer_fork(struct task_struct *p, long nr){
+	
 	struct memorizer_kernel_fork mke;
 	struct memorizer_kernel_fork *mke_ptr;
 
 	unsigned long flags;
+	if(!strcmp(current->comm,"userApp"))
+			return;
 
 
 	__memorizer_enter();
 
-	local_irq_save(flags);
-	if(buff_init && *buff_free_size>sizeof(struct memorizer_kernel_fork))
+	if(buff_init)
 	{
+		while(*buff_fill)
+		{
+			curBuff = (curBuff + 1)%NB;
+			switchBuffer();
+		}
 
+
+		
+		local_irq_save(flags);
 		mke.event_type = Memorizer_Fork;
 		if (in_irq()) {
 			mke.pid = 0;
@@ -963,23 +949,27 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 		}
 	
 		mke_ptr = (struct memorizer_kernel_fork *)buff_write_end;
-		//*ma_ptr = ma;
 		*mke_ptr = mke;
-		//buff_write_end = buff_write_end + sizeof(struct memorizer_mem_access);
 		buff_write_end = buff_write_end +sizeof(struct memorizer_kernel_fork);	
-		//*buff_write_end = 'b';
-		//*buff_free_size = *buff_free_size - sizeof(struct memorizer_mem_access);
 		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_fork);
-		if(*buff_free_size == 0)
+		
+		
+		if(*buff_free_size < sizeof(struct memorizer_kernel_event))
 		{
-			BUFF_FILL_SET;
+
+			*buff_fill = 1;
+			buff_write_end = buff_start;
 		}
+
+
+
+		local_irq_restore(flags);
 	}
 
 
 
 
-	local_irq_restore(flags);
+	__memorizer_exit();
 
 
 
@@ -1235,27 +1225,22 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	struct memorizer_kernel_free *mke_ptr;
 	unsigned long flags;
 
+	if(!strcmp(current->comm,"userApp"))
+			return;
+
+
 	__memorizer_enter();
 
 	if(buff_init)
 	{
 
-		local_irq_save(flags);
-		if(*buff_fill)
+		while(*buff_fill)
 		{
-			curBuf = !curBuf;
+			curBuff = (curBuff + 1)%NB;
 			switchBuffer();
-		}
-		
-		if(*buff_mutex)
-		{
-			return;
-		}
-		local_irq_restore(flags);
-		
+		}		
 
 
-		//while(*buff_fill);
 
 		local_irq_save(flags);
 		// Set up the event Struct and Dump it to the Buffer
@@ -1310,6 +1295,8 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	struct memorizer_kernel_alloc mke;
 	struct memorizer_kernel_alloc *mke_ptr;
 
+
+	
 	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
 		return;
 
@@ -1325,11 +1312,14 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 
 
 
+
 #if 0 // Prototype for filtering: static though so leave off
 	if(call_site < selinux.b || call_site >= crypto_code_region.e)
 		return;
 #endif
 
+	if(!strcmp(current->comm,"userApp"))
+		 return;
 
 	__memorizer_enter();
 
@@ -1344,23 +1334,16 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	/* Grab the writer lock for the object_list */
 	
 	if(buff_init)
-	{	
-		local_irq_save(flags);
-		if(*buff_fill)
-		{
-			curBuf = !curBuf;
-			switchBuffer();
-		}
-		local_irq_restore(flags);
-		
-		if(*buff_mutex)
-		{
-			return;
-		}
-		
+	{
 
-		//while(*buff_fill);
-			//yield();
+
+
+		
+		while(*buff_fill)
+		{
+			curBuff = (curBuff + 1)%NB;
+			switchBuffer();
+		}		
 
 		local_irq_save(flags);
 
@@ -1759,6 +1742,27 @@ static void create_access_counts_kmem_cache(void)
 	pr_info("Just created kmem_cache for access_from_counts\n");
 }
 
+
+static int create_buffers(void)
+{
+	int i;
+	unsigned int *temp_size;
+	for(i=0;i<NB;i++)
+	{
+		buffList[i] = (char *)vmalloc(ML*4096);
+		if(!buffList[i])
+			return 0;
+
+		memset(buffList[i],0,ML*4096);
+		temp_size = (unsigned int *)(buffList[i]+2);
+		*temp_size = ML*4096*NB;
+
+
+	}
+	return 1;
+}
+
+
 /**
  * init_mem_access_wl - initialize the percpu data structures
  *
@@ -1788,50 +1792,65 @@ static int char_close(struct inode *inode, struct file* file){
 	   return 0;
 };
 
-static int char_mmap1(struct file *file, struct vm_area_struct * vm_struct){
+static int char_mmap(struct file *file, struct vm_area_struct * vm_struct){
+	__memorizer_enter();
 	unsigned long pfn;
 	int i = 0;
-
-
+	int bufNum = 252-imajor(file->f_inode);
 	for(i=0; i<ML;i++)
 	{
-		pfn = vmalloc_to_pfn(pages1+i*PAGE_SIZE);
+		pfn = vmalloc_to_pfn(buffList[bufNum]+i*PAGE_SIZE);
 		remap_pfn_range(vm_struct, vm_struct->vm_start+i*PAGE_SIZE, pfn, PAGE_SIZE, PAGE_SHARED);
 	}
-	return 0;
-
-};
-
-static int char_mmap2(struct file *file, struct vm_area_struct * vm_struct){
-	unsigned long pfn;
-	int i = 0;
-
-
-	for(i=0; i<ML;i++)
-	{
-		pfn = vmalloc_to_pfn(pages2+i*PAGE_SIZE);
-		remap_pfn_range(vm_struct, vm_struct->vm_start+i*PAGE_SIZE, pfn, PAGE_SIZE, PAGE_SHARED);
-	}
+	__memorizer_exit();
 	return 0;
 
 };
 
 
-static const struct file_operations char_driver1={
+
+
+static const struct file_operations char_driver={
 	.owner = THIS_MODULE,
 	.open = char_open,
 	.release = char_close,
-	.mmap = char_mmap1,
-};
-
-static const struct file_operations char_driver2={
-	.owner = THIS_MODULE,
-	.open = char_open,
-	.release = char_close,
-	.mmap = char_mmap2,
+	.mmap = char_mmap,
 };
 
 
+static int create_char_devs(void)
+{
+	int i = 0;
+	for (i = 0; i<NB; i++)
+	{
+		dev[i] = kmalloc(sizeof(dev_t), GFP_KERNEL);
+		cd[i] = kmalloc(sizeof(struct cdev), GFP_KERNEL);
+
+		char devName[12];
+		sprintf(devName,"char_dev%u",i);
+		pr_info("%s\n",devName);
+
+		if(alloc_chrdev_region(dev[i],0,1,devName)<0)
+		{
+			pr_warning("Something Went Wrong with allocating char device\n");
+		}
+		else
+		{
+			pr_info("Allocated Region for char device\n");
+		}
+		cdev_init(cd[i],&char_driver);
+		if(cdev_add(cd[i], *dev[i], 1)<0)
+		{
+			pr_warning("Couldn't add the char device\n");
+		}
+		else
+		{
+			pr_info("Added the char device\n");
+		}
+
+
+	}
+}
 
 
 
@@ -1913,56 +1932,17 @@ static int memorizer_late_init(void)
 		pr_warning("Failed to create test bool object\n");
 	
 
-	pages1 = vmalloc(ML*4096);
-	pages2 = vmalloc(ML*4096);
+	if(create_buffers())
+		pr_info("Allocated all the buffers");
+	else
+		pr_info("Couldn't allocate the buffers");
+
 
 	switchBuffer();
 
-	dev1 = kmalloc(sizeof(dev_t), GFP_KERNEL);
-	cd1 = kmalloc(sizeof(struct cdev), GFP_KERNEL);
+	create_char_devs();
 
-	dev2 = kmalloc(sizeof(dev_t), GFP_KERNEL);
-	cd2 = kmalloc(sizeof(struct cdev), GFP_KERNEL);
-
-
-	if(alloc_chrdev_region(dev1,0,1,"char_dev1")<0)
-	{
-		pr_warning("Something Went Wrong with allocating char device\n");
-	}
-	else
-	{
-		pr_info("Allocated Region for char device\n");
-	}
-	cdev_init(cd1,&char_driver1);
-	if(cdev_add(cd1, *dev1, 1)<0)
-	{
-		pr_warning("Couldn't add the char device\n");
-	}
-	else
-	{
-		pr_info("Added the char device\n");
-	}
-
-	if(alloc_chrdev_region(dev2,0,1,"char_dev2")<0)
-	{
-		pr_warning("Something Went Wrong with allocating char device\n");
-	}
-	else
-	{
-		pr_info("Allocated Region for char device\n");
-	}
-	cdev_init(cd2,&char_driver2);
-	if(cdev_add(cd2, *dev2, 1)<0)
-	{
-		pr_warning("Couldn't add the char device\n");
-	}
-	else
-	{
-		pr_info("Added the char device\n");
-	}
-
-
-	pr_info("%u",*buff_free_size);
+	pr_info("%u",(*buff_free_size)*NB);
 
 	buff_init = true;
 

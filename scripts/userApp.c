@@ -16,7 +16,7 @@
 
 
 #define ML 500000  // The size of profiler buffer (Unit: memory page)
-
+#define NB 16
 #define BUFF_MUTEX_LOCK { \
 		while(*buff_mutex)\
 		*buff_mutex = *buff_mutex + 1;\
@@ -28,12 +28,10 @@
 
 
 
-static int buf_fd1;
-static int buf_fd2;
+static int buff_fd_list[NB];
 static int buf_len;
 struct stat s ;
-char *buff1;
-char *buff2;
+char *buffList[NB];
 char *buf;
 char *buff_end;
 char *buff_start;
@@ -45,16 +43,15 @@ char *stringBase;
 unsigned int idx;
 char outputFileName[30];
 FILE *fp;
-char curBuf = 0;
+unsigned int curBuff = 0;
+
 
 /*
  * switchBuffer - switches the the buffer being written to, when the buffer is full
  */
 void switchBuffer()
 {
-	if(!curBuf)
-	{
-		buf = (char *)buff1;
+		buf = (char *)buffList[curBuff];
 	
 		buff_fill = buf;
 		buf = buf + 1;
@@ -70,28 +67,6 @@ void switchBuffer()
 		buff_start = buf;
 	
 
-		//Switch to the first buffer
-	}
-	else
-	{
-		buf = (char *)buff2;
-	
-		buff_fill = buf;
-		buf = buf + 1;
-	
-		buff_mutex = buf;
-		buf = buf + 1;
-	
-	
-		buff_free_size = (unsigned int *)buf;
-		buf = buf + sizeof(unsigned int);
-	
-
-		buff_start = buf;
-
-
-		//Switch to the second buffer
-	}
 }
 
 
@@ -244,28 +219,30 @@ void printFork()
 	fprintf(fp,"%ld, ",mke_ptr->pid);
 	fprintf(fp,"%s\n",mke_ptr->comm);
 	buf = buf + sizeof(struct memorizer_kernel_fork);
-	fprintf(stderr, "before 7 incrementing = %u\n", *buff_free_size);
+//	fprintf(stderr, "before 7 incrementing = %u\n", *buff_free_size);
 //	*buff_free_size = *buff_free_size + sizeof(struct memorizer_kernel_fork);
 //	fprintf(stderr, "after 7 incrementing = %u\n", *buff_free_size);
 }
 
 int main (int argc, char *argv[])
 {
-
-	 
+	unsigned int i;
+	char devName[12];
 	if(argc != 2)
 	{
 		printf("Incorrect number of Command Line Arguments!\n");
 		return 0;
 	}
 
+
+	for(i = 0;i<NB;i++)
+	{
+		sprintf(devName,"node%u",i);
+		buffList[i] = buf_init(devName,&buff_fd_list[i]);
+		if(!buff_fd_list[i])
+			return -1;
+	}
 	// Open the Character Device and MMap 
-	buff1 = buf_init("node1",&buf_fd1);
-	if(!buff1)
-		return -1;
-	buff2 = buf_init("node2",&buf_fd2);
-	if(!buff2)
-		return -1;
 
 	switchBuffer();
 	
@@ -284,23 +261,21 @@ int main (int argc, char *argv[])
 		{
 			
 			
-			// We Don't want the memorizer tracking us clearing out the buffer from userspace
+			//We Don't want the memorizer tracking us clearing out the buffer from userspace
 			if(!*buff_fill)
 			{
-				curBuf = !curBuf;
-				switchBuffer();
-				BUFF_MUTEX_UNLOCK;
+				curBuff = (curBuff + 1)%NB;
 				continue;
 			}
 			
-			printf("Userspace: Buffer Full! Now Clearing Buffer %d\n",curBuf);
+			printf("Userspace: Buffer Full! Now Clearing Buffer %d\n",curBuff);
 
 			
 			sprintf(outputFileName,"ouput%d",idx);
 			fp = fopen(outputFileName,"w+");
 
-			printf("Acquired the Lock\n");
-			BUFF_MUTEX_LOCK;
+
+			//printf("Acquired the Lock\n");
 			while(*buf!=0)
 			{
 				if(*buf == 0xffffffaa)
@@ -316,26 +291,22 @@ int main (int argc, char *argv[])
 				idx++;
 			}
 			*buff_fill = 0;
-			BUFF_MUTEX_UNLOCK;
 			printf("Done Printing\n");
 
 			fclose(fp);
+			printf("Closed the File Pointer\n");
 	
 			idx++;
 
 		}
 			
 	}
-	else if(*argv[1]=='n')
+	for(i = 0;i<NB;i++)
 	{
-		*buff_free_size = 409599994;
-		*buff_fill = 0;
-	}
+		buf_exit(buff_fd_list[i]);
 	
-	buf_exit(buf_fd1);
-	//printf("Closed the First Buffer\n");
-	buf_exit(buf_fd2);
-	//printf("Closed the Second Buffer\n");
+	}
+
 
 	
 	return 0;

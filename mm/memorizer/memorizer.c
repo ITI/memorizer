@@ -859,6 +859,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		while(*buff_fill)
 		{
 			curBuff = (curBuff + 1)%NB;
+			pr_info("Trying Buffer %u\n",curBuff);
 			switchBuffer();
 		}
 		
@@ -886,6 +887,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		if(*buff_free_size < sizeof(struct memorizer_kernel_event))
 		{
 
+			pr_info("Current Buffer Full, Setting the fill bit\n");
 			*buff_fill = 1;
 			buff_write_end = buff_start;
 		}
@@ -1755,7 +1757,7 @@ static int create_buffers(void)
 
 		memset(buffList[i],0,ML*4096);
 		temp_size = (unsigned int *)(buffList[i]+2);
-		*temp_size = ML*4096*NB;
+		*temp_size = ML*4096 - 6;
 
 
 	}

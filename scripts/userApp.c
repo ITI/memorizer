@@ -290,6 +290,7 @@ int main (int argc, char *argv[])
 					printFork();
 				idx++;
 			}
+			*buff_free_size = (4096 * ML) - 6; 
 			*buff_fill = 0;
 			printf("Done Printing\n");
 

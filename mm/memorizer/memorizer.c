@@ -135,6 +135,9 @@
 static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 							   struct rb_root *
 							   kobj_rbtree_root);
+void __always_inline add_to_wq(uintptr_t addr, size_t size, enum AccessType
+        access_type, uintptr_t ip);
+static inline struct memorizer_kernel_event * get_pointer_to_wq_entry(void);
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
@@ -155,7 +158,6 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 
 
 #define BUFF_FILL_SET {*buff_fill = 1;}
-
 
 static dev_t *dev[NB];
 static struct cdev *cd[NB];
@@ -181,9 +183,6 @@ static struct cdev *cd2;
 
 /* Types for events */
 //enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
-
-
-
 
 /**
  * struct memorizer_mem_access - structure to capture all memory related events
@@ -810,12 +809,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 {
 
 	unsigned long flags;
-
-	struct memorizer_kernel_access mke;
-	struct memorizer_kernel_access *mke_ptr;
-	
-	
-
+    struct memorizer_kernel_event * evtptr;
 
 #if MEMORIZER_STATS // Stats take time per access
 	atomic_long_inc(&memorizer_num_accesses);
@@ -849,13 +843,13 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	
 	__memorizer_enter();
 
+    local_irq_save(flags);
 
+    add_to_wq(addr, size, write, ip);
 
+#if 0
 	if(buff_init)
 	{
-
-
-		
 		while(*buff_fill)
 		{
 			curBuff = (curBuff + 1)%NB;
@@ -894,33 +888,49 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 		
 		local_irq_restore(flags);
-	
-	
-	
 		//*buff_end = (unsigned long long)0xbb;
 	}
 	//}
-
+#endif
+local_irq_restore(flags);
 
 	__memorizer_exit();
 }
 
-
-
-
-
 void __always_inline memorizer_fork(struct task_struct *p, long nr){
 	
-	struct memorizer_kernel_fork mke;
-	struct memorizer_kernel_fork *mke_ptr;
-
 	unsigned long flags;
-	if(!strcmp(current->comm,"userApp"))
-			return;
 
+	if(unlikely(!memorizer_enabled)) {
+		atomic_long_inc(&stats_num_allocs_while_disabled);
+		return;
+	}
 
 	__memorizer_enter();
+    
+    struct memorizer_kernel_event * evtptr = get_pointer_to_wq_entry();
+    evtptr->event_type = Memorizer_Fork;
 
+    local_irq_save(flags);
+    if (in_irq()) {
+        evtptr->pid = 0;
+        strncpy(evtptr->data.comm, "hardirq", sizeof(evtptr->data.comm));
+    } else if (in_softirq()) {
+        evtptr->pid = 0;
+        strncpy(evtptr->data.comm, "softirq", sizeof(evtptr->data.comm));
+    } else {
+        evtptr->pid = task_pid_nr(p);
+        /*
+         * There is a small chance of a race with set_task_comm(),
+         * however using get_task_comm() here may cause locking
+         * dependency issues with current->alloc_lock. In the worst
+         *	 case, the command line is not correct.
+         */
+        strncpy(evtptr->data.comm, p->comm, sizeof(evtptr->data.comm));
+    }
+    local_irq_restore(flags);
+
+#if 0
 	if(buff_init)
 	{
 		while(*buff_fill)
@@ -928,8 +938,6 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 			curBuff = (curBuff + 1)%NB;
 			switchBuffer();
 		}
-
-
 		
 		local_irq_save(flags);
 		mke.event_type = Memorizer_Fork;
@@ -968,15 +976,10 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 		local_irq_restore(flags);
 	}
 
-
-
+#endif
 
 	__memorizer_exit();
-
-
-
 }
-
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
 
@@ -1223,16 +1226,13 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
 
 	struct memorizer_kobj *kobj;
-	struct memorizer_kernel_free mke;
-	struct memorizer_kernel_free *mke_ptr;
 	unsigned long flags;
-
-	if(!strcmp(current->comm,"userApp"))
-			return;
-
 
 	__memorizer_enter();
 
+    add_to_wq(kobj_ptr, 0, Memorizer_Mem_Free, call_site);
+
+#if 0
 	if(buff_init)
 	{
 
@@ -1267,6 +1267,7 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		local_irq_restore(flags);
 	}
 //	}
+#endif
 		
 	__memorizer_exit();
 	
@@ -1290,14 +1291,10 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 				       gfp_t gfp_flags)
 {
 
-
 	unsigned long flags;
 	struct memorizer_kobj *kobj;
 	struct memorizer_kobj *kobj_ptr;
-	struct memorizer_kernel_alloc mke;
-	struct memorizer_kernel_alloc *mke_ptr;
-
-
+    pid_t pid;
 	
 	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
 		return;
@@ -1312,19 +1309,23 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		return;
 	}
 
-
-
-
 #if 0 // Prototype for filtering: static though so leave off
 	if(call_site < selinux.b || call_site >= crypto_code_region.e)
 		return;
 #endif
 
-	if(!strcmp(current->comm,"userApp"))
-		 return;
-
 	__memorizer_enter();
 
+#if 0
+    if (in_irq()) {
+        pid = 0;
+    } else if (in_softirq()) {
+        pid = 0;
+    } else {
+        pid = current->pid;
+    }
+#endif 
+    add_to_wq(ptr, bytes_alloc, Memorizer_Mem_Alloc, call_site);
 
 	//kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
 	//if(!kobj){
@@ -1335,11 +1336,9 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	
 	/* Grab the writer lock for the object_list */
 	
+#if 0
 	if(buff_init)
 	{
-
-
-
 		
 		while(*buff_fill)
 		{
@@ -1348,7 +1347,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		}		
 
 		local_irq_save(flags);
-
 		mke.event_type = Memorizer_Mem_Alloc;
 		mke.event_ip = call_site;
 		mke.src_va_ptr = (uintptr_t)ptr;
@@ -1361,24 +1359,23 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 				//&(kobj->modsymb), kobj->funcstr);
 				NULL, mke.funcstr);
 		/* task information */
-		if (in_irq()) {
-			mke.pid = 0;
-			strncpy(mke.comm, "hardirq", sizeof(mke.comm));
-		} else if (in_softirq()) {
-			mke.pid = 0;
-			strncpy(mke.comm, "softirq", sizeof(mke.comm));
-		} else {
-			mke.pid = current->pid;
-		/*
-		 * There is a small chance of a race with set_task_comm(),
-		 * however using get_task_comm() here may cause locking
-		 * dependency issues with current->alloc_lock. In the worst
-		 *	 case, the command line is not correct.
-		 */
-		strncpy(mke.comm, current->comm, sizeof(mke.comm));
-		}
+        if (in_irq()) {
+            mke.pid = 0;
+            strncpy(mke.comm, "hardirq", sizeof(mke.comm));
+        } else if (in_softirq()) {
+            mke.pid = 0;
+            strncpy(mke.comm, "softirq", sizeof(mke.comm));
+        } else {
+            mke.pid = current->pid;
+            /*
+             * There is a small chance of a race with set_task_comm(),
+             * however using get_task_comm() here may cause locking
+             * dependency issues with current->alloc_lock. In the worst
+             *	 case, the command line is not correct.
+             */
+            strncpy(mke.comm, current->comm, sizeof(mke.comm));
+        }
 
-	
 		mke_ptr = (struct memorizer_kernel_alloc *)buff_write_end;
 		*mke_ptr = mke;
 		buff_write_end = buff_write_end + sizeof(struct memorizer_kernel_alloc);
@@ -1396,11 +1393,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		atomic_long_inc(&stats_num_allocs_while_disabled);
 	}
 
-
-
-
-		
-	
+#endif
 
 	//*buff_end = (unsigned long long)0xaa;
 	
@@ -1744,7 +1737,6 @@ static void create_access_counts_kmem_cache(void)
 	pr_info("Just created kmem_cache for access_from_counts\n");
 }
 
-
 static int create_buffers(void)
 {
 	int i;
@@ -1759,9 +1751,86 @@ static int create_buffers(void)
 		temp_size = (unsigned int *)(buffList[i]+2);
 		*temp_size = ML*4096 - 6;
 
-
 	}
 	return 1;
+}
+
+struct workqueue_struct *wq;
+
+/* 2^32 = 4.29 GB */
+/* number of entries at 2^5 / entry 2^25 ~~ 1 GB */
+//const size_t num_entries_perwq = 2^27;
+#define num_entries_perwq (_AC(1,UL) << 27)
+struct event_list_wq_data {
+    struct work_struct work;
+    struct memorizer_kernel_event data[num_entries_perwq];
+};
+
+#define num_queues 2
+size_t wq_index = 0;
+size_t wq_selector = 0;
+struct event_list_wq_data * mem_events_wq_data[num_queues];
+
+static void
+mem_events_workhandler(struct work_struct *work)
+{
+    struct event_list_wq_data * data = (struct event_list_wq_data *)work;
+    /* add the magic consumer */
+
+    /* set last entry to Memorizer_NULL for queue selection check */
+    //mem_events_wq_data[]
+}
+    
+size_t ch_swp_new = 0;
+static inline struct memorizer_kernel_event * 
+get_pointer_to_wq_entry()
+{
+    /* If we are at the end of the queue swap out and schedule work */
+
+    if(wq_index == num_entries_perwq-1)
+    {
+        /* on last wq go back to 0 */
+        if(wq_selector == (num_queues - 1))
+        {
+            ch_swp_new = 0;
+        }
+        else
+        {
+            ch_swp_new = wq_selector + 1;
+        }
+
+        queue_work(wq, &(mem_events_wq_data[wq_selector]->work));
+
+        /* check to see if the new queue is empty */
+        if(mem_events_wq_data[ch_swp_new]->data[num_entries_perwq].event_type
+                != Memorizer_NULL) 
+        {
+            panic("memorizer: tried to switch to non-empty queue\n");
+        }
+        wq_selector = ch_swp_new;
+        wq_index = 0;
+    }
+    return &(mem_events_wq_data[wq_selector]->data[wq_index]);
+}
+
+void __always_inline add_to_wq(uintptr_t addr, size_t size, enum AccessType
+        access_type, uintptr_t ip)
+{
+    struct memorizer_kernel_event * evtptr = get_pointer_to_wq_entry();
+    evtptr->event_type = access_type;
+	evtptr->pid = task_pid_nr(current);
+	evtptr->data.et.src_va_ptr = ip;
+	evtptr->data.et.va_ptr = addr;
+	evtptr->data.et.event_size = size;
+}
+
+static void
+wq_exit(void)
+{
+    //printd();
+    //flush_workqueue(wq);
+    //destroy_workqueue(wq);
+    //printd();
 }
 
 
@@ -1772,6 +1841,8 @@ static int create_buffers(void)
  */
 static void init_mem_access_wls(void)
 {
+    int i = 0;
+#if 0
 	struct mem_access_worklists * wls;
 	size_t cpu;
 	for_each_possible_cpu(cpu){
@@ -1780,9 +1851,21 @@ static void init_mem_access_wls(void)
 		wls->head = -1;
 		wls->tail = 0;
 	}
+#endif
+    wq = create_workqueue("wq_memorizer_events");
+    for(;i<num_queues;i++)
+    {
+        //mem_events_wq_data[i] = (struct event_list_wq_data *) 
+        //                vmalloc(sizeof(struct event_list_wq_data));
+        if(!mem_events_wq_data[i])
+        {
+            pr_info("Could not allocate all the memory for the Memorizer Buffer");
+            panic("AHHHHH NO VMALLOC OF 4GB... get more memory fool!");
+        }
+        memset(mem_events_wq_data[i],0,sizeof(struct event_list_wq_data));
+        INIT_WORK(&mem_events_wq_data[i]->work, &mem_events_workhandler);
+    }
 }
-
-
 
 /* Fops and Callbacks for char_driver */
 
@@ -1819,7 +1902,6 @@ static const struct file_operations char_driver={
 	.mmap = char_mmap,
 };
 
-
 static int create_char_devs(void)
 {
 	int i = 0;
@@ -1854,10 +1936,6 @@ static int create_char_devs(void)
 	}
 }
 
-
-
-
-
 /**
  * memorizer_init() - initialize memorizer state
  *
@@ -1869,15 +1947,14 @@ void __init memorizer_init(void)
 	unsigned long flags;
 
 	__memorizer_enter();
-	init_mem_access_wls();
-	
+	//init_mem_access_wls();
 
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 
 	lt_init();
 	local_irq_save(flags);
-	memorizer_enabled = true;
+	memorizer_enabled = false;
 	memorizer_log_access = false;
 	print_live_obj = false;
 	local_irq_restore(flags);
@@ -1932,13 +2009,11 @@ static int memorizer_late_init(void)
 				     dentryMemDir, &test_obj);
 	if (!dentry)
 		pr_warning("Failed to create test bool object\n");
-	
 
 	if(create_buffers())
 		pr_info("Allocated all the buffers");
 	else
 		pr_info("Couldn't allocate the buffers");
-
 
 	switchBuffer();
 
@@ -1948,13 +2023,8 @@ static int memorizer_late_init(void)
 
 	buff_init = true;
 
-	
-
-
-	
-		
 	local_irq_save(flags);
-	memorizer_enabled = true;
+	memorizer_enabled = false;
 	memorizer_log_access = false;
 	print_live_obj = false;
 	local_irq_restore(flags);
@@ -1962,8 +2032,6 @@ static int memorizer_late_init(void)
 	pr_info("Memorizer initialized\n");
 
 	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
-
-	
 
 
 	print_stats();

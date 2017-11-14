@@ -1852,18 +1852,18 @@ static void init_mem_access_wls(void)
 		wls->tail = 0;
 	}
 #endif
-    wq = create_workqueue("wq_memorizer_events");
+    //wq = create_workqueue("wq_memorizer_events");
     for(;i<num_queues;i++)
     {
-        //mem_events_wq_data[i] = (struct event_list_wq_data *) 
-        //                vmalloc(sizeof(struct event_list_wq_data));
+        mem_events_wq_data[i] = (struct event_list_wq_data *) 
+                        vmalloc(sizeof(struct event_list_wq_data));
         if(!mem_events_wq_data[i])
         {
             pr_info("Could not allocate all the memory for the Memorizer Buffer");
             panic("AHHHHH NO VMALLOC OF 4GB... get more memory fool!");
         }
         memset(mem_events_wq_data[i],0,sizeof(struct event_list_wq_data));
-        INIT_WORK(&mem_events_wq_data[i]->work, &mem_events_workhandler);
+        //INIT_WORK(&mem_events_wq_data[i]->work, &mem_events_workhandler);
     }
 }
 
@@ -1947,14 +1947,14 @@ void __init memorizer_init(void)
 	unsigned long flags;
 
 	__memorizer_enter();
-	//init_mem_access_wls();
+	init_mem_access_wls();
 
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 
 	lt_init();
 	local_irq_save(flags);
-	memorizer_enabled = false;
+	memorizer_enabled = true;
 	memorizer_log_access = false;
 	print_live_obj = false;
 	local_irq_restore(flags);

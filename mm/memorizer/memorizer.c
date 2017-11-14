@@ -710,13 +710,13 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
  * already operating with interrupts off and preemption disabled, and thus we
  * cannot sleep.
  */
-static inline int find_and_update_kobj_access(struct memorizer_mem_access *ma)
+static inline int find_and_update_kobj_access(uintptr_t src_va_ptr, uintptr_t va_ptr, pid_t pid, size_t access_type)
 {
 	struct memorizer_kobj *kobj = NULL;
 	struct access_from_counts *afc = NULL;
 
 	/* Get the kernel object associated with this VA */
-	kobj = lt_get_kobj(ma->access_addr);
+	kobj = lt_get_kobj(va_ptr);
 
 	if(!kobj){
 		atomic_long_inc(&memorizer_num_untracked_accesses);
@@ -727,11 +727,11 @@ static inline int find_and_update_kobj_access(struct memorizer_mem_access *ma)
 	write_lock(&kobj->rwlock);
 
 	/* Search access queue to the entry associated with src_ip */
-	afc = unlckd_insert_get_access_counts(ma->src_ip, ma->pid, kobj);
+	afc = unlckd_insert_get_access_counts(src_va_ptr, pid, kobj);
 
 	/* increment the counter associated with the access type */
 	if(afc)
-		ma->access_type ? ++afc->writes : ++afc->reads;
+		access_type ? ++afc->writes : ++afc->reads;
 
 	write_unlock(&kobj->rwlock);
 	return afc ? 0 : -1;
@@ -745,6 +745,7 @@ static inline int find_and_update_kobj_access(struct memorizer_mem_access *ma)
  * accessed. Note that the kobj for this could be not found so we just ignore it
  * and move on if the update function failed.
  */
+/*
 static inline void drain_and_process_access_queue(struct mem_access_worklists *
 						  ma_wls)
 {
@@ -756,7 +757,7 @@ static inline void drain_and_process_access_queue(struct mem_access_worklists *
 		--ma_wls->head;
 	}
 }
-
+*/
 //==-- Memorizer memory access tracking -----------------------------------==//
 
 /**
@@ -1849,10 +1850,14 @@ mem_events_workhandler(struct work_struct *work)
         struct memorizer_kernel_event *mke = &data->data[i];
         switch(mke->event_type)
         {
-        case Memorizer_READ:
-            break;
-        case Memorizer_WRITE:
-            break;
+        case Memorizer_READ: find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr, 
+					     (uintptr_t) mke->data.et.va_ptr,(pid_t)mke->pid, 
+					     (size_t) mke->event_type); 
+			     			break;
+        case Memorizer_WRITE:find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr, 
+					     (uintptr_t) mke->data.et.va_ptr,(pid_t)mke->pid, 
+					     (size_t) mke->event_type); 
+			     			break;
         case Memorizer_Mem_Alloc:
             kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
             if(!kobj){ pr_info("Cannot allocate a memorizer_kobj structure\n"); }

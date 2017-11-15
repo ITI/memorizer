@@ -136,7 +136,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 							   struct rb_root *
 							   kobj_rbtree_root);
 void __always_inline add_to_wq(uintptr_t addr, size_t size, enum AccessType
-        access_type, uintptr_t ip);
+        access_type, uintptr_t ip, char * tsk_name);
 static inline struct memorizer_kernel_event * get_pointer_to_wq_entry(void);
 void __drain_active_work_queue(void);
 void switch_to_next_work_queue(void);
@@ -242,7 +242,7 @@ struct mem_access_worklists {
  */
 void __always_inline switchBuffer()
 {	
-	pr_info("Switching to Buffer %d\n",curBuff);
+	//pr_info("Switching to Buffer %d\n",curBuff);
 
 
 	buff_end = (char *)buffList[curBuff] + ML*4096-1;
@@ -845,7 +845,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
     local_irq_save(flags);
 
-    add_to_wq(addr, size, write, ip);
+    add_to_wq(addr, size, write, ip, 0);
 
 #if 0
 	if(buff_init)
@@ -928,6 +928,9 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
          */
         strncpy(evtptr->data.comm, p->comm, sizeof(evtptr->data.comm));
     }
+    add_to_wq(0,0,Memorizer_Fork,0,p->comm);
+
+
     local_irq_restore(flags);
 
 #if 0
@@ -1271,7 +1274,7 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 
 	__memorizer_enter();
 
-    add_to_wq(kobj_ptr, 0, Memorizer_Mem_Free, call_site);
+    add_to_wq(kobj_ptr, 0, Memorizer_Mem_Free, call_site, 0);
 
 #if 0
 	if(buff_init)
@@ -1366,7 +1369,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
         pid = current->pid;
     }
 #endif 
-    add_to_wq(ptr, bytes_alloc, Memorizer_Mem_Alloc, call_site);
+    add_to_wq(ptr, bytes_alloc, Memorizer_Mem_Alloc, call_site, current->comm);
 
 	//kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
 	//if(!kobj){
@@ -1602,7 +1605,7 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	}
 	kobj->printed = true;
 	/* Print object allocation info */
-	seq_printf(seq,"%p,%d,%p,%lu,%lu,%lu,%p,%s\n",
+	seq_printf(seq,"%p,%d,%p,%lu,%lu,%lu,%p\n",
 		   (void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
 		   kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
 		   kobj->free_ip, kobj->comm);
@@ -1832,7 +1835,17 @@ static void
 mem_events_workhandler(struct work_struct *work)
 {
     int i;
-	unsigned long flags;
+    unsigned long flags;
+    bool old_access, old_enabled;
+    
+    // Saving the old config before disabling the memorizer for aggregation
+    old_enabled = memorizer_enabled;
+    old_access = memorizer_log_access;
+
+    // Disabling the memorizer for aggregation
+    memorizer_enabled = false;
+    memorizer_log_access = false;
+
     gfp_t gfp_flags = GFP_ATOMIC;
     struct memorizer_kobj *kobj;
     struct memorizer_kernel_event *mke;
@@ -1874,6 +1887,9 @@ mem_events_workhandler(struct work_struct *work)
                     (uintptr_t) mke->data.et.va_ptr);
             break;
         case Memorizer_Fork:
+	    // Add in the code to Handle Forks
+	    // Push the data as a struct into the pid_table
+	    
             break;
         case Memorizer_NULL:
             break;
@@ -1883,8 +1899,11 @@ mem_events_workhandler(struct work_struct *work)
         data->data[i].event_type = Memorizer_NULL;
     }
 
-    pr_info("Finished aggregating event queue.");
+    pr_info("Finished aggregating event queue.\n");
 
+    // Restoring the old configuration after aggregation
+    memorizer_enabled = old_enabled;
+    memorizer_log_access = old_access;
     /* set first entry to Memorizer_NULL for queue selection check */
     data->data[0].event_type = Memorizer_NULL;
 
@@ -1935,14 +1954,20 @@ get_pointer_to_wq_entry()
 }
 
 void __always_inline add_to_wq(uintptr_t addr, size_t size, enum AccessType
-        access_type, uintptr_t ip)
+        access_type, uintptr_t ip, char * tsk_name)
 {
     struct memorizer_kernel_event * evtptr = get_pointer_to_wq_entry();
     evtptr->event_type = access_type;
-	evtptr->pid = task_pid_nr(current);
+    evtptr->pid = task_pid_nr(current);
+
+    if(access_type < Memorizer_Fork) {
 	evtptr->data.et.src_va_ptr = ip;
 	evtptr->data.et.va_ptr = addr;
 	evtptr->data.et.event_size = size;
+    }
+    else {
+	strncpy(evtptr->data.comm, tsk_name, sizeof(evtptr->data.comm));
+    }
 }
 
 void __drain_active_work_queue()
@@ -2149,18 +2174,17 @@ static int memorizer_late_init(void)
 	if (!dentry)
 		pr_warning("Failed to create test bool object\n");
 
-	if(create_buffers())
+	/*if(create_buffers())
 		pr_info("Allocated all the buffers");
 	else
 		pr_info("Couldn't allocate the buffers");
 
 	switchBuffer();
-
+	*/
 	create_char_devs();
 
-	pr_info("%u",(*buff_free_size)*NB);
+	//pr_info("%u",(*buff_free_size)*NB);
 
-	buff_init = true;
 
 	local_irq_save(flags);
 	memorizer_enabled = true;

@@ -90,6 +90,12 @@ struct memorizer_kobj {
 	struct list_head	access_counts;
 };
 
+struct pid_obj {
+	uint32_t key;
+	pid_t pid;
+	char comm[TASK_COMM_LEN];
+};
+
 /*
  * Kernel virtual addresses start at ffff880000000000 - ffffc7ffffffffff (=64
  * TB) direct mapping of all phys. memory --- see
@@ -123,6 +129,9 @@ struct memorizer_kobj {
 #define LT_L3_ENTRY_SIZE	(sizeof(void *))
 #define LT_L3_SIZE		(LT_L3_ENTRIES * LT_L3_ENTRY_SIZE)
 
+
+#define PID_ENTRIES		(_AC(1,UL) << 5) 
+//PLACEHOLDER VALUE
 //==-- Table data structures -----------------------------------------------==//
 
 /*
@@ -140,6 +149,10 @@ struct lt_l2_tbl {
 
 struct lt_l3_tbl {
 	struct lt_l2_tbl *l2_tbls[LT_L3_ENTRIES];
+};
+
+struct lt_pid_tbl {
+	struct pid_obj pid_obj_list[PID_ENTRIES];
 };
 
 #define lt_l1_tbl_index(va)	(va & (LT_L1_ENTRIES - 1))
@@ -168,6 +181,11 @@ static inline struct lt_l2_tbl **lt_l3_entry(struct lt_l3_tbl *l3_tbl, uintptr_t
 					     va)
 {
 	return &l3_tbl->l2_tbls[lt_l3_tbl_index(va)];
+}
+
+static inline struct pid_obj * lt_pid(struct lt_pid_tbl *pid_tbl,  uint32_t key)
+{
+	return &(pid_tbl->pid_obj_list[key]);
 }
 
 //==-- External Interface -------------------------------------------------==//

@@ -1981,7 +1981,7 @@ long _do_fork(unsigned long clone_flags,
 		nr = PTR_ERR(p);
 	}
 
-	memorizer_fork(p,nr);
+	//memorizer_fork(p,nr);
 
 	return nr;
 }

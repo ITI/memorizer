@@ -66,6 +66,7 @@ extern void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title);
 DEFINE_RWLOCK(lookup_tbl_rw_lock);
 
 static struct lt_l3_tbl kobj_l3_tbl;
+static struct lt_pid_tbl pid_tbl; 
 
 /**
  * tbl_get_l1_entry() --- get the l1 entry
@@ -329,8 +330,18 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 	return 0;
 }
 
+void plt_insert(struct pid_obj pobj)
+{
+	// Insert into the PID Table based on the Key of the Object
+	pid_tbl.pid_obj_list[pobj.key] = pobj;
+}
+
+
 void __init lt_init(void)
 {
 	/* Zero the page dir contents */
 	memset(&kobj_l3_tbl, 0, sizeof(kobj_l3_tbl));
+	// Zero Out the Contents of the PID Table
+	memset(&pid_tbl, 0, sizeof(pid_tbl));
+
 }

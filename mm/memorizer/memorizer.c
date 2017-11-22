@@ -1823,7 +1823,8 @@ struct workqueue_struct *wq;
 /* 2^32 = 4.29 GB */
 /* number of entries at 2^5 / entry 2^25 ~~ 1 GB */
 //const size_t num_entries_perwq = 2^31;
-#define num_entries_perwq (_AC(1,UL) << 31)
+#define num_entries_perwq (_AC(1,UL) << 28)
+
 struct event_list_wq_data {
     struct work_struct work;
     struct memorizer_kernel_event data[num_entries_perwq];

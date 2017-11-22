@@ -332,6 +332,9 @@ DEFINE_RWLOCK(active_kobj_rbtree_spinlock);
 /* RW Spinlock for access to freed kobject list */
 DEFINE_RWLOCK(object_list_spinlock);
 
+/* System wide Spinlock for the aggregating thread so nothing else interrupts */
+DEFINE_RWLOCK(aggregator_spinlock);
+
 /* mask to apply to memorizer allocations TODO: verify the list */
 #define gfp_memorizer_mask(gfp)	(((gfp) & (		\
 					 | GFP_ATOMIC		\
@@ -1506,8 +1509,8 @@ void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
 {
 	atomic_long_inc(&stats_num_page_allocs);
 	//__memorizer_kmalloc(call_site, page_address(page),
-			    //(uintptr_t) (PAGE_SIZE << order),
-			    //(uintptr_t) (PAGE_SIZE << order), 0);
+	//		    (uintptr_t) (PAGE_SIZE << order),
+	//		    (uintptr_t) (PAGE_SIZE << order), 0);
 }
 
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
@@ -1819,14 +1822,14 @@ struct workqueue_struct *wq;
 
 /* 2^32 = 4.29 GB */
 /* number of entries at 2^5 / entry 2^25 ~~ 1 GB */
-//const size_t num_entries_perwq = 2^27;
-#define num_entries_perwq (_AC(1,UL) << 27)
+//const size_t num_entries_perwq = 2^31;
+#define num_entries_perwq (_AC(1,UL) << 31)
 struct event_list_wq_data {
     struct work_struct work;
     struct memorizer_kernel_event data[num_entries_perwq];
 };
 
-#define num_queues 16 
+#define num_queues 2 
 size_t wq_index = 0;
 size_t wq_selector = 0;
 struct event_list_wq_data * mem_events_wq_data[num_queues];
@@ -1834,7 +1837,9 @@ struct event_list_wq_data * mem_events_wq_data[num_queues];
 static void
 mem_events_workhandler(struct work_struct *work)
 {
-    int i;
+
+    __memorizer_enter();
+    unsigned long i;
     unsigned long flags;
     bool old_access, old_enabled;
     
@@ -1846,20 +1851,25 @@ mem_events_workhandler(struct work_struct *work)
     memorizer_enabled = false;
     memorizer_log_access = false;
 
+    //spin_lock_irqsave(&aggregator_spinlock,flags);
     gfp_t gfp_flags = GFP_ATOMIC;
     struct memorizer_kobj *kobj;
     struct memorizer_kernel_event *mke;
 
-	__memorizer_enter();
 
     struct event_list_wq_data * data = 
                     container_of(work,struct event_list_wq_data, work);
 
     pr_info("processing workqueue %d\n", wq_selector);
 
+    local_irq_save(flags);
     /* add the magic consumer */
     for(i=0;i<num_entries_perwq;i++)
     {
+	//if(i%10000==0)
+	//{
+	//	pr_info("Still Chugging %d\n", i);
+	//}
         struct memorizer_kernel_event *mke = &data->data[i];
         switch(mke->event_type)
         {
@@ -1898,15 +1908,16 @@ mem_events_workhandler(struct work_struct *work)
         }
         data->data[i].event_type = Memorizer_NULL;
     }
+    //spin_lock_irqrestore(&aggregator_spinlock, flags);
 
     pr_info("Finished aggregating event queue.\n");
 
     // Restoring the old configuration after aggregation
     memorizer_enabled = old_enabled;
     memorizer_log_access = old_access;
-    /* set first entry to Memorizer_NULL for queue selection check */
+    // set first entry to Memorizer_NULL for queue selection check */
     data->data[0].event_type = Memorizer_NULL;
-
+    local_irq_restore(flags);
 	__memorizer_exit();
 }
 
@@ -1934,7 +1945,7 @@ void switch_to_next_work_queue(void)
     if(mem_events_wq_data[ch_swp_new]->data[0].event_type !=
             Memorizer_NULL) 
     {
-        panic("memorizer: tried to switch to non-empty queue\n");
+              panic("memorizer: tried to switch to non-empty queue\n");
     }
     wq_selector = ch_swp_new;
     wq_index = 0;

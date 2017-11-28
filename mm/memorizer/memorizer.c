@@ -1823,7 +1823,7 @@ struct workqueue_struct *wq;
 /* 2^32 = 4.29 GB */
 /* number of entries at 2^5 / entry 2^25 ~~ 1 GB */
 //const size_t num_entries_perwq = 2^31;
-#define num_entries_perwq (_AC(1,UL) << 28)
+#define num_entries_perwq (_AC(1,UL) << 26)
 
 struct event_list_wq_data {
     struct work_struct work;
@@ -1943,11 +1943,11 @@ void switch_to_next_work_queue(void)
     queue_work(wq, &(mem_events_wq_data[wq_selector]->work));
 
     /* check to see if the new queue is empty */
-    if(mem_events_wq_data[ch_swp_new]->data[0].event_type !=
-            Memorizer_NULL) 
-    {
-              panic("memorizer: tried to switch to non-empty queue\n");
-    }
+    //if(mem_events_wq_data[ch_swp_new]->data[0].event_type !=
+    //        Memorizer_NULL) 
+    //{
+    //          panic("memorizer: tried to switch to non-empty queue\n");
+    //}
     wq_selector = ch_swp_new;
     wq_index = 0;
 }

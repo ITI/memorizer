@@ -8,7 +8,9 @@ The init function sets up the data structures to be used for keeping track of th
 # Memorizer Hooks
 The memorizer uses hooks to track events within the kernel. 
 Allocs and Frees are hooked by adding function hooks into the individual allocators, present of slub.c (We're only concerned about slub for now since that what most of the current systems use, although extending it to other allocators (SLAB and SLOB) should be trivial.
-Loads and Stores(Accesses) are tracked by using KASAN's instrumentation for Loads and Stores. It instruments __asan_load*(addr), and __asan_load*(addr) at kernel compilation. 
+Loads and Stores(Accesses) are tracked by using KASAN's instrumentation for Loads and Stores. It instruments __asan_load*(addr), and __asan_load*(addr) at the time of kernel compilation.
+
+The following table gives a summary of all the Hooks in Memorizer(Needs Revising): 
 
 Hook | Type | Location | Recording Function | Description
 --- | --- | --- | --- | ---
@@ -23,6 +25,7 @@ kfree() | Function Call | slub.c | memorizer_free_kobj() | Records the kfree()
 
 # CAPMAP 
 The memorizer records event data and outputs it in the form of a CAPMAP. A CAPMAP has two types of entries:
+
 ## Alloc/Free Information
 These are denoted by non indented lines. Each line represents a kernel object and the information recorded is as follows:
 lloc IP
@@ -66,7 +69,6 @@ Disabling access logging
 ```
 echo 0 > memorizer_log_access
 ```
-
 
 ## kmap
 The CAPMAP generated can be printed out by reading the kmap file present in the directory. This is similar in design to the trace file in ftrace. A callback has been implemented in the kernel that prints out the kmap to the stdio. The CAPMAP can be saved to the file as follows:

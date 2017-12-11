@@ -76,6 +76,6 @@ The CAPMAP generated can be printed out by reading the kmap file present in the 
 cat kmap > <path_to_file>
 ```
 
-The rest of the features can be controlled the same way and their names are self explanatory and the commands are therefore omitted for brevity.
+The rest of the features can be controlled the same way and their names are self explanatory. The commands are therefore omitted for brevity.
 
 

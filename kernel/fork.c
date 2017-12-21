@@ -76,6 +76,7 @@
 #include <linux/compiler.h>
 #include <linux/sysctl.h>
 #include <linux/kcov.h>
+#include <linux/memorizer.h>
 
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
@@ -1979,6 +1980,9 @@ long _do_fork(unsigned long clone_flags,
 	} else {
 		nr = PTR_ERR(p);
 	}
+
+	//memorizer_fork(p,nr);
+
 	return nr;
 }
 

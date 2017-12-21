@@ -81,6 +81,13 @@ void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr);
 void memorizer_register_global(const void *ptr, size_t size);
 
+
+void memorizer_fork(struct task_struct *p, long nr);
+
+void switchBuffer(void);
+
+
+
 /* Temporary Debug and test code */
 int __memorizer_get_opsx(void);
 int __memorizer_get_allocs(void);
@@ -102,6 +109,10 @@ static inline void memorizer_kmem_cache_alloc(unsigned long call_site, const voi
 static inline void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int node) {}
 static inline void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr) {}
 static inline void memorizer_register_global(const void *ptr, size_t size) {}
+
+static inline void memorizer_fork(struct task_struct *p, long nr) {}
+=======
+void switchBuffer() {}
 
 #endif /* CONFIG_MEMORIZER */
 

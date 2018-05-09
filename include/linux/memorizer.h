@@ -109,10 +109,8 @@ static inline void memorizer_kmem_cache_alloc(unsigned long call_site, const voi
 static inline void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int node) {}
 static inline void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr) {}
 static inline void memorizer_register_global(const void *ptr, size_t size) {}
-
 static inline void memorizer_fork(struct task_struct *p, long nr) {}
-=======
-void switchBuffer() {}
+static inline void switchBuffer(void) {}
 
 #endif /* CONFIG_MEMORIZER */
 

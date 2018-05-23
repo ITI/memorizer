@@ -131,13 +131,15 @@
 
 #define MEMORIZER_STATS		1
 
+#define INLINE_EVENT_PARSE  0
+
 //==-- Prototype Declarations ---------------------------------------------==//
 static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 							   struct rb_root *
 							   kobj_rbtree_root);
-void __always_inline add_to_wq(uintptr_t addr, size_t size, enum AccessType
+void __always_inline wq_push(uintptr_t addr, size_t size, enum AccessType
         access_type, uintptr_t ip, char * tsk_name);
-static inline struct memorizer_kernel_event * get_pointer_to_wq_entry(void);
+static inline struct memorizer_kernel_event * wq_top(void);
 void __drain_active_work_queue(void);
 void switch_to_next_work_queue(void);
 //==-- Data types and structs for building maps ---------------------------==//
@@ -175,16 +177,10 @@ static bool buff_init = false;
 static unsigned int curBuff = 0;
 static char *buffList[NB];
 
-
 static dev_t *dev1;
 static dev_t *dev2;
 static struct cdev *cd1;
 static struct cdev *cd2;
-
-
-
-/* Types for events */
-//enum AccessType {Memorizer_READ=0,Memorizer_WRITE};
 
 /**
  * struct memorizer_mem_access - structure to capture all memory related events
@@ -235,34 +231,21 @@ struct mem_access_worklists {
 	 uint64_t reads;
  };
 
-
-
 /*
  * switchBuffer - switches the the buffer being written to, when the buffer is full
  */
 void __always_inline switchBuffer()
 {	
-	//pr_info("Switching to Buffer %d\n",curBuff);
-
-
 	buff_end = (char *)buffList[curBuff] + ML*4096-1;
 	buff_write_end = (char *)buffList[curBuff];
-	
 	buff_fill = buff_write_end;
 	buff_write_end = buff_write_end + 1;
 	buff_mutex = buff_write_end;
 	buff_write_end = buff_write_end + 1;
-		
 	buff_free_size = (unsigned int *)buff_write_end;
 	buff_write_end = buff_write_end + sizeof(unsigned int);
-	
 	buff_start = buff_write_end;
-	
-
 }
-
-
-
 
 /**
  * struct code_region - simple struct to capture begin and end of a code region
@@ -845,10 +828,9 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 #endif
 	
 	__memorizer_enter();
-
     local_irq_save(flags);
 
-    add_to_wq(addr, size, write, ip, 0);
+    wq_push(addr, size, write, ip, 0);
 
 #if 0
 	if(buff_init)
@@ -895,8 +877,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	}
 	//}
 #endif
-local_irq_restore(flags);
-
+    local_irq_restore(flags);
 	__memorizer_exit();
 }
 
@@ -908,10 +889,13 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 		atomic_long_inc(&stats_num_allocs_while_disabled);
 		return;
 	}
+	
+    if(unlikely(in_memorizer()))
+        return;
 
 	__memorizer_enter();
     
-    struct memorizer_kernel_event * evtptr = get_pointer_to_wq_entry();
+    struct memorizer_kernel_event * evtptr = wq_top();
     evtptr->event_type = Memorizer_Fork;
 
     local_irq_save(flags);
@@ -931,7 +915,7 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
          */
         strncpy(evtptr->data.comm, p->comm, sizeof(evtptr->data.comm));
     }
-    add_to_wq(0,0,Memorizer_Fork,0,p->comm);
+    wq_push(0,0,Memorizer_Fork,0,p->comm);
 
 
     local_irq_restore(flags);
@@ -1275,9 +1259,12 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	struct memorizer_kobj *kobj;
 	unsigned long flags;
 
+    if(unlikely(in_memorizer()))
+        return;
+
 	__memorizer_enter();
 
-    add_to_wq(kobj_ptr, 0, Memorizer_Mem_Free, call_site, 0);
+    wq_push(kobj_ptr, 0, Memorizer_Mem_Free, call_site, 0);
 
 #if 0
 	if(buff_init)
@@ -1372,7 +1359,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
         pid = current->pid;
     }
 #endif 
-    add_to_wq(ptr, bytes_alloc, Memorizer_Mem_Alloc, call_site, current->comm);
+    wq_push(ptr, bytes_alloc, Memorizer_Mem_Alloc, call_site, current->comm);
 
 	//kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
 	//if(!kobj){
@@ -1818,12 +1805,11 @@ static int create_buffers(void)
 	return 1;
 }
 
-struct workqueue_struct *wq;
-
 /* 2^32 = 4.29 GB */
 /* number of entries at 2^5 / entry 2^25 ~~ 1 GB */
 //const size_t num_entries_perwq = 2^31;
-#define num_entries_perwq (_AC(1,UL) << 26)
+//#define num_entries_perwq (_AC(1,UL) << 26)
+#define num_entries_perwq (_AC(1,UL) << 22)
 
 struct event_list_wq_data {
     struct work_struct work;
@@ -1833,15 +1819,21 @@ struct event_list_wq_data {
 #define num_queues 2 
 size_t wq_index = 0;
 size_t wq_selector = 0;
-struct event_list_wq_data * mem_events_wq_data[num_queues];
+size_t wq_process_me = 0;
+struct event_list_wq_data mem_events_wq_data[num_queues];
 
+/* 
+ * parse_events() - take the event list @data and parse to object cmap
+ *
+ * Note this function makes no assumptions about the calling context. This
+ * function is not an external entry point, and therefore expects it's caller
+ * to manage "in_memorizer" as well as any other global memorizer based locking
+ * required. 
+ */
 static void
-mem_events_workhandler(struct work_struct *work)
+parse_events(struct event_list_wq_data * data)
 {
-
-    __memorizer_enter();
-    unsigned long i;
-    unsigned long flags;
+    unsigned long i, flags;
     bool old_access, old_enabled;
     
     // Saving the old config before disabling the memorizer for aggregation
@@ -1856,22 +1848,13 @@ mem_events_workhandler(struct work_struct *work)
     gfp_t gfp_flags = GFP_ATOMIC;
     struct memorizer_kobj *kobj;
     struct memorizer_kernel_event *mke;
+    struct memorizer_kernel_event *done = &data->data[num_entries_perwq];
 
+    //pr_info("processing workqueue %d\n", wq_selector);
 
-    struct event_list_wq_data * data = 
-                    container_of(work,struct event_list_wq_data, work);
-
-    pr_info("processing workqueue %d\n", wq_selector);
-
-    local_irq_save(flags);
     /* add the magic consumer */
-    for(i=0;i<num_entries_perwq;i++)
+    for(mke = &data->data[0]; mke!=done; mke++)
     {
-	//if(i%10000==0)
-	//{
-	//	pr_info("Still Chugging %d\n", i);
-	//}
-        struct memorizer_kernel_event *mke = &data->data[i];
         switch(mke->event_type)
         {
         case Memorizer_READ: find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr, 
@@ -1883,15 +1866,18 @@ mem_events_workhandler(struct work_struct *work)
 					     (size_t) mke->event_type); 
 			     			break;
         case Memorizer_Mem_Alloc:
-            kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
-            if(!kobj){ pr_info("Cannot allocate a memorizer_kobj structure\n"); }
+            kobj = kmem_cache_alloc(kobj_cache, gfp_flags);
+            if(!kobj){ 
+                pr_info("Cannot allocate a memorizer_kobj structure\n"); 
+            }
             init_kobj(kobj, (uintptr_t) mke->data.et.src_va_ptr,
                     (uintptr_t) mke->data.et.va_ptr, mke->data.et.event_size); 
             /* Grab the writer lock for the object_list */
-            write_lock_irqsave(&object_list_spinlock, flags);
+            // We are single threaded here don't need to lock
+            //write_lock_irqsave(&object_list_spinlock, flags);
             lt_insert_kobj(kobj);
             list_add_tail(&kobj->object_list, &object_list);
-            write_unlock_irqrestore(&object_list_spinlock, flags);
+            //write_unlock_irqrestore(&object_list_spinlock, flags);
             break;
         case Memorizer_Mem_Free:
             __memorizer_free_kobj((uintptr_t) mke->data.et.src_va_ptr,
@@ -1904,81 +1890,98 @@ mem_events_workhandler(struct work_struct *work)
             break;
         case Memorizer_NULL:
             break;
-        default:
-                pr_info("Handling default case for event dequeue");
+        //default:
+                //pr_info("Handling default case for event dequeue");
         }
         data->data[i].event_type = Memorizer_NULL;
     }
     //spin_lock_irqrestore(&aggregator_spinlock, flags);
 
-    pr_info("Finished aggregating event queue.\n");
+    //pr_info("Finished aggregating event queue.\n");
 
     // Restoring the old configuration after aggregation
     memorizer_enabled = old_enabled;
     memorizer_log_access = old_access;
     // set first entry to Memorizer_NULL for queue selection check */
     data->data[0].event_type = Memorizer_NULL;
+}
+
+struct workqueue_struct *wq;
+
+static void
+mem_events_workhandler(struct work_struct *work)
+{
+    unsigned long flags;
+	__memorizer_enter();
+    local_irq_save(flags);
+    parse_events(container_of(work,struct event_list_wq_data, work));
     local_irq_restore(flags);
 	__memorizer_exit();
 }
 
 /*
- * Switch the active work queue to the next one.
+ * Switch the active work queue to the next one and queue the work up.
  */
-size_t ch_swp_new = 0;
-void switch_to_next_work_queue(void)
+void 
+switch_to_next_work_queue(void)
 {
-    /* on last wq go back to 0 */
-    if(wq_selector == (num_queues - 1))
-    {
-        ch_swp_new = 0;
-    }
-    else
-    {
-        ch_swp_new = wq_selector + 1;
-    }
-
-    pr_info("Switching to buffer %u\n", ch_swp_new);
-
-    queue_work(wq, &(mem_events_wq_data[wq_selector]->work));
-
+    queue_work(wq, &(mem_events_wq_data[wq_selector].work));
+    wq_selector = (++wq_selector) % num_queues;
+    pr_info("Queueing work and Switching to buffer %u\n", wq_selector);
+    
     /* check to see if the new queue is empty */
-    //if(mem_events_wq_data[ch_swp_new]->data[0].event_type !=
-    //        Memorizer_NULL) 
-    //{
-    //          panic("memorizer: tried to switch to non-empty queue\n");
-    //}
-    wq_selector = ch_swp_new;
+    if(mem_events_wq_data[wq_selector].data[0].event_type !=
+            Memorizer_NULL) 
+    {
+        panic("memorizer: tried to switch to non-empty queue\n");
+    }
+
+    /* reset current top to 0 */
     wq_index = 0;
 }
     
+/* 
+ * wq_top() - return the next open slot in the active wq
+ */
 static inline struct memorizer_kernel_event * 
-get_pointer_to_wq_entry()
+wq_top(void)
 {
-    ++wq_index;
-
-    /* If we are at the end of the queue swap out and schedule work */
-    if(wq_index == num_entries_perwq-1)
-    {
-        switch_to_next_work_queue();
-    }
-    return &(mem_events_wq_data[wq_selector]->data[wq_index]);
+    return &(mem_events_wq_data[wq_selector].data[wq_index]);
 }
 
-void __always_inline add_to_wq(uintptr_t addr, size_t size, enum AccessType
+/* 
+ * wq_push() - add event to the workqueue
+ *
+ * @addr:       destination of operation
+ * @size:       size of the operation
+ * @AccessType: operation type
+ * @ip:         src address of hte instruction pointer
+ * @tsk_name:   if this is a fork add the task name
+ *
+ * This function moves the workqueue top in addition to adding
+ *
+ */
+void __always_inline wq_push(uintptr_t addr, size_t size, enum AccessType
         access_type, uintptr_t ip, char * tsk_name)
 {
-    struct memorizer_kernel_event * evtptr = get_pointer_to_wq_entry();
+    struct memorizer_kernel_event * evtptr = wq_top();
     evtptr->event_type = access_type;
     evtptr->pid = task_pid_nr(current);
 
     if(access_type < Memorizer_Fork) {
-	evtptr->data.et.src_va_ptr = ip;
-	evtptr->data.et.va_ptr = addr;
-	evtptr->data.et.event_size = size;
+        evtptr->data.et.src_va_ptr = ip;
+        evtptr->data.et.va_ptr = addr;
+        evtptr->data.et.event_size = size;
     }
     else {
-	strncpy(evtptr->data.comm, tsk_name, sizeof(evtptr->data.comm));
+        strncpy(evtptr->data.comm, tsk_name, sizeof(evtptr->data.comm));
+    }
+    
+    /* If we are at the end of the queue swap out and schedule work */
+    if(unlikely(wq_index == num_entries_perwq-1)) {
+        switch_to_next_work_queue();
+    } else {
+        ++wq_index;
     }
 }
 
@@ -2017,25 +2020,16 @@ static void init_mem_access_wls(void)
 #endif
     for(;i<num_queues;i++)
     {
-        /* Allocate the set of buffers */
-        mem_events_wq_data[i] = (struct event_list_wq_data *) 
-                        vmalloc(sizeof(struct event_list_wq_data));
-        if(!mem_events_wq_data[i])
-        {
-            pr_info("Could not allocate all the memory for the Memorizer Buffer");
-            panic("AHHHHH NO VMALLOC OF 4GB... get more memory fool!");
-        }
-
         /* initialize the event queue to NULL for properer ring buffer */
         struct memorizer_kernel_event * data = (struct memorizer_kernel_event
-                *)&(mem_events_wq_data[i]->data);
+                *)&(mem_events_wq_data[i].data);
         for(j=0;j<num_entries_perwq;j++)
         {
             data[j].event_type = Memorizer_NULL;
         }
 
         /* Setup the workqueue structures */
-        INIT_WORK(&mem_events_wq_data[i]->work, &mem_events_workhandler);
+        INIT_WORK(&mem_events_wq_data[i].work, &mem_events_workhandler);
     }
 }
 
@@ -2193,10 +2187,9 @@ static int memorizer_late_init(void)
 
 	switchBuffer();
 	*/
-	create_char_devs();
+//	create_char_devs();
 
 	//pr_info("%u",(*buff_free_size)*NB);
-
 
 	local_irq_save(flags);
 	memorizer_enabled = true;
@@ -2205,10 +2198,8 @@ static int memorizer_late_init(void)
 	local_irq_restore(flags);
 
 	pr_info("Memorizer initialized\n");
-
 	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
-
-
+	pr_info("Size of memorizer_kernel_event:%d\n",sizeof(struct memorizer_kernel_event));
 	print_stats();
 	//__memorizer_print_events(10);
 	//dump_object_list();

@@ -277,6 +277,12 @@ struct code_region crypto_code_region = {
 //DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls = {.selector = 0, .head = 0, .tail = 0 });
 DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 
+// memorizer atomic flag: when set it means we are operating in memorizer. The
+// point of the flag is so that if we use code outside of memorizer or an
+// interrupt occurs, it won't reenter and go down an infinite loop of
+// recursion.
+DEFINE_PER_CPU(int, recursive_depth = 0);
+
 /* flag to keep track of whether or not to track writes */
 //static bool memorizer_enabled = false;
 static bool memorizer_enabled = false;
@@ -338,14 +344,20 @@ DEFINE_RWLOCK(aggregator_spinlock);
  * track legitimate access of some types, but these are caused by memorizer and
  * we want to ignore them. 
  */
-static inline void __memorizer_enter(void)
+static inline int __memorizer_enter(void)
 {
-	++current->memorizer_recursion;
+	//++current->memorizer_recursion;
+    int depth = ++get_cpu_var(recursive_depth);
+    put_cpu_var(recursive_depth);
+    return depth;
 }
 
-static inline void __memorizer_exit(void)
+static inline int __memorizer_exit(void)
 {
-	--current->memorizer_recursion;
+	//--current->memorizer_recursion;
+    int depth = --get_cpu_var(recursive_depth);
+    put_cpu_var(recursive_depth);
+    return  depth;
 }
 
 /**
@@ -353,7 +365,11 @@ static inline void __memorizer_exit(void)
  */
 static inline bool in_memorizer(void)
 {
-	return current->memorizer_recursion;
+
+    int in = get_cpu_var(recursive_depth);
+    put_cpu_var(recursive_depth);
+    return in;
+	//return current->memorizer_recursion;
 }
 
 //==-- Debug and Stats Output Code --==//

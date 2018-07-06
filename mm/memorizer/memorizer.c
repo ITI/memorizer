@@ -283,14 +283,44 @@ DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 // recursion.
 DEFINE_PER_CPU(int, recursive_depth = 0);
 
-/* flag to keep track of whether or not to track writes */
-//static bool memorizer_enabled = false;
+/* 
+ * Flags to keep track of whether or not to track writes 
+ *
+ * Make this and the next open for early boot param manipulation via bootloader
+ * kernel args: root=/hda1 memorizer_enabled=[yes|no] 
+ */
 static bool memorizer_enabled = false;
-//module_param(memorizer_enabled, bool, 0644);
+static bool memorizer_enabled_boot = true;
+static int __init early_memorizer_enabled(char *arg){
+    if(!arg)
+        return 0;
+    if(strcmp(arg,"yes") == 0) {
+        pr_info("Enabling boot alloc loggin\n");
+        memorizer_enabled_boot = true;
+    }
+    if(strcmp(arg,"no") == 0) {
+        pr_info("Disable boot alloc logging\n");
+        memorizer_enabled_boot = false;
+    }
+}
+early_param("memorizer_enabled_boot", early_memorizer_enabled);
 
 /* flag enable/disable memory access logging */
 static bool memorizer_log_access = false;
-//module_param(memorizer_log_access, bool, 0644);
+static bool mem_log_boot = false;
+static int __init early_mem_log_boot(char *arg){
+    if(!arg)
+        return 0;
+    if(strcmp(arg,"yes") == 0) {
+        pr_info("Enabling boot accessing logging\n");
+        mem_log_boot= true;
+    }
+    if(strcmp(arg,"no") == 0) {
+        pr_info("Disabling boot accessing logging\n");
+        mem_log_boot= false;
+    }
+}
+early_param("mem_log_boot", early_mem_log_boot);
 
 /* flag enable/disable printing of live objects */
 static bool print_live_obj = false;
@@ -1857,8 +1887,8 @@ parse_events(struct event_list_wq_data * data)
     old_access = memorizer_log_access;
 
     // Disabling the memorizer for aggregation
-    memorizer_enabled = false;
-    memorizer_log_access = false;
+    //memorizer_enabled = false;
+    //memorizer_log_access = false;
 
     //spin_lock_irqsave(&aggregator_spinlock,flags);
     gfp_t gfp_flags = GFP_ATOMIC;
@@ -1916,8 +1946,9 @@ parse_events(struct event_list_wq_data * data)
     //pr_info("Finished aggregating event queue.\n");
 
     // Restoring the old configuration after aggregation
-    memorizer_enabled = old_enabled;
-    memorizer_log_access = old_access;
+    //memorizer_enabled = old_enabled;
+    //memorizer_log_access = old_access;
+    
     // set first entry to Memorizer_NULL for queue selection check */
     data->data[0].event_type = Memorizer_NULL;
 }
@@ -2133,8 +2164,16 @@ void __init memorizer_init(void)
 
 	lt_init();
 	local_irq_save(flags);
-	memorizer_enabled = true;
-	memorizer_log_access = false;
+    if(memorizer_enabled_boot){
+        memorizer_enabled = true;
+    } else {
+        memorizer_enabled = false;
+    }
+    if(mem_log_boot){
+        memorizer_log_access = true;
+    } else {
+        memorizer_log_access = false;
+    }
 	print_live_obj = false;
 	local_irq_restore(flags);
 	__memorizer_exit();
@@ -2155,72 +2194,56 @@ static int memorizer_late_init(void)
 	dentryMemDir = debugfs_create_dir("memorizer", NULL);
 	if (!dentryMemDir)
 		pr_warning("Failed to create debugfs memorizer dir\n");
+
 	dentry = debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
 				     NULL, &kmap_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs kmap file\n");
+
 	dentry = debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
 				     NULL, &show_stats_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs show stats\n");
+    
 	dentry = debugfs_create_file("clear_object_list", S_IWUGO, dentryMemDir,
 				     NULL, &clear_object_list_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs clear_object_list\n");
+
 	dentry = debugfs_create_file("clear_printed_list", S_IWUGO, dentryMemDir,
 				     NULL, &clear_printed_list_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs clear_printed_list\n");
+
 	dentry = debugfs_create_bool("memorizer_enabled", S_IRUGO|S_IWUGO,
 				     dentryMemDir, &memorizer_enabled);
 	if (!dentry)
 		pr_warning("Failed to create debugfs memorizer_enabled\n");
+
 	dentry = debugfs_create_bool("memorizer_log_access", S_IRUGO|S_IWUGO,
 				     dentryMemDir, &memorizer_log_access);
 	if (!dentry)
 		pr_warning("Failed to create debugfs memorizer_log_access\n");
+
 	dentry = debugfs_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
 				     dentryMemDir, &print_live_obj);
 	if (!dentry)
 		pr_warning("Failed to create debugfs print_live_obj\n");
 	
-
 	dentry = debugfs_create_file("drain_active_work_queue", S_IWUGO, dentryMemDir,
 				     NULL, &drain_active_work_queue_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs drain_active_work_queue\n");
-
 
 	dentry = debugfs_create_bool("test_bool_object", S_IRUGO | S_IWUGO,
 				     dentryMemDir, &test_obj);
 	if (!dentry)
 		pr_warning("Failed to create test bool object\n");
 
-	/*if(create_buffers())
-		pr_info("Allocated all the buffers");
-	else
-		pr_info("Couldn't allocate the buffers");
-
-	switchBuffer();
-	*/
-//	create_char_devs();
-
-	//pr_info("%u",(*buff_free_size)*NB);
-
-	local_irq_save(flags);
-	memorizer_enabled = true;
-	memorizer_log_access = false;
-	print_live_obj = false;
-	local_irq_restore(flags);
-
 	pr_info("Memorizer initialized\n");
 	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
 	pr_info("Size of memorizer_kernel_event:%d\n",sizeof(struct memorizer_kernel_event));
 	print_stats();
-	//__memorizer_print_events(10);
-	//dump_object_list();
-	//__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
-	//print_pdf_table();
 
 	__memorizer_exit();
 

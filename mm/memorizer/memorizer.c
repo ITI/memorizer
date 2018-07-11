@@ -131,7 +131,8 @@
 
 #define MEMORIZER_STATS		1
 
-#define INLINE_EVENT_PARSE  0
+#define INLINE_EVENT_PARSE  1
+#define WORKQUEUES          0
 
 //==-- Prototype Declarations ---------------------------------------------==//
 static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
@@ -270,8 +271,6 @@ struct code_region crypto_code_region = {
 	.b = 0xffffffff814a3000,
 	.e = 0xffffffff814cee00
 };
-
-
 
 /* TODO make this dynamically allocated based upon free memory */
 //DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls = {.selector = 0, .head = 0, .tail = 0 });
@@ -412,6 +411,7 @@ static atomic_long_t stats_num_page_allocs = ATOMIC_INIT(0);
 static atomic_long_t stats_num_globals = ATOMIC_INIT(0);
 static atomic_long_t stats_num_induced_allocs = ATOMIC_INIT(0);
 static atomic_long_t stats_live_objs = ATOMIC_INIT(0);
+static atomic_long_t now = ATOMIC_INIT(0);
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
@@ -735,6 +735,11 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
  * update_kobj_access() - find and update the object information
  * @memorizer_mem_access:	The access to account for
  *
+ * @src_va_ptr: PC for source of operation
+ * @va_ptr: the virtual address being written to
+ * @pid: pid of access
+ * @access_type: type of access (read/write)
+ *
  * Find the object associated with this memory write, search for the src ip in
  * the access structures, incr if found or alloc and add new if not.
  *
@@ -742,7 +747,8 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
  * already operating with interrupts off and preemption disabled, and thus we
  * cannot sleep.
  */
-static inline int find_and_update_kobj_access(uintptr_t src_va_ptr, uintptr_t va_ptr, pid_t pid, size_t access_type)
+static inline int find_and_update_kobj_access(uintptr_t src_va_ptr, 
+        uintptr_t va_ptr, pid_t pid, size_t access_type) 
 {
 	struct memorizer_kobj *kobj = NULL;
 	struct access_from_counts *afc = NULL;
@@ -872,11 +878,18 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	if(in_memorizer())
 		return;
 #endif
-	
-	__memorizer_enter();
-    local_irq_save(flags);
 
-    wq_push(addr, size, write, ip, 0);
+
+	__memorizer_enter();
+
+#if INLINE_EVENT_PARSE 
+    local_irq_save(flags);
+    find_and_update_kobj_access(ip,addr,-1,write); 
+#else
+    //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
+    //wq_push(addr, size, write, ip, 0);
+#endif
+    
 
 #if 0
 	if(buff_init)
@@ -961,7 +974,9 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
          */
         strncpy(evtptr->data.comm, p->comm, sizeof(evtptr->data.comm));
     }
-    wq_push(0,0,Memorizer_Fork,0,p->comm);
+    //wq_push(0,0,Memorizer_Fork,0,p->comm);
+    //trace_printk("%p->%s,%d,%c\n",p,p->comm,0,Memorizer_Mem_Free);
+    trace_printk("fork:%s,PID:%d\n",p->comm,nr);
 
 
     local_irq_restore(flags);
@@ -1245,7 +1260,8 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 }
 
 /**
- * memorizer_free_kobj - move the specified objec to free list
+ * __memorizer_free_kobj - move the specified objec to free list
+ *
  * @call_site:	Call site requesting the original free
  * @ptr:	Address of the object to be freed
  *
@@ -1263,7 +1279,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 
 	struct memorizer_kobj *kobj;
 	unsigned long flags;
-
+		
     /* find and remove the kobj from the lookup table and return the
      * kobj */
     kobj = lt_remove_kobj(kobj_ptr);
@@ -1310,7 +1326,9 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 
 	__memorizer_enter();
 
-    wq_push(kobj_ptr, 0, Memorizer_Mem_Free, call_site, 0);
+    //wq_push(kobj_ptr, 0, Memorizer_Mem_Free, call_site, 0);
+    //trace_printk("%p->%p,%d,%d\n",call_site,kobj_ptr,0,Memorizer_Mem_Free);
+    __memorizer_free_kobj(call_site, kobj_ptr);
 
 #if 0
 	if(buff_init)
@@ -1389,11 +1407,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		return;
 	}
 
-#if 0 // Prototype for filtering: static though so leave off
-	if(call_site < selinux.b || call_site >= crypto_code_region.e)
-		return;
-#endif
-
 	__memorizer_enter();
 
 #if 0
@@ -1404,17 +1417,26 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
     } else {
         pid = current->pid;
     }
-#endif 
+
+    /* workqueue style */
     wq_push(ptr, bytes_alloc, Memorizer_Mem_Alloc, call_site, current->comm);
 
-	//kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
-	//if(!kobj){
-	//	pr_info("Cannot allocate a memorizer_kobj structure\n");
-	//}
+    /* ftrace event queue style */
+    trace_printk("%p->%p,%d,%d\n",call_site,ptr,bytes_alloc,Memorizer_Mem_Alloc);
+#endif 
 
-	//init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
-	
+    /* inline parsing */
+	kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
+	if(!kobj){
+		pr_info("Cannot allocate a memorizer_kobj structure\n");
+	}
+	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
+    
 	/* Grab the writer lock for the object_list */
+    write_lock_irqsave(&object_list_spinlock, flags);
+    lt_insert_kobj(kobj);
+    list_add_tail(&kobj->object_list, &object_list);
+    write_unlock_irqrestore(&object_list_spinlock, flags);
 	
 #if 0
 	if(buff_init)
@@ -1504,9 +1526,8 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
 		return;
 	}
-	__memorizer_enter();
+
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
-	__memorizer_exit();
 }
 
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
@@ -1531,9 +1552,7 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
 		return;
 	}
-	__memorizer_enter();
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
-	__memorizer_exit();
 }
 
 
@@ -1556,10 +1575,8 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
 		return;
 	}
-	__memorizer_enter();
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)
 			       page_address(page));
-	__memorizer_exit();
 }
 
 void memorizer_register_global(const void *ptr, size_t size)
@@ -1641,7 +1658,7 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	}
 	kobj->printed = true;
 	/* Print object allocation info */
-	seq_printf(seq,"%p,%d,%p,%lu,%lu,%lu,%p\n",
+	seq_printf(seq,"%p,%d,%p,%lu,%lu,%lu,%p,%s\n",
 		   (void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
 		   kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
 		   kobj->free_ip, kobj->comm);
@@ -1853,9 +1870,13 @@ static int create_buffers(void)
 
 /* 2^32 = 4.29 GB */
 /* number of entries at 2^5 / entry 2^25 ~~ 1 GB */
-//const size_t num_entries_perwq = 2^31;
+//const size_t num_entries_perwq = 2^22;
 //#define num_entries_perwq (_AC(1,UL) << 26)
+#if INLINE_EVENT_PARSE == 0
 #define num_entries_perwq (_AC(1,UL) << 22)
+#else
+#define num_entries_perwq (_AC(1,UL) << 0)
+#endif
 
 struct event_list_wq_data {
     struct work_struct work;
@@ -1887,20 +1908,25 @@ parse_events(struct event_list_wq_data * data)
     old_access = memorizer_log_access;
 
     // Disabling the memorizer for aggregation
-    //memorizer_enabled = false;
-    //memorizer_log_access = false;
+    memorizer_enabled = false;
+    memorizer_log_access = false;
 
     //spin_lock_irqsave(&aggregator_spinlock,flags);
     gfp_t gfp_flags = GFP_ATOMIC;
     struct memorizer_kobj *kobj;
     struct memorizer_kernel_event *mke;
-    struct memorizer_kernel_event *done = &data->data[num_entries_perwq];
 
-    //pr_info("processing workqueue %d\n", wq_selector);
+    pr_info("processing workqueue %d\n", wq_selector);
 
-    /* add the magic consumer */
-    for(mke = &data->data[0]; mke!=done; mke++)
+    /* Process the event queue */
+    for(i = 0; i<num_entries_perwq; i++)
     {
+        mke = &data->data[i];
+#ifdef DEBUG > 5
+        if(i % (int)(num_entries_perwq*.5) == 0)
+            pr_cont("\rQueue Processing: %d/%d", i,num_entries_perwq);
+#endif
+
         switch(mke->event_type)
         {
         case Memorizer_READ: find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr, 
@@ -1939,18 +1965,18 @@ parse_events(struct event_list_wq_data * data)
         //default:
                 //pr_info("Handling default case for event dequeue");
         }
-        data->data[i].event_type = Memorizer_NULL;
+        mke->event_type = Memorizer_NULL;
     }
     //spin_lock_irqrestore(&aggregator_spinlock, flags);
 
     //pr_info("Finished aggregating event queue.\n");
 
     // Restoring the old configuration after aggregation
-    //memorizer_enabled = old_enabled;
-    //memorizer_log_access = old_access;
+    memorizer_enabled = old_enabled;
+    memorizer_log_access = old_access;
     
     // set first entry to Memorizer_NULL for queue selection check */
-    data->data[0].event_type = Memorizer_NULL;
+    //data->data[0].event_type = Memorizer_NULL;
 }
 
 struct workqueue_struct *wq;
@@ -1969,12 +1995,28 @@ mem_events_workhandler(struct work_struct *work)
 /*
  * Switch the active work queue to the next one and queue the work up.
  */
+bool work_deferred = false;
+size_t next_to_parse = 0;
 void 
 switch_to_next_work_queue(void)
 {
-    queue_work(wq, &(mem_events_wq_data[wq_selector].work));
+    size_t full = wq_selector;
     wq_selector = (++wq_selector) % num_queues;
-    pr_info("Queueing work and Switching to buffer %u\n", wq_selector);
+    pr_info("Queueing work and switching to buffer %u\n", wq_selector);
+
+#if WORKQUEUES == 1
+    queue_work(wq, &(mem_events_wq_data[full].work));
+#else // DEFER with check on irq contexts
+    unsigned long flags;
+	if (unlikely(in_irq()) || unlikely(in_softirq())) {
+        work_deferred = true;
+        next_to_parse = full;
+    } else {
+        local_irq_save(flags);
+        parse_events(&mem_events_wq_data[full]);
+        local_irq_restore(flags);
+    }
+#endif
     
     /* check to see if the new queue is empty */
     if(mem_events_wq_data[wq_selector].data[0].event_type !=
@@ -2002,7 +2044,7 @@ wq_top(void)
  * @addr:       destination of operation
  * @size:       size of the operation
  * @AccessType: operation type
- * @ip:         src address of hte instruction pointer
+ * @ip:         src address of the instruction pointer
  * @tsk_name:   if this is a fork add the task name
  *
  * This function moves the workqueue top in addition to adding
@@ -2030,6 +2072,23 @@ void __always_inline wq_push(uintptr_t addr, size_t size, enum AccessType
     } else {
         ++wq_index;
     }
+
+    /* 
+     * This is an approach to avoid using workqueues and drain the queue the
+     * first time we are in process context.
+     *
+     * TODO: There is a bug: our consumer is too slow and gets caught on some
+     * workloads: so we overflow
+     */
+    if(unlikely(work_deferred)){
+        if (!(in_irq()) || !(in_softirq())) {
+            unsigned long flags;
+            local_irq_save(flags);
+            parse_events(&mem_events_wq_data[next_to_parse]);
+            local_irq_restore(flags);
+            work_deferred = false;
+        }
+    }
 }
 
 void __drain_active_work_queue()
@@ -2055,6 +2114,7 @@ wq_exit(void)
 static void init_mem_access_wls(void)
 {
     int i, j = 0;
+    //struct memorizer_kernel_event * data = NULL;
 #if 0
 	struct mem_access_worklists * wls;
 	size_t cpu;
@@ -2068,15 +2128,15 @@ static void init_mem_access_wls(void)
     for(;i<num_queues;i++)
     {
         /* initialize the event queue to NULL for properer ring buffer */
-        struct memorizer_kernel_event * data = (struct memorizer_kernel_event
-                *)&(mem_events_wq_data[i].data);
         for(j=0;j<num_entries_perwq;j++)
         {
-            data[j].event_type = Memorizer_NULL;
+            mem_events_wq_data[i].data[j].event_type = Memorizer_NULL;
         }
 
+#if WORKQUEUES == 1
         /* Setup the workqueue structures */
         INIT_WORK(&mem_events_wq_data[i].work, &mem_events_workhandler);
+#endif
     }
 }
 
@@ -2157,12 +2217,17 @@ void __init memorizer_init(void)
 	unsigned long flags;
 
 	__memorizer_enter();
+#if INLINE_EVENT_PARSE == 0
 	init_mem_access_wls();
+#endif
 
+    /* create kmem caches for memorizer data */
 	create_obj_kmem_cache();
 	create_access_counts_kmem_cache();
 
+    /* initialize the lookup table */
 	lt_init();
+
 	local_irq_save(flags);
     if(memorizer_enabled_boot){
         memorizer_enabled = true;

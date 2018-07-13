@@ -42,6 +42,7 @@
 #include <linux/fs.h>
 #include <linux/trace.h>
 #include <linux/sched/rt.h>
+#include <linux/memorizer.h>
 
 #include "trace.h"
 #include "trace_output.h"
@@ -2358,8 +2359,8 @@ trace_function(struct trace_array *tr,
 	struct ring_buffer *buffer = tr->trace_buffer.buffer;
 	struct ring_buffer_event *event;
 	struct ftrace_entry *entry;
-
-	event = __trace_buffer_lock_reserve(buffer, TRACE_FN, sizeof(*entry),
+	
+    event = __trace_buffer_lock_reserve(buffer, TRACE_FN, sizeof(*entry),
 					    flags, pc);
 	if (!event)
 		return;

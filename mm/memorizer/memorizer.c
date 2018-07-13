@@ -119,9 +119,10 @@
 #include <asm-generic/bug.h>
 #include <linux/cdev.h>
 #include <linux/vmalloc.h>
-#include "kobj_metadata.h"
 #include <linux/fs.h>
+#include "kobj_metadata.h"
 #include "event_structs.h" 
+#include "FunctionHashTable.h"
 #include <linux/sched.h>
 #include <linux/bootmem.h>
 
@@ -341,6 +342,9 @@ early_param("cfg_log_boot", early_cfg_log_boot);
 /* flag enable/disable printing of live objects */
 static bool print_live_obj = false;
 static bool test_obj = false;
+
+/* Function has table */
+struct FunctionHashTable * cfgtbl;
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
@@ -1847,6 +1851,49 @@ static const struct file_operations clear_printed_list_fops = {
 	.write		= clear_printed_list_write,
 };
 
+static ssize_t cfgmap_write(struct file *file, const char __user
+				   *user_buf, size_t size, loff_t *ppos)
+{
+    cfgmap_clear(cfgtbl);
+	*ppos += size;
+	return size;
+}
+
+//static ssize_t cfgmap_read(struct file *file, const char __user *user_buf,
+        //size_t size, loff_t *ppos)
+static ssize_t cfgmap_read(struct file *fp, char __user *user_buffer, size_t
+        size, loff_t *ppos)
+{
+    console_print(cfgtbl);
+	*ppos += size;
+	return size;
+}
+
+static int cfgmap_seq_show(struct seq_file *seq, void *v)
+{
+    struct EdgeBucket * b;    
+    int index;
+    for (index = 0; index < cfgtbl -> number_buckets; index++){
+        b = cfgtbl -> buckets[index];
+        while (b != NULL){
+            seq_printf(seq,"%lx %lx %ld\n", b -> from, b -> to, b -> count);
+            b = b -> next;
+        }
+    }  
+}
+
+static int cfgmap_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, &cfgmap_seq_show, NULL);
+}
+
+static const struct file_operations cfgmap_fops = {
+	.owner		= THIS_MODULE,
+	.write		= cfgmap_write,
+	.open		= cfgmap_open,
+	.read		= seq_read,
+};
+
 static int stats_seq_show(struct seq_file *seq, void *v)
 {
 	seq_printf(seq,"------- Memory Accesses -------\n");
@@ -2289,6 +2336,10 @@ void __init memorizer_init(void)
     /* initialize the lookup table */
 	lt_init();
 
+    /* initialize the table tracking CFG edges */
+    func_hash_tbl_init();
+    cfgtbl = create_function_hashtable();
+
 	local_irq_save(flags);
     if(memorizer_enabled_boot){
         memorizer_enabled = true;
@@ -2345,6 +2396,11 @@ static int memorizer_late_init(void)
 				     NULL, &clear_printed_list_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs clear_printed_list\n");
+	
+    dentry = debugfs_create_file("cfgmap", S_IRUGO|S_IWUGO, dentryMemDir,
+				     NULL, &cfgmap_fops);
+	if (!dentry)
+		pr_warning("Failed to create debugfs cfgmap\n");
 
 	dentry = debugfs_create_bool("memorizer_enabled", S_IRUGO|S_IWUGO,
 				     dentryMemDir, &memorizer_enabled);

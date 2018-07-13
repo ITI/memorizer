@@ -4,11 +4,9 @@
 #ifndef FUNCTIONHASHTABLE_H
 #define FUNCTIONHASHTABLE_H
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
+#include <linux/types.h>
 
-#define START_SIZE 1024 * 1024
+#define NUM_BUCKETS (_AC(1,UL) << 19)
 
 struct EdgeBucket {
   uintptr_t from, to;
@@ -23,14 +21,20 @@ struct FunctionHashTable {
   int stored_items;
 };
 
+// Initialization for the table data structures
+void func_hash_tbl_init(void);
+
 // Create a new FunctionHashTable
-struct FunctionHashTable * create_function_hashtable();
+struct FunctionHashTable * create_function_hashtable(void);
 
 // Update the counts for an edge, adding to table if not already there
-void update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t to);
+void cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t to);
 
-// Write the found edges to a file
-void write_to_file(struct FunctionHashTable * ht, FILE * fd);
+// Clear entries and reset
+void cfgmap_clear(struct FunctionHashTable * ht);
+
+// Print directly to console TODO: this is just temp hack for check
+void console_print(struct FunctionHashTable * ht);
 
 // Release memory
 void destroy_function_hashtable(struct FunctionHashTable * ht);

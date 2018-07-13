@@ -142,35 +142,32 @@ struct pid_obj {
  * Documentation/x86/x86_64/mm.txt. This means bit 43 is always set, which means
  * we can remove all bytes where it is unset: TODO Optimization.
  *
- *  63             47 46           32 31            16 15             0
- * +-----------------+---*-----------+----------------+---------------+
- * |      ---        |       L3      |       L2       |       L1      |
- * +-----------------+---------------+----------------+---------------+
+ *  63             47 46                   24 23        12 11         0
+ * +-----------------+--*--------------------+------------+------------+
+ * |      ---        |          L3           |     L2     |     L1     |
+ * +-----------------+-----------------------+------------+------------+
  *
  * The lookup table maps each byte of allocatable virtual address space to a
  * pointer to kernel object metadata--> 8 byte pointer.
  *
- * I tried to do a 2 level table, but it was too big. Given knowledge about
- * where the allocator services VAs from we could reduce this size a lot.
- *
  */
-#define LT_L1_SHIFT		16
+#define LT_L1_SHIFT		    12
 #define LT_L1_ENTRIES		(_AC(1,UL) << LT_L1_SHIFT)
 #define LT_L1_ENTRY_SIZE	(sizeof(void *))
-#define LT_L1_SIZE		(LT_L1_ENTRIES * LT_L1_ENTRY_SIZE)
+#define LT_L1_SIZE		    (LT_L1_ENTRIES * LT_L1_ENTRY_SIZE)
 
-#define LT_L2_SHIFT		32
+#define LT_L2_SHIFT		    24
 #define LT_L2_ENTRIES		(_AC(1,UL) << (LT_L2_SHIFT - LT_L1_SHIFT))
 #define LT_L2_ENTRY_SIZE	(sizeof(void *))
-#define LT_L2_SIZE		(LT_L2_ENTRIES * LT_L2_ENTRY_SIZE)
+#define LT_L2_SIZE		    (LT_L2_ENTRIES * LT_L2_ENTRY_SIZE)
 
-#define LT_L3_SHIFT		47
+#define LT_L3_SHIFT		    47
 #define LT_L3_ENTRIES		(_AC(1,UL) << (LT_L3_SHIFT - LT_L2_SHIFT))
 #define LT_L3_ENTRY_SIZE	(sizeof(void *))
-#define LT_L3_SIZE		(LT_L3_ENTRIES * LT_L3_ENTRY_SIZE)
+#define LT_L3_SIZE		    (LT_L3_ENTRIES * LT_L3_ENTRY_SIZE)
 
 
-#define PID_ENTRIES		(_AC(1,UL) << 5) 
+#define PID_ENTRIES		    (_AC(1,UL) << 5) 
 //PLACEHOLDER VALUE
 //==-- Table data structures -----------------------------------------------==//
 

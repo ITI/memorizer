@@ -62,7 +62,7 @@ extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
 extern void *alloc_pages_exact(size_t size, gfp_t gfp_mask);
 extern void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title);
 
-/* RW Spinlock for access to rb tree */
+/* RW Spinlock for access to table */
 DEFINE_RWLOCK(lookup_tbl_rw_lock);
 
 static struct lt_l3_tbl kobj_l3_tbl;

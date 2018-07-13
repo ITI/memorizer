@@ -1055,7 +1055,7 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
  * init_kobj() - Initalize the metadata to track the recent allocation
  */
 static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
-		      uintptr_t ptr_to_kobj, size_t bytes_alloc)
+		      uintptr_t ptr_to_kobj, size_t bytes_alloc, enum AllocType AT)
 {
 	rwlock_init(&kobj->rwlock);
 
@@ -1074,6 +1074,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->free_ip = 0;
 	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
 	kobj->printed = false;
+	kobj->alloc_type = AT;
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->object_list);
 	/* Some of the call sites are not tracked correctly so don't try */
@@ -1401,9 +1402,8 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
  *
  * Track the allocation and add the object to the set of active object tree.
  */
-static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
-				       size_t bytes_req, size_t bytes_alloc,
-				       gfp_t gfp_flags)
+static void inline __memorizer_kmalloc(unsigned long call_site, const void
+        *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, enum AllocType AT)
 {
 
 	unsigned long flags;
@@ -1447,7 +1447,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 	if(!kobj){
 		pr_info("Cannot allocate a memorizer_kobj structure\n");
 	}
-	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc);
+	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc, AT);
     
 	/* Grab the writer lock for the object_list */
     write_lock_irqsave(&object_list_spinlock, flags);
@@ -1524,14 +1524,16 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 		      bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
-	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+    __memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags,
+            MEM_KMALLOC);
 }
 
 void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 			   bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int
 			   node)
 {
-	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+    __memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags,
+            MEM_KMALLOC_ND);
 }
 
 void memorizer_kfree(unsigned long call_site, const void *ptr)
@@ -1550,14 +1552,16 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
 				bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
-	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+    __memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags,
+            MEM_KMEM_CACHE);
 }
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
 				      size_t bytes_req, size_t bytes_alloc,
 				      gfp_t gfp_flags, int node)
 {
-	__memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags);
+    __memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags,
+            MEM_KMEM_CACHE_ND);
 }
 
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
@@ -1599,7 +1603,7 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 void memorizer_register_global(const void *ptr, size_t size)
 {
 	atomic_long_inc(&stats_num_globals);
-	__memorizer_kmalloc(0, ptr, size, size, 0);
+	__memorizer_kmalloc(0, ptr, size, size, 0, MEM_GLOBAL);
 }
 
 //==-- Memorizer Data Export ----------------------------------------------==//
@@ -1675,10 +1679,10 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	}
 	kobj->printed = true;
 	/* Print object allocation info */
-	seq_printf(seq,"%p,%d,%p,%lu,%lu,%lu,%p,%s\n",
+	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s\n",
 		   (void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
 		   kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
-		   kobj->free_ip, kobj->comm);
+		   kobj->free_ip, alloc_type_str(kobj->alloc_type), kobj->comm);
 
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list)
@@ -1960,7 +1964,7 @@ parse_events(struct event_list_wq_data * data)
                 pr_info("Cannot allocate a memorizer_kobj structure\n"); 
             }
             init_kobj(kobj, (uintptr_t) mke->data.et.src_va_ptr,
-                    (uintptr_t) mke->data.et.va_ptr, mke->data.et.event_size); 
+                    (uintptr_t) mke->data.et.va_ptr, mke->data.et.event_size, MEM_NONE); 
             /* Grab the writer lock for the object_list */
             // We are single threaded here don't need to lock
             //write_lock_irqsave(&object_list_spinlock, flags);

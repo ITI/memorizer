@@ -57,6 +57,45 @@
 
 /** 
  * struct memorizer_kobj - metadata for kernel objects 
+ */
+enum AllocType {
+    MEM_STACK=0,
+    MEM_HEAP,
+    MEM_GLOBAL,
+    MEM_KMALLOC,
+    MEM_KMALLOC_ND,
+    MEM_KMEM_CACHE,
+    MEM_KMEM_CACHE_ND,
+    MEM_NONE
+};
+
+static char * alloc_type_str (enum AllocType AT)
+{
+    switch(AT)
+    {
+    case MEM_STACK:
+        return "STACK";
+    case MEM_HEAP:
+        return "HEAP";
+    case MEM_GLOBAL:
+        return "GLOBAL";
+    case MEM_KMALLOC:
+        return "KMALLOC";
+    case MEM_KMALLOC_ND:
+        return "KMALLOC_ND";
+    case MEM_KMEM_CACHE:
+        return "KMEM_CACHE";
+    case MEM_KMEM_CACHE_ND:
+        return "KMEM_CACHE_ND";
+    case MEM_NONE:
+        return "NONE";
+    default:
+        pr_info("Searching for unavailable alloc type");
+    }
+};
+
+/** 
+ * struct memorizer_kobj - metadata for kernel objects 
  * @rb_node:		the red-black tree relations
  * @alloc_ip:		instruction that allocated the object
  * @va_ptr:		Virtual address of the beginning of the object
@@ -72,20 +111,21 @@
  */
 struct memorizer_kobj {
 	struct rb_node	rb_node;
-	rwlock_t	rwlock;
-	long		obj_id;
-	uintptr_t	alloc_ip;
-	uintptr_t	free_ip;
-	uintptr_t	va_ptr;
-	uintptr_t	pa_ptr;
-	size_t		size;
+    enum AllocType  alloc_type;
+	rwlock_t	    rwlock;
+	long		    obj_id;
+	uintptr_t	    alloc_ip;
+	uintptr_t	    free_ip;
+	uintptr_t	    va_ptr;
+	uintptr_t	    pa_ptr;
+	size_t		    size;
 	unsigned long	alloc_jiffies;
 	unsigned long	free_jiffies;
-	pid_t		pid;
-	char		comm[TASK_COMM_LEN];
-	char		funcstr[KSYM_NAME_LEN];
-	bool		printed;
-	//char		*modsymb[KSYM_NAME_LEN];
+	pid_t		    pid;
+	char		    comm[TASK_COMM_LEN];
+	char		    funcstr[KSYM_NAME_LEN];
+	bool		    printed;
+	//char		    *modsymb[KSYM_NAME_LEN];
 	struct list_head	object_list;
 	struct list_head	access_counts;
 };

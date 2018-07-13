@@ -1183,7 +1183,7 @@ static void free_kobj(struct memorizer_kobj * kobj)
 /**
  * clear_free_list() --- remove entries from free list and free kobjs
  */
-static void clear_object_list(void)
+static void clear_dead_objs(void)
 {
 	struct memorizer_kobj *kobj;
 	struct list_head *p;
@@ -1796,17 +1796,17 @@ static const struct file_operations kmap_fops = {
 /* 
  * clear_free_list_write() - call the function to clear the free'd kobjs
  */
-static ssize_t clear_object_list_write(struct file *file, const char __user
+static ssize_t clear_dead_objs_write(struct file *file, const char __user
 				   *user_buf, size_t size, loff_t *ppos)
 {
-	clear_object_list();
+	clear_dead_objs();
 	*ppos += size;
 	return size;
 }
 
-static const struct file_operations clear_object_list_fops = {
+static const struct file_operations clear_dead_objs_fops = {
 	.owner		= THIS_MODULE,
-	.write		= clear_object_list_write,
+	.write		= clear_dead_objs_write,
 };
 
 /* 
@@ -2330,10 +2330,10 @@ static int memorizer_late_init(void)
 	if (!dentry)
 		pr_warning("Failed to create debugfs show stats\n");
     
-	dentry = debugfs_create_file("clear_object_list", S_IWUGO, dentryMemDir,
-				     NULL, &clear_object_list_fops);
+	dentry = debugfs_create_file("clear_dead_objs", S_IWUGO, dentryMemDir,
+				     NULL, &clear_dead_objs_fops);
 	if (!dentry)
-		pr_warning("Failed to create debugfs clear_object_list\n");
+		pr_warning("Failed to create debugfs clear_dead_objs\n");
 
 	dentry = debugfs_create_file("clear_printed_list", S_IWUGO, dentryMemDir,
 				     NULL, &clear_printed_list_fops);

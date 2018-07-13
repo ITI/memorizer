@@ -416,9 +416,8 @@ static inline int __memorizer_exit(void)
 /**
  * in_memorizer() - check if this thread has already entered memorizer
  */
-static inline bool in_memorizer(void)
+static __always_inline bool in_memorizer(void)
 {
-
     int in = get_cpu_var(recursive_depth);
     put_cpu_var(recursive_depth);
     return in;

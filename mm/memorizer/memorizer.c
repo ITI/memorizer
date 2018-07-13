@@ -357,6 +357,13 @@ static struct rb_root active_kobj_rbtree_root = RB_ROOT;
 /* full list of freed kobjs */
 static LIST_HEAD(object_list);
 
+/* global timestamp counter */
+static atomic_t timestamp = ATOMIC_INIT(0);
+long get_ts(void)
+{
+    return atomic_fetch_add(1,&timestamp);
+}
+
 /* global object id reference counter */
 static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
 
@@ -853,14 +860,40 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 }
 
 /**
+ * memorizer_call() - trace function call
+ *
+ * @from: the PC virtual address of the call site
+ * @to: the PC virtual address of the called function entry point
+ *
+ */
+void __always_inline 
+memorizer_call(uintptr_t from, uintptr_t to)
+{
+	unsigned long flags;
+	if(!cfg_log_on)
+		return;
+	if(in_memorizer())
+		return true;
+	__memorizer_enter();
+#if INLINE_EVENT_PARSE 
+    local_irq_save(flags);
+    cfg_update_counts(cfgtbl, from, to);
+#else
+    //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
+    //wq_push(addr, size, write, ip, 0);
+#endif
+    local_irq_restore(flags);
+	__memorizer_exit();
+}
+
+/**
  * memorizer_mem_access() - record associated data with the load or store
  * @addr:	The virtual address being accessed
  * @size:	The number of bits for the load/store
  * @write:	True if the memory access is a write (store)
  * @ip:		IP of the invocing instruction
  *
- * Memorize, ie. log, the particular data access by inserting it into a percpu
- * queue. 
+ * Memorize, ie. log, the particular data access.
  */
 void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 					  write, uintptr_t ip)
@@ -1069,7 +1102,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->va_ptr = ptr_to_kobj;
 	kobj->pa_ptr = __pa(ptr_to_kobj);
 	kobj->size = bytes_alloc;
-	kobj->alloc_jiffies = jiffies;
+	kobj->alloc_jiffies = get_ts();
 	kobj->free_jiffies = 0;
 	kobj->free_ip = 0;
 	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
@@ -1312,7 +1345,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
     if(kobj){
         /* Update the free_jiffies for the object */
         write_lock_irqsave(&kobj->rwlock, flags);
-        kobj->free_jiffies = jiffies;
+        kobj->free_jiffies = get_ts();
         kobj->free_ip = call_site;
         write_unlock_irqrestore(&kobj->rwlock, flags);
         atomic_long_dec(&stats_live_objs);

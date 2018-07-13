@@ -738,13 +738,14 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
 	struct access_from_counts * afc = NULL;
 	list_for_each(listptr, &(kobj->access_counts)){
 		entry = list_entry(listptr, struct access_from_counts, list);
-		if(src_ip == entry->ip){
-			if(pid == entry->pid)
-				return entry;
-			else if(pid < entry->pid)
-				break;
-		} else if(src_ip < entry->ip){
-			break;
+        if(src_ip == entry->ip){
+            /* FIXME: Hack to reduce size is to remove pid */
+            //if(pid == entry->pid)
+            return entry;
+            //else if(pid < entry->pid)
+            //    break;
+        } else if(src_ip < entry->ip){
+            break;
 		}
 	}
 	/* allocate the new one and initialize the count none in list */
@@ -792,7 +793,7 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 
 	/* increment the counter associated with the access type */
 	if(afc)
-		access_type ? ++afc->writes : ++afc->reads;
+		access_type ? ++(afc->writes) : ++(afc->reads);
 
 	write_unlock(&kobj->rwlock);
 	return afc ? 0 : -1;
@@ -1719,8 +1720,9 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list)
 	{
-		seq_printf(seq, "  %p,%d,%llu,%llu\n",
-			   (void *) afc->ip, afc->pid,
+		seq_printf(seq, "  %p,%llu,%llu\n",
+			   (void *) afc->ip, 
+               // FIXME Hack: remove pid // afc->pid,
 			   (unsigned long long) afc->writes,
 			   (unsigned long long) afc->reads);
 	}

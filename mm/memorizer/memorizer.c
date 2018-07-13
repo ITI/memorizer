@@ -182,7 +182,7 @@ static dev_t *dev1;
 static dev_t *dev2;
 static struct cdev *cd1;
 static struct cdev *cd2;
-
+	
 /**
  * struct memorizer_mem_access - structure to capture all memory related events
  * @access_type: type of event
@@ -320,6 +320,23 @@ static int __init early_mem_log_boot(char *arg){
     }
 }
 early_param("mem_log_boot", early_mem_log_boot);
+
+/* flag enable/disable memory access logging */
+static bool cfg_log_on = false;
+static bool cfg_log_boot = false;
+static int __init early_cfg_log_boot(char *arg){
+    if(!arg)
+        return 0;
+    if(strcmp(arg,"yes") == 0) {
+        pr_info("Enabling boot accessing logging\n");
+        cfg_log_boot= true;
+    }
+    if(strcmp(arg,"no") == 0) {
+        pr_info("Disabling boot accessing logging\n");
+        cfg_log_boot= false;
+    }
+}
+early_param("cfg_log_boot", early_cfg_log_boot);
 
 /* flag enable/disable printing of live objects */
 static bool print_live_obj = false;
@@ -2239,6 +2256,11 @@ void __init memorizer_init(void)
     } else {
         memorizer_log_access = false;
     }
+    if(cfg_log_boot){
+        cfg_log_on = true;
+    } else {
+        cfg_log_on = false;
+    }
 	print_live_obj = false;
 	local_irq_restore(flags);
 	__memorizer_exit();
@@ -2289,6 +2311,11 @@ static int memorizer_late_init(void)
 				     dentryMemDir, &memorizer_log_access);
 	if (!dentry)
 		pr_warning("Failed to create debugfs memorizer_log_access\n");
+	
+    dentry = debugfs_create_bool("cfg_log_on", S_IRUGO|S_IWUGO,
+				     dentryMemDir, &cfg_log_on);
+	if (!dentry)
+		pr_warning("Failed to create debugfs cfg_log_on\n");
 
 	dentry = debugfs_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
 				     dentryMemDir, &print_live_obj);
@@ -2300,16 +2327,11 @@ static int memorizer_late_init(void)
 	if (!dentry)
 		pr_warning("Failed to create debugfs drain_active_work_queue\n");
 
-	dentry = debugfs_create_bool("test_bool_object", S_IRUGO | S_IWUGO,
-				     dentryMemDir, &test_obj);
-	if (!dentry)
-		pr_warning("Failed to create test bool object\n");
-
 	pr_info("Memorizer initialized\n");
 	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
 	pr_info("Size of memorizer_kernel_event:%d\n",sizeof(struct memorizer_kernel_event));
 	print_stats();
-
+	
 	__memorizer_exit();
 
 	return 0;
@@ -2332,6 +2354,7 @@ int memorizer_init_from_driver(void)
 	local_irq_save(flags);
 	memorizer_enabled = true;
 	memorizer_log_access = true;
+	cfg_log_on = true;
 	local_irq_restore(flags);
 
 	print_stats();

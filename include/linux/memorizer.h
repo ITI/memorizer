@@ -80,13 +80,13 @@ void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
 				      gfp_t gfp_flags, int node);
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr);
 void memorizer_register_global(const void *ptr, size_t size);
+void memorizer_stack_spill(unsigned long call_site, const void *ptr, size_t
+        size);
 
 
 void memorizer_fork(struct task_struct *p, long nr);
 
 void switchBuffer(void);
-
-
 
 /* Temporary Debug and test code */
 int __memorizer_get_opsx(void);

@@ -814,6 +814,8 @@ void __asan_poison_stack_memory(const void *addr, size_t size)
 	 */
 	kasan_poison_shadow(addr, round_up(size, KASAN_SHADOW_SCALE_SIZE),
 			    KASAN_USE_AFTER_SCOPE);
+    memorizer_kfree(_RET_IP_, addr);
+
 }
 EXPORT_SYMBOL(__asan_poison_stack_memory);
 
@@ -821,6 +823,7 @@ EXPORT_SYMBOL(__asan_poison_stack_memory);
 void __asan_unpoison_stack_memory(const void *addr, size_t size)
 {
 	kasan_unpoison_shadow(addr, size);
+    memorizer_stack_spill(_RET_IP_, addr, size);
 }
 EXPORT_SYMBOL(__asan_unpoison_stack_memory);
 

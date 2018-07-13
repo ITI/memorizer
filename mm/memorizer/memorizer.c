@@ -1633,6 +1633,12 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 			       page_address(page));
 }
 
+void memorizer_stack_spill(unsigned long call_site, const void *ptr, size_t
+        size)
+{
+	__memorizer_kmalloc(call_site, ptr, size, size, 0, MEM_STACK);
+}
+
 void memorizer_register_global(const void *ptr, size_t size)
 {
 	atomic_long_inc(&stats_num_globals);

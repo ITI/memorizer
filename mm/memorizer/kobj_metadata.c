@@ -62,11 +62,62 @@ extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
 extern void *alloc_pages_exact(size_t size, gfp_t gfp_mask);
 extern void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title);
 
+/* Caches for lookup tables */
+static struct kmem_cache *lt_l1_tbl_cache;
+static struct kmem_cache *lt_l2_tbl_cache;
+
 /* RW Spinlock for access to table */
 DEFINE_RWLOCK(lookup_tbl_rw_lock);
 
 static struct lt_l3_tbl kobj_l3_tbl;
 static struct lt_pid_tbl pid_tbl; 
+
+/* Emergency Pools for l1 + l2 pages */
+#define NUM_EMERGENCY_PAGES 200
+struct pages_pool {
+    uintptr_t base;  /* pointer to array of l1/l2 pages */
+    size_t next;        /* index of next available */
+    size_t entries;     /* number of entries to last page */
+    size_t pg_size;     /* size of object for indexing */
+};
+
+/**
+ * get_pg_from_pool() --- get the next page from the pool
+ *
+ * @pool: the pool to get the next value
+ *
+ * desc: this should not care about the type, so the type info is put into the
+ * pages_pool struct so that we can do pointer arithmetic to find the next
+ * available entry. The pointer is going to be the next index * the size of the
+ * object, which is set on initializing the pool.
+ *
+ */
+uintptr_t get_pg_from_pool(struct pages_pool *pool)
+{
+    pr_info("Getting page from pool (%p). i=%d e=%d\n", pool->base, pool->next, pool->entries);
+    if(pool->entries == pool->next)
+        return 0;
+    /* next * pg_size is the offset in bytes from the base of the pool */
+    return (uintptr_t) (pool->base + (pool->next++ * pool->pg_size));
+}
+
+struct lt_l1_tbl l1_tbl_pool[NUM_EMERGENCY_PAGES];
+struct pages_pool l1_tbl_reserve =
+{
+    .base = (uintptr_t) &l1_tbl_pool,
+    .next = 0,
+    .entries = NUM_EMERGENCY_PAGES,
+    .pg_size = sizeof(struct lt_l1_tbl)
+};
+
+struct lt_l2_tbl l2_tbl_pool[NUM_EMERGENCY_PAGES];
+struct pages_pool l2_tbl_reserve =
+{
+    .base = (uintptr_t) &l2_tbl_pool,
+    .next = 0,
+    .entries = NUM_EMERGENCY_PAGES,
+    .pg_size = sizeof(struct lt_l2_tbl)
+};
 
 /**
  * tbl_get_l1_entry() --- get the l1 entry
@@ -106,10 +157,13 @@ static struct lt_l1_tbl * l1_alloc(void)
 	struct lt_l1_tbl *l1_tbl;
 	int i = 0;
 
-	l1_tbl = alloc_pages_exact(sizeof(struct lt_l1_tbl), GFP_ATOMIC);
-
+	l1_tbl = kmem_cache_alloc(lt_l1_tbl_cache, GFP_ATOMIC);
 	if(!l1_tbl)
-		panic("Failed to allocate table for memorizer kobj\n");
+    {
+        l1_tbl = (struct lt_l1_tbl *) get_pg_from_pool(&l1_tbl_reserve);
+        if(!l1_tbl)
+            panic("Failed to allocate L1 table for memorizer kobj\n");
+    }
 
 	/* Zero out the memory */
 	for(i = 0; i < LT_L1_ENTRIES; ++i)
@@ -126,10 +180,13 @@ static struct lt_l2_tbl * l2_alloc(void)
 	struct lt_l2_tbl *l2_tbl;
 	int i = 0;
 
-	l2_tbl = alloc_pages_exact(sizeof(struct lt_l2_tbl), GFP_ATOMIC);
-
+	l2_tbl = kmem_cache_alloc(lt_l2_tbl_cache, GFP_ATOMIC);
 	if(!l2_tbl)
-		panic("Failed to allocate table for memorizer kobj\n");
+    {
+        l2_tbl = (struct lt_l2_tbl *) get_pg_from_pool(&l2_tbl_reserve);
+        if(!l2_tbl)
+            panic("Failed to allocate L2 table for memorizer kobj\n");
+    }
 
 	/* Zero out the memory */
 	for(i = 0; i < LT_L2_ENTRIES; ++i)
@@ -343,5 +400,7 @@ void __init lt_init(void)
 	memset(&kobj_l3_tbl, 0, sizeof(kobj_l3_tbl));
 	// Zero Out the Contents of the PID Table
 	memset(&pid_tbl, 0, sizeof(pid_tbl));
-
+    /* Init the kmem table caches */
+	lt_l1_tbl_cache = KMEM_CACHE(lt_l1_tbl, SLAB_PANIC);
+	lt_l2_tbl_cache = KMEM_CACHE(lt_l2_tbl, SLAB_PANIC);
 }

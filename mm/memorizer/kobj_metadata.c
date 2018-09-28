@@ -57,15 +57,8 @@
 #include <linux/seq_file.h>
 
 #include "kobj_metadata.h"
-
-/* counters for number of allocated l1 and l2 tbls */
-static atomic_long_t num_l2 = ATOMIC_INIT(0);
-static atomic_long_t num_l1 = ATOMIC_INIT(0);
-
-/* allocate table and add to the dir */
-extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
-extern void *alloc_pages_exact(size_t size, gfp_t gfp_mask);
-extern void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title);
+#include "memorizer.h"
+#include "stats.h"
 
 /* Caches for lookup tables */
 static struct kmem_cache *lt_l1_tbl_cache;
@@ -99,7 +92,8 @@ struct pages_pool {
  */
 uintptr_t get_pg_from_pool(struct pages_pool *pool)
 {
-    pr_info("Getting page from pool (%p). i=%d e=%d\n", pool->base, pool->next, pool->entries);
+    pr_info("Getting page from pool (%p). i=%d e=%d\n",
+            pool->base, pool->next, pool->entries);
     if(pool->entries == pool->next)
         return 0;
     /* next * pg_size is the offset in bytes from the base of the pool */
@@ -167,7 +161,11 @@ static struct lt_l1_tbl * l1_alloc(void)
     {
         l1_tbl = (struct lt_l1_tbl *) get_pg_from_pool(&l1_tbl_reserve);
         if(!l1_tbl)
+        {
+            /* while in dev we want to print error and panic */
+            print_stats(KERN_CRIT);
             panic("Failed to allocate L1 table for memorizer kobj\n");
+        }
     }
 
 	/* Zero out the memory */
@@ -175,7 +173,7 @@ static struct lt_l1_tbl * l1_alloc(void)
 		l1_tbl->kobj_ptrs[i] = 0;
 
     /* increment stats counter */
-    atomic_long_inc(&num_l1);
+    track_l1_alloc();
 
 	return l1_tbl;
 }
@@ -193,6 +191,7 @@ static struct lt_l2_tbl * l2_alloc(void)
     {
         l2_tbl = (struct lt_l2_tbl *) get_pg_from_pool(&l2_tbl_reserve);
         if(!l2_tbl)
+            print_stats(KERN_CRIT);
             panic("Failed to allocate L2 table for memorizer kobj\n");
     }
 
@@ -201,7 +200,7 @@ static struct lt_l2_tbl * l2_alloc(void)
 		l2_tbl->l1_tbls[i] = 0;
 
     /* increment stats counter */
-    atomic_long_inc(&num_l2);
+    track_l2_alloc();
 
 	return l2_tbl;
 }
@@ -374,7 +373,7 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 		 * however, TODO, this might not be needed as our table indices
 		 * are page aligned and it might be unlikely allocations are
 		 * page aligned and will not traverse the boundary of an l1
-		 * table. Note taht I have not tested this condition yet. 
+		 * table. Note that I have not tested this condition yet.
 		 */
 		l1_i = lt_l1_tbl_index(va);
 
@@ -414,39 +413,6 @@ void __init lt_init(void)
     /* Init the kmem table caches */
 	lt_l1_tbl_cache = KMEM_CACHE(lt_l1_tbl, SLAB_PANIC);
 	lt_l2_tbl_cache = KMEM_CACHE(lt_l2_tbl, SLAB_PANIC);
-}
-
-
-void lt_pr_stats(void)
-{
-    uint64_t l3size = sizeof(struct lt_l3_tbl);
-    uint64_t l2size = sizeof(struct lt_l2_tbl);
-    uint64_t l1size = sizeof(struct lt_l1_tbl);
-    uint64_t l3s = 1;
-    uint64_t l2s = atomic_long_read(&num_l2);
-    uint64_t l1s = atomic_long_read(&num_l1);
-	pr_info("------- Memorizer LT Stats -------\n");
-	pr_info("  L3: %8d tbls * %6llu KB = %6llu MB\n", 
-            l3s, l3size>>10, (l3s*l3size)>>20);
-	pr_info("  L2: %8d tbls * %6llu KB = %6llu MB\n", 
-            l2s, l2size>>10, (l2s*l2size)>>20);
-	pr_info("  L1: %8d tbls * %6llu KB = %6llu MB\n", 
-            l1s, l1size>>10, (l1s*l1size)>>20);
-}
-
-void lt_pr_stats_seq(struct seq_file *seq)
-{
-    uint64_t l3size = sizeof(struct lt_l3_tbl);
-    uint64_t l2size = sizeof(struct lt_l2_tbl);
-    uint64_t l1size = sizeof(struct lt_l1_tbl);
-    uint64_t l3s = 1;
-    uint64_t l2s = atomic_long_read(&num_l2);
-    uint64_t l1s = atomic_long_read(&num_l1);
-	seq_printf(seq,"------- Memorizer LT Stats -------\n");
-	seq_printf(seq,"  L3: %8d tbls * %6llu KB = %6llu MB\n", 
-            l3s, l3size>>10, (l3s*l3size)>>20);
-	seq_printf(seq,"  L2: %8d tbls * %6llu KB = %6llu MB\n", 
-            l2s, l2size>>10, (l2s*l2size)>>20);
-	seq_printf(seq,"  L1: %8d tbls * %6llu KB = %6llu MB\n", 
-            l1s, l1size>>10, (l1s*l1size)>>20);
+    /* track that we statically allocated an l3 */
+    track_l3_alloc();
 }

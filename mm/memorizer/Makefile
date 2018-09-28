@@ -8,4 +8,4 @@ CFLAGS_REMOVE_memorizer.o = -pg
 # FIXME NDD: These flags were copied from kasan, I'm not sure if they are needed. 
 CFLAGS_memorizer.o := $(call cc-option, -fno-conserve-stack -fno-stack-protector)
 
-obj-y := memorizer.o kobj_metadata.o FunctionHashTable.o
+obj-y := memorizer.o kobj_metadata.o FunctionHashTable.o stats.o

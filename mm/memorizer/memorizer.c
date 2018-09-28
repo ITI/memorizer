@@ -120,17 +120,17 @@
 #include <linux/cdev.h>
 #include <linux/vmalloc.h>
 #include <linux/fs.h>
+#include <linux/sched.h>
+#include <linux/bootmem.h>
+
 #include "kobj_metadata.h"
 #include "event_structs.h" 
 #include "FunctionHashTable.h"
-#include <linux/sched.h>
-#include <linux/bootmem.h>
+#include "stats.h"
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
 #define FIXME			0
-
-#define MEMORIZER_STATS		1
 
 #define INLINE_EVENT_PARSE  1
 #define WORKQUEUES          0
@@ -428,18 +428,6 @@ static __always_inline bool in_memorizer(void)
 	//return current->memorizer_recursion;
 }
 
-//==-- Debug and Stats Output Code --==//
-static atomic_long_t memorizer_num_untracked_accesses = ATOMIC_INIT(0);
-static atomic_long_t memorizer_caused_accesses = ATOMIC_INIT(0);
-static atomic_long_t memorizer_num_accesses = ATOMIC_INIT(0);
-static atomic_long_t stats_num_allocs_while_disabled = ATOMIC_INIT(0);
-static atomic_long_t memorizer_num_tracked_allocs = ATOMIC_INIT(0);
-static atomic_long_t stats_num_page_allocs = ATOMIC_INIT(0);
-static atomic_long_t stats_num_globals = ATOMIC_INIT(0);
-static atomic_long_t stats_num_induced_allocs = ATOMIC_INIT(0);
-static atomic_long_t stats_live_objs = ATOMIC_INIT(0);
-static atomic_long_t now = ATOMIC_INIT(0);
-
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
  *
@@ -574,39 +562,6 @@ static void print_pdf_table(void)
 }
 
 /**
- * print_stats() - print global stats from memorizer 
- */
-static void print_stats(void)
-{
-	pr_info("------- Memory Accesses -------\n");
-	pr_info("    Tracked:			\t%16ld\n",
-		atomic_long_read(&memorizer_num_accesses) -
-		atomic_long_read(&memorizer_num_untracked_accesses) -
-		atomic_long_read(&memorizer_caused_accesses)
-		);
-	pr_info("    Not-tracked:		\t%16ld\n",
-		atomic_long_read(&memorizer_num_untracked_accesses));
-	pr_info("    Memorizer-Induced:		%16ld\n",
-		atomic_long_read(&memorizer_caused_accesses));
-	pr_info("    Total:			\t%16ld\n",
-		atomic_long_read(&memorizer_num_accesses));
-	pr_info("------- Memory Allocations -------\n");
-	pr_info("    Tracked (globals,cache,kmalloc):	%16ld\n",
-		atomic_long_read(&memorizer_num_tracked_allocs));
-	pr_info("    Untracked (memorizer disabled):	%16ld\n",
-		atomic_long_read(&stats_num_allocs_while_disabled));
-	pr_info("    Memorizer induced:			%16ld\n",
-		atomic_long_read(&stats_num_induced_allocs));
-	pr_info("    Page Alloc (total):		%16ld\n",
-		atomic_long_read(&stats_num_page_allocs));
-	pr_info("    Global Var (total):		%16ld\n",
-		atomic_long_read(&stats_num_globals));
-	pr_info("    Live Objects:			%16ld\n",
-		atomic_long_read(&stats_live_objs));
-    lt_pr_stats();
-}
-
-/**
  * __memorizer_print_events - print the last num events
  * @num_events:		The total number of events to print
  *
@@ -622,7 +577,7 @@ void __memorizer_print_events(unsigned int num_events)
 						  instance */
 	__memorizer_enter();
 
-	print_stats();
+	print_stats(KERN_INFO);
 
 	/* Get data structure for the worklists and init the iterators */
 	ma_wls = &get_cpu_var(mem_access_wls);
@@ -786,9 +741,11 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 	kobj = lt_get_kobj(va_ptr);
 
 	if(!kobj){
-		atomic_long_inc(&memorizer_num_untracked_accesses);
+        track_untracked_access();
 		return -1;
 	}
+
+    track_access();
 
 	/* Grab the object lock here */
 	write_lock(&kobj->rwlock);
@@ -903,37 +860,18 @@ memorizer_call(uintptr_t from, uintptr_t to)
 void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 					  write, uintptr_t ip)
 {
-
 	unsigned long flags;
     struct memorizer_kernel_event * evtptr;
 
-#if MEMORIZER_STATS // Stats take time per access
-	atomic_long_inc(&memorizer_num_accesses);
-
-	//if(!(lt_get_kobj(addr))){
-	//	atomic_long_inc(&memorizer_num_untracked_accesses);
-	//	return;
-	//}
-
-	if(!memorizer_log_access){
-		atomic_long_inc(&memorizer_num_untracked_accesses);
+	if(unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled)){
+        track_disabled_access();
 		return;
 	}
 
-	/* Try to grab the lock and if not just returns */
 	if(in_memorizer()){
-		atomic_long_inc(&memorizer_caused_accesses);
+        track_induced_access();
 		return;
 	}
-#else
-	//if(!(lt_get_kobj(addr)))
-	//	return;
-	if(!memorizer_log_access)
-		return;
-	if(in_memorizer())
-		return;
-#endif
-
 
 	__memorizer_enter();
 
@@ -955,7 +893,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 			pr_info("Trying Buffer %u\n",curBuff);
 			switchBuffer();
 		}
-		
 
 		local_irq_save(flags);
 
@@ -970,13 +907,18 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		mke.src_va_ptr = addr;
 		mke.event_jiffies = jiffies;
 		
-		
 		mke_ptr = (struct memorizer_kernel_access *)buff_write_end;
 		*mke_ptr = mke;
 		buff_write_end = buff_write_end + sizeof(struct memorizer_kernel_access);
 		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_access);
 
-		//Check after writing the event to the buffer if there is any more space for the next entry to go in - Need to choose the struct with the biggest size for this otherwise it may lead to a problem wherein the write pointer still points to the end of the buffer and there is another event ready to be written which might be bigger than the size of the struct that could have reset the pointer 
+        /* Check after writing the event to the buffer if there is any more
+         * space for the next entry to go in - Need to choose the struct with
+         * the biggest size for this otherwise it may lead to a problem wherein
+         * the write pointer still points to the end of the buffer and there is
+         * another event ready to be written which might be bigger than the
+         * size of the struct that could have reset the pointer 
+        */
 		if(*buff_free_size < sizeof(struct memorizer_kernel_event))
 		{
 
@@ -984,8 +926,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 			*buff_fill = 1;
 			buff_write_end = buff_start;
 		}
-
-		
 		local_irq_restore(flags);
 		//*buff_end = (unsigned long long)0xbb;
 	}
@@ -1000,12 +940,15 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 	unsigned long flags;
 
 	if(unlikely(!memorizer_enabled)) {
-		atomic_long_inc(&stats_num_allocs_while_disabled);
+        track_disabled_alloc();
 		return;
 	}
 	
     if(unlikely(in_memorizer()))
+    {
+        track_induced_alloc();
         return;
+    }
 
 	__memorizer_enter();
     
@@ -1182,6 +1125,7 @@ static void free_kobj(struct memorizer_kobj * kobj)
 	free_access_from_list(&kobj->access_counts);
 	write_unlock(&kobj->rwlock);
 	kmem_cache_free(kobj_cache, kobj);
+    track_kobj_free();
 }
 
 
@@ -1353,7 +1297,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
         kobj->free_jiffies = get_ts();
         kobj->free_ip = call_site;
         write_unlock_irqrestore(&kobj->rwlock, flags);
-        atomic_long_dec(&stats_live_objs);
+        track_free();
     }
 }
 
@@ -1446,25 +1390,24 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 
 	unsigned long flags;
 	struct memorizer_kobj *kobj;
-	struct memorizer_kobj *kobj_ptr;
-    pid_t pid;
 	
 	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
 		return;
 
 	if(unlikely(!memorizer_enabled)) {
-		atomic_long_inc(&stats_num_allocs_while_disabled);
+        track_disabled_alloc();
 		return;
 	}
 
 	if(in_memorizer()) {
-		atomic_long_inc(&stats_num_induced_allocs);
+        track_induced_alloc();
 		return;
 	}
 
 	__memorizer_enter();
 
 #if 0
+    pid_t pid;
     if (in_irq()) {
         pid = 0;
     } else if (in_softirq()) {
@@ -1483,13 +1426,22 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
     /* inline parsing */
 	kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
 	if(!kobj){
-		pr_info("Cannot allocate a memorizer_kobj structure\n");
+		pr_crit("Cannot allocate a memorizer_kobj structure\n");
+        track_failed_kobj_alloc();
+        return;
 	}
+
+    /* initialize all object metadata */
 	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc, AT);
     
-	/* Grab the writer lock for the object_list */
-    write_lock_irqsave(&object_list_spinlock, flags);
+    /* memorizer stats tracking */
+    track_alloc(AT);
+    
+    /* mark object as live and link in lookup table */
     lt_insert_kobj(kobj);
+    
+	/* Grab the writer lock for the object_list and insert into object list */
+    write_lock_irqsave(&object_list_spinlock, flags);
     list_add_tail(&kobj->object_list, &object_list);
     write_unlock_irqrestore(&object_list_spinlock, flags);
 	
@@ -1547,14 +1499,13 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 	}
 	else
 	{
-		atomic_long_inc(&stats_num_allocs_while_disabled);
+        track_disabled_alloc();
 	}
 
 #endif
 
 	//*buff_end = (unsigned long long)0xaa;
 	
-	atomic_long_inc(&memorizer_num_tracked_allocs);
 	__memorizer_exit();
 }
 
@@ -1620,8 +1571,8 @@ void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
 {
 	__memorizer_kmalloc(call_site, page_address(page),
 			    (uintptr_t) PAGE_SIZE * (2 << order),
-			    (uintptr_t) PAGE_SIZE * (2 << order), gfp_flags, MEM_ALLOC_PAGES);
-	atomic_long_inc(&stats_num_page_allocs);
+			    (uintptr_t) PAGE_SIZE * (2 << order), 
+                gfp_flags, MEM_ALLOC_PAGES);
 }
 
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
@@ -1641,12 +1592,12 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 void memorizer_stack_spill(unsigned long call_site, const void *ptr, size_t
         size)
 {
+    pr_crit("Call stack spill");
 	__memorizer_kmalloc(call_site, ptr, size, size, 0, MEM_STACK);
 }
 
 void memorizer_register_global(const void *ptr, size_t size)
 {
-	atomic_long_inc(&stats_num_globals);
 	__memorizer_kmalloc(0, ptr, size, size, 0, MEM_GLOBAL);
 }
 
@@ -1897,33 +1848,7 @@ static const struct file_operations cfgmap_fops = {
 
 static int stats_seq_show(struct seq_file *seq, void *v)
 {
-	seq_printf(seq,"------- Memory Accesses -------\n");
-	seq_printf(seq,"    Tracked:			\t%16ld\n",
-		atomic_long_read(&memorizer_num_accesses) -
-		atomic_long_read(&memorizer_num_untracked_accesses) -
-		atomic_long_read(&memorizer_caused_accesses)
-		);
-	seq_printf(seq,"    Not-tracked:		\t%16ld\n",
-		atomic_long_read(&memorizer_num_untracked_accesses));
-	seq_printf(seq,"    Memorizer-Induced:		\t%16ld\n",
-		atomic_long_read(&memorizer_caused_accesses));
-	seq_printf(seq,"    Total:			\t%16ld\n",
-		atomic_long_read(&memorizer_num_accesses));
-	seq_printf(seq,"------- Memory Allocations -------\n");
-	seq_printf(seq,"    Tracked (globals,cache,kmalloc):	%16ld\n",
-		atomic_long_read(&memorizer_num_tracked_allocs));
-	seq_printf(seq,"    Untracked (memorizer disabled):	%16ld\n",
-		atomic_long_read(&stats_num_allocs_while_disabled));
-	seq_printf(seq,"    Memorizer induced:			%16ld\n",
-		atomic_long_read(&stats_num_induced_allocs));
-	seq_printf(seq,"    Page Alloc (total):			%16ld\n",
-		atomic_long_read(&stats_num_page_allocs));
-	seq_printf(seq,"    Global Var (total):			%16ld\n",
-		atomic_long_read(&stats_num_globals));
-	seq_printf(seq,"    Live Objects:			%16ld\n",
-		atomic_long_read(&stats_live_objs));
-    lt_pr_stats_seq(seq);
-	return 0;
+    return seq_print_stats(seq);
 }
 
 static int show_stats_open(struct inode *inode, struct file *file)
@@ -2050,10 +1975,11 @@ parse_events(struct event_list_wq_data * data)
         case Memorizer_Mem_Alloc:
             kobj = kmem_cache_alloc(kobj_cache, gfp_flags);
             if(!kobj){ 
-                pr_info("Cannot allocate a memorizer_kobj structure\n"); 
+                pr_err("Cannot allocate a memorizer_kobj structure\n"); 
             }
             init_kobj(kobj, (uintptr_t) mke->data.et.src_va_ptr,
-                    (uintptr_t) mke->data.et.va_ptr, mke->data.et.event_size, MEM_NONE); 
+                    (uintptr_t) mke->data.et.va_ptr, mke->data.et.event_size, 
+                    MEM_NONE); 
             /* Grab the writer lock for the object_list */
             // We are single threaded here don't need to lock
             //write_lock_irqsave(&object_list_spinlock, flags);
@@ -2384,6 +2310,7 @@ static int memorizer_late_init(void)
 	if (!dentry)
 		pr_warning("Failed to create debugfs kmap file\n");
 
+    /* stats interface */
 	dentry = debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
 				     NULL, &show_stats_fops);
 	if (!dentry)
@@ -2432,7 +2359,7 @@ static int memorizer_late_init(void)
 	pr_info("Memorizer initialized\n");
 	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
 	pr_info("Size of memorizer_kernel_event:%d\n",sizeof(struct memorizer_kernel_event));
-	print_stats();
+	print_stats(KERN_INFO);
 	
 	__memorizer_exit();
 
@@ -2459,7 +2386,7 @@ int memorizer_init_from_driver(void)
 	cfg_log_on = true;
 	local_irq_restore(flags);
 
-	print_stats();
+	print_stats(KERN_INFO);
 
 #if MEMORIZER_DEBUG >= 5
 	//read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
@@ -2473,7 +2400,7 @@ int memorizer_init_from_driver(void)
 	//read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 #endif
 
-	print_stats();
+	print_stats(KERN_INFO);
 
 	__memorizer_exit();
 	return 0;

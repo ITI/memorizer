@@ -62,5 +62,9 @@
     )
           //| __GFP_MEMALLOC	    \
 
+/* global timestamp counter */
+static atomic_t timestamp = ATOMIC_INIT(0);
+static long get_ts(void) { return atomic_fetch_add(1,&timestamp); }
+
 #endif /* __MEMORIZER_H_ */
 

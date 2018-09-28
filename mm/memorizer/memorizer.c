@@ -362,13 +362,6 @@ static struct rb_root active_kobj_rbtree_root = RB_ROOT;
 /* full list of freed kobjs */
 static LIST_HEAD(object_list);
 
-/* global timestamp counter */
-static atomic_t timestamp = ATOMIC_INIT(0);
-long get_ts(void)
-{
-    return atomic_fetch_add(1,&timestamp);
-}
-
 /* global object id reference counter */
 static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
 

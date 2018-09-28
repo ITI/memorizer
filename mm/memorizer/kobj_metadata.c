@@ -315,29 +315,17 @@ inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
  */
 static void handle_overlapping_insert(uintptr_t va, struct memorizer_kobj **l1e)
 {
-	unsigned long flags;
-	struct memorizer_kobj *obj = lt_remove_kobj(va);
-	//pr_err("Inserting 0x%lx into lookup table"
-	//       " (overlaps existing) removing\n", va);
-	/* 
-	 * Note we don't need to free because the object
-	 * is in the free list and will get expunged
-	 * later.
-	 */
-	write_lock_irqsave(&obj->rwlock, flags);
-	obj->free_jiffies = jiffies;
-	obj->free_ip = 0xDEADBEEF;
-	write_unlock_irqrestore(&obj->rwlock, flags);
-#if 0 // Debug code
-	__print_memorizer_kobj(*l1e, "Orig Kobj:");
-	__print_memorizer_kobj(kobj, "New Kobj:");
-	pr_info("L3 Entry Index: %p\n",
-		lt_l3_tbl_index(va));
-	pr_info("L2 Entry Index: %p\n",
-		lt_l2_tbl_index(va));
-	pr_info("L1 Entry Index: %p\n",
-		lt_l1_tbl_index(va));
-#endif
+    unsigned long flags;
+    struct memorizer_kobj *obj = lt_remove_kobj(va);
+    /* 
+     * Note we don't need to free because the object is in the free list and
+     * will get expunged later.
+     */
+    write_lock_irqsave(&obj->rwlock, flags);
+    obj->free_jiffies = get_ts();
+    obj->free_ip = 0xDEADBEEF;
+    track_free();
+    write_unlock_irqrestore(&obj->rwlock, flags);
 }
 
 /**

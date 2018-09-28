@@ -57,6 +57,10 @@
 
 #include "kobj_metadata.h"
 
+/* counters for number of allocated l1 and l2 tbls */
+static atomic_long_t num_l2 = ATOMIC_INIT(0);
+static atomic_long_t num_l1 = ATOMIC_INIT(0);
+
 /* allocate table and add to the dir */
 extern unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order);
 extern void *alloc_pages_exact(size_t size, gfp_t gfp_mask);
@@ -169,6 +173,9 @@ static struct lt_l1_tbl * l1_alloc(void)
 	for(i = 0; i < LT_L1_ENTRIES; ++i)
 		l1_tbl->kobj_ptrs[i] = 0;
 
+    /* increment stats counter */
+    atomic_long_inc(&num_l1);
+
 	return l1_tbl;
 }
 
@@ -191,6 +198,9 @@ static struct lt_l2_tbl * l2_alloc(void)
 	/* Zero out the memory */
 	for(i = 0; i < LT_L2_ENTRIES; ++i)
 		l2_tbl->l1_tbls[i] = 0;
+
+    /* increment stats counter */
+    atomic_long_inc(&num_l2);
 
 	return l2_tbl;
 }
@@ -403,4 +413,19 @@ void __init lt_init(void)
     /* Init the kmem table caches */
 	lt_l1_tbl_cache = KMEM_CACHE(lt_l1_tbl, SLAB_PANIC);
 	lt_l2_tbl_cache = KMEM_CACHE(lt_l2_tbl, SLAB_PANIC);
+}
+
+
+void lt_pr_stats(void)
+{
+    uint64_t l3size = sizeof(struct lt_l3_tbl);
+    uint64_t l2size = sizeof(struct lt_l2_tbl);
+    uint64_t l1size = sizeof(struct lt_l1_tbl);
+    uint64_t l3s = 1;
+    uint64_t l2s = atomic_long_read(&num_l2);
+    uint64_t l1s = atomic_long_read(&num_l1);
+	pr_info("------- Memorizer LT Stats -------\n");
+	pr_info("  L3: %5d tbls * %8llu KB = %8llu MB\n", l3s, l3size>>10, (l3s*l3size)>>20);
+	pr_info("  L2: %5d tbls * %8llu KB = %8llu MB\n", l2s, l2size>>10, (l2s*l2size)>>20);
+	pr_info("  L1: %5d tbls * %8llu KB = %8llu MB\n", l1s, l1size>>10, (l1s*l1size)>>20);
 }

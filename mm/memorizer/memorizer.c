@@ -603,6 +603,7 @@ static void print_stats(void)
 		atomic_long_read(&stats_num_globals));
 	pr_info("    Live Objects:			%16ld\n",
 		atomic_long_read(&stats_live_objs));
+    lt_pr_stats();
 }
 
 /**
@@ -1921,6 +1922,7 @@ static int stats_seq_show(struct seq_file *seq, void *v)
 		atomic_long_read(&stats_num_globals));
 	seq_printf(seq,"    Live Objects:			%16ld\n",
 		atomic_long_read(&stats_live_objs));
+    lt_pr_stats();
 	return 0;
 }
 

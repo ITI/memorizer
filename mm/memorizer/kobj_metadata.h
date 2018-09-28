@@ -151,12 +151,12 @@ struct pid_obj {
  * pointer to kernel object metadata--> 8 byte pointer.
  *
  */
-#define LT_L1_SHIFT		    12
+#define LT_L1_SHIFT		    12 
 #define LT_L1_ENTRIES		(_AC(1,UL) << LT_L1_SHIFT)
 #define LT_L1_ENTRY_SIZE	(sizeof(void *))
 #define LT_L1_SIZE		    (LT_L1_ENTRIES * LT_L1_ENTRY_SIZE)
 
-#define LT_L2_SHIFT		    24
+#define LT_L2_SHIFT		    27
 #define LT_L2_ENTRIES		(_AC(1,UL) << (LT_L2_SHIFT - LT_L1_SHIFT))
 #define LT_L2_ENTRY_SIZE	(sizeof(void *))
 #define LT_L2_SIZE		    (LT_L2_ENTRIES * LT_L2_ENTRY_SIZE)

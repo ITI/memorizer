@@ -126,6 +126,7 @@
 #include "kobj_metadata.h"
 #include "event_structs.h" 
 #include "FunctionHashTable.h"
+#include "memorizer.h"
 #include "stats.h"
 
 //==-- Debugging and print information ------------------------------------==//
@@ -380,16 +381,6 @@ DEFINE_RWLOCK(object_list_spinlock);
 
 /* System wide Spinlock for the aggregating thread so nothing else interrupts */
 DEFINE_RWLOCK(aggregator_spinlock);
-
-/* mask to apply to memorizer allocations TODO: verify the list */
-#define gfp_memorizer_mask(gfp)	(((gfp) & (		\
-					 | GFP_ATOMIC		\
-					 | __GFP_NOACCOUNT))	\
-					 | __GFP_NORETRY	\
-					 | __GFP_NOMEMALLOC	\
-					 | __GFP_NOWARN		\
-					 | __GFP_NOTRACK	\
-				 )
 
 /**
  * __memorizer_enter() - increment recursion counter for entry into memorizer
@@ -1424,7 +1415,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 #endif 
 
     /* inline parsing */
-	kobj = kmem_cache_alloc(kobj_cache, gfp_flags | GFP_ATOMIC);
+	kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(gfp_flags));
 	if(!kobj){
 		pr_crit("Cannot allocate a memorizer_kobj structure\n");
         track_failed_kobj_alloc();
@@ -1569,10 +1560,10 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
 			   int order, gfp_t gfp_flags)
 {
-	__memorizer_kmalloc(call_site, page_address(page),
-			    (uintptr_t) PAGE_SIZE * (2 << order),
-			    (uintptr_t) PAGE_SIZE * (2 << order), 
-                gfp_flags, MEM_ALLOC_PAGES);
+    __memorizer_kmalloc(call_site, page_address(page),
+            (uintptr_t) PAGE_SIZE * (2 << order),
+            (uintptr_t) PAGE_SIZE * (2 << order),
+            gfp_flags, MEM_ALLOC_PAGES);
 }
 
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned

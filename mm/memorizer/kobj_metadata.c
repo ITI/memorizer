@@ -156,7 +156,7 @@ static struct lt_l1_tbl * l1_alloc(void)
 	struct lt_l1_tbl *l1_tbl;
 	int i = 0;
 
-	l1_tbl = kmem_cache_alloc(lt_l1_tbl_cache, GFP_ATOMIC);
+	l1_tbl = kmem_cache_alloc(lt_l1_tbl_cache, gfp_memorizer_mask(0));
 	if(!l1_tbl)
     {
         l1_tbl = (struct lt_l1_tbl *) get_pg_from_pool(&l1_tbl_reserve);
@@ -186,7 +186,7 @@ static struct lt_l2_tbl * l2_alloc(void)
 	struct lt_l2_tbl *l2_tbl;
 	int i = 0;
 
-	l2_tbl = kmem_cache_alloc(lt_l2_tbl_cache, GFP_ATOMIC);
+	l2_tbl = kmem_cache_alloc(lt_l2_tbl_cache, gfp_memorizer_mask(0));
 	if(!l2_tbl)
     {
         l2_tbl = (struct lt_l2_tbl *) get_pg_from_pool(&l2_tbl_reserve);

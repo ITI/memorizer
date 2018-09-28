@@ -47,8 +47,8 @@
  *===-----------------------------------------------------------------------===
  */
 
-#ifndef __KOBJ_METADATA_H_
-#define __KOBJ_METADATA_H_
+#ifndef _KOBJ_METADATA_H_
+#define _KOBJ_METADATA_H_
 
 #include <linux/kallsyms.h>
 #include <linux/rbtree.h>
@@ -67,6 +67,7 @@ enum AllocType {
     MEM_KMEM_CACHE,
     MEM_KMEM_CACHE_ND,
     MEM_ALLOC_PAGES,
+    /* TODO: Legacy type, fix in tracking code to not use */
     MEM_NONE
 };
 

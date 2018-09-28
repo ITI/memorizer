@@ -54,6 +54,7 @@
 #include <linux/gfp.h>
 #include <linux/slab.h>
 #include <linux/jiffies.h>
+#include <linux/seq_file.h>
 
 #include "kobj_metadata.h"
 
@@ -425,7 +426,27 @@ void lt_pr_stats(void)
     uint64_t l2s = atomic_long_read(&num_l2);
     uint64_t l1s = atomic_long_read(&num_l1);
 	pr_info("------- Memorizer LT Stats -------\n");
-	pr_info("  L3: %5d tbls * %8llu KB = %8llu MB\n", l3s, l3size>>10, (l3s*l3size)>>20);
-	pr_info("  L2: %5d tbls * %8llu KB = %8llu MB\n", l2s, l2size>>10, (l2s*l2size)>>20);
-	pr_info("  L1: %5d tbls * %8llu KB = %8llu MB\n", l1s, l1size>>10, (l1s*l1size)>>20);
+	pr_info("  L3: %8d tbls * %6llu KB = %6llu MB\n", 
+            l3s, l3size>>10, (l3s*l3size)>>20);
+	pr_info("  L2: %8d tbls * %6llu KB = %6llu MB\n", 
+            l2s, l2size>>10, (l2s*l2size)>>20);
+	pr_info("  L1: %8d tbls * %6llu KB = %6llu MB\n", 
+            l1s, l1size>>10, (l1s*l1size)>>20);
+}
+
+void lt_pr_stats_seq(struct seq_file *seq)
+{
+    uint64_t l3size = sizeof(struct lt_l3_tbl);
+    uint64_t l2size = sizeof(struct lt_l2_tbl);
+    uint64_t l1size = sizeof(struct lt_l1_tbl);
+    uint64_t l3s = 1;
+    uint64_t l2s = atomic_long_read(&num_l2);
+    uint64_t l1s = atomic_long_read(&num_l1);
+	seq_printf(seq,"------- Memorizer LT Stats -------\n");
+	seq_printf(seq,"  L3: %8d tbls * %6llu KB = %6llu MB\n", 
+            l3s, l3size>>10, (l3s*l3size)>>20);
+	seq_printf(seq,"  L2: %8d tbls * %6llu KB = %6llu MB\n", 
+            l2s, l2size>>10, (l2s*l2size)>>20);
+	seq_printf(seq,"  L1: %8d tbls * %6llu KB = %6llu MB\n", 
+            l1s, l1size>>10, (l1s*l1size)>>20);
 }

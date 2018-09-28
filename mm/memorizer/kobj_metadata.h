@@ -66,6 +66,7 @@ enum AllocType {
     MEM_KMALLOC_ND,
     MEM_KMEM_CACHE,
     MEM_KMEM_CACHE_ND,
+    MEM_ALLOC_PAGES,
     MEM_NONE
 };
 
@@ -87,6 +88,8 @@ static char * alloc_type_str (enum AllocType AT)
         return "KMEM_CACHE";
     case MEM_KMEM_CACHE_ND:
         return "KMEM_CACHE_ND";
+    case MEM_ALLOC_PAGES:
+        return "ALLOC_PAGES";
     case MEM_NONE:
         return "NONE";
     default:

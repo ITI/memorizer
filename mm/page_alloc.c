@@ -3860,7 +3860,7 @@ out:
 
 	trace_mm_page_alloc(page, order, alloc_mask, ac.migratetype);
 
-	memorizer_alloc_pages(_RET_IP_, page, order);
+	memorizer_alloc_pages(_RET_IP_, page, order, gfp_mask);
 
 	return page;
 }

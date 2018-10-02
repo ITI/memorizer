@@ -59,6 +59,10 @@
 #ifdef CONFIG_MEMORIZER_STATS
 //==-- Debug and Stats Output Code --==//
 
+/* syntactic sugar to reduce line length below */
+static __always_inline uint64_t geta(atomic64_t * a) { return atomic64_read(a); }
+static __always_inline void inca(atomic64_t * a) { atomic64_inc(a); }
+
 /* Lookup Table */
 static atomic64_t num_l3 = ATOMIC_INIT(0);
 static atomic64_t num_l2 = ATOMIC_INIT(0);
@@ -67,9 +71,9 @@ static const uint64_t l3size = sizeof(struct lt_l3_tbl);
 static const uint64_t l2size = sizeof(struct lt_l2_tbl);
 static const uint64_t l1size = sizeof(struct lt_l1_tbl);
 
-void __always_inline track_l1_alloc(void){atomic64_inc(&num_l1);};
-void __always_inline track_l2_alloc(void){atomic64_inc(&num_l2);};
-void __always_inline track_l3_alloc(void){atomic64_inc(&num_l3);};
+void __always_inline track_l1_alloc(void){inca(&num_l1);};
+void __always_inline track_l2_alloc(void){inca(&num_l2);};
+void __always_inline track_l3_alloc(void){inca(&num_l3);};
 
 /* Memory Access */
 static atomic64_t tracked_kobj_accesses = ATOMIC_INIT(0);
@@ -77,22 +81,28 @@ static atomic64_t num_induced_accesses = ATOMIC_INIT(0);
 static atomic64_t num_accesses_while_disabled = ATOMIC_INIT(0);
 static atomic64_t num_untracked_obj_access = ATOMIC_INIT(0);
 
-void __always_inline track_access(void) 
+void __always_inline 
+track_access(void) 
 {
-    atomic64_inc(&tracked_kobj_accesses); 
+    inca(&tracked_kobj_accesses); 
 }
 
-void __always_inline track_induced_access(void) 
+void __always_inline 
+track_induced_access(void) 
 {
-    atomic64_inc(&num_induced_accesses);
+    inca(&num_induced_accesses);
 }
-void __always_inline track_disabled_access(void) 
+
+void __always_inline 
+track_disabled_access(void) 
 {
-    atomic64_inc(&num_accesses_while_disabled);
+    inca(&num_accesses_while_disabled);
 }
-void __always_inline track_untracked_access(void) 
+
+void __always_inline 
+track_untracked_access(void) 
 { 
-    atomic64_inc(&num_untracked_obj_access); 
+    inca(&num_untracked_obj_access); 
 }
 
 /* General object info */
@@ -102,11 +112,11 @@ static atomic64_t stats_frees = ATOMIC_INIT(0);
 static atomic64_t stats_kobj_frees = ATOMIC_INIT(0);
 static atomic64_t failed_kobj_allocs = ATOMIC_INIT(0);
 
-void __always_inline track_disabled_alloc(void) { atomic64_inc(&num_allocs_while_disabled); }
-void __always_inline track_induced_alloc(void) { atomic64_inc(&num_induced_allocs); }
-void __always_inline track_free(void) { atomic64_inc(&stats_frees); }
-void __always_inline track_kobj_free(void) { atomic64_inc(&stats_kobj_frees); }
-void __always_inline track_failed_kobj_alloc(void) { atomic64_inc(&failed_kobj_allocs); }
+void __always_inline track_disabled_alloc(void) { inca(&num_allocs_while_disabled); }
+void __always_inline track_induced_alloc(void) { inca(&num_induced_allocs); }
+void __always_inline track_free(void) { inca(&stats_frees); }
+void __always_inline track_kobj_free(void) { inca(&stats_kobj_frees); }
+void __always_inline track_failed_kobj_alloc(void) { inca(&failed_kobj_allocs); }
 
 /* specific allocators */
 static atomic64_t num_stack_allocs = ATOMIC_INIT(0);
@@ -121,24 +131,24 @@ void __always_inline track_alloc(enum AllocType AT)
     switch(AT)
     {
     case MEM_STACK:
-        atomic64_inc(&num_stack_allocs);
+        inca(&num_stack_allocs);
         break;
     case MEM_GLOBAL:
-        atomic64_inc(&num_globals);
+        inca(&num_globals);
         break;
     case MEM_KMALLOC:
     case MEM_KMALLOC_ND:
-        atomic64_inc(&num_kmalloc_allocs);
+        inca(&num_kmalloc_allocs);
         break;
     case MEM_KMEM_CACHE:
     case MEM_KMEM_CACHE_ND:
-        atomic64_inc(&num_kmem_cache_allocs);
+        inca(&num_kmem_cache_allocs);
         break;
     case MEM_ALLOC_PAGES:
-        atomic64_inc(&num_page_allocs);
+        inca(&num_page_allocs);
         break;
     case MEM_NONE:
-        atomic64_inc(&num_undefined_allocs);
+        inca(&num_undefined_allocs);
         break;
     default: 
         pr_err("No default case for track alloc: fix yourself!");
@@ -147,9 +157,9 @@ void __always_inline track_alloc(enum AllocType AT)
 
 void lt_pr_stats(size_t pr_level)
 {
-    uint64_t l3s = atomic64_read(&num_l3);
-    uint64_t l2s = atomic64_read(&num_l2);
-    uint64_t l1s = atomic64_read(&num_l1);
+    uint64_t l3s = geta(&num_l3);
+    uint64_t l2s = geta(&num_l2);
+    uint64_t l1s = geta(&num_l1);
 	printk(KERN_CRIT "------- Memorizer LT Stats -------\n");
 	printk(KERN_CRIT "  L3: %8d tbls * %6llu KB = %6llu MB\n", 
             l3s, l3size>>10, (l3s*l3size)>>20);
@@ -162,8 +172,8 @@ void lt_pr_stats(size_t pr_level)
 void lt_pr_stats_seq(struct seq_file *seq)
 {
     uint64_t l3s = 1;
-    uint64_t l2s = atomic64_read(&num_l2);
-    uint64_t l1s = atomic64_read(&num_l1);
+    uint64_t l2s = geta(&num_l2);
+    uint64_t l1s = geta(&num_l1);
 	seq_printf(seq,"------- Memorizer LT Stats -------\n");
 	seq_printf(seq,"  L3: %8d tbls * %6llu KB = %6llu MB\n", 
             l3s, l3size>>10, (l3s*l3size)>>20);
@@ -172,9 +182,6 @@ void lt_pr_stats_seq(struct seq_file *seq)
 	seq_printf(seq,"  L1: %8d tbls * %6llu KB = %6llu MB\n", 
             l1s, l1size>>10, (l1s*l1size)>>20);
 }
-
-/* syntactic sugar to reduce line length below */
-static inline uint64_t geta(atomic64_t * a) { return atomic64_read(a); }
 
 static uint64_t _total_tracked(void)
 {

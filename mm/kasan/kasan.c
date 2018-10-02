@@ -304,6 +304,10 @@ static __always_inline void check_memory_region_inline(unsigned long addr,
 	if (unlikely(size == 0))
 		return;
 
+	memorizer_mem_access(addr, size, write, ret_ip);
+    /* TODO: JUST RETURN TO SAVE TIME */
+    return;
+
 	if (unlikely((void *)addr <
 		kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
 		kasan_report(addr, size, write, ret_ip);
@@ -732,13 +736,9 @@ void __asan_unregister_globals(struct kasan_global *globals, size_t size)
 }
 EXPORT_SYMBOL(__asan_unregister_globals);
 
-// This is the original ASAN definition, but for quick prototyping in memorizer
-// I have simply created an optimized one that doesn't do any of the ASAN
-// checks
-#define DEFINE_ASAN_LOAD_STORE_ORIG(size)					\
+#define DEFINE_ASAN_LOAD_STORE(size)					\
 	void __asan_load##size(unsigned long addr)			\
 	{								\
-		memorizer_mem_access(addr, size, false, _RET_IP_);	\
 		check_memory_region_inline(addr, size, false, _RET_IP_);\
 	}								\
 	EXPORT_SYMBOL(__asan_load##size);				\
@@ -747,26 +747,7 @@ EXPORT_SYMBOL(__asan_unregister_globals);
 	EXPORT_SYMBOL(__asan_load##size##_noabort);			\
 	void __asan_store##size(unsigned long addr)			\
 	{								\
-		memorizer_mem_access(addr, size, true, _RET_IP_);	\
 		check_memory_region_inline(addr, size, true, _RET_IP_);	\
-	}								\
-	EXPORT_SYMBOL(__asan_store##size);				\
-	__alias(__asan_store##size)					\
-	void __asan_store##size##_noabort(unsigned long);		\
-	EXPORT_SYMBOL(__asan_store##size##_noabort)
-
-#define DEFINE_ASAN_LOAD_STORE(size)					\
-	void __asan_load##size(unsigned long addr)			\
-	{								\
-		memorizer_mem_access(addr, size, false, _RET_IP_);	\
-	}								\
-	EXPORT_SYMBOL(__asan_load##size);				\
-	__alias(__asan_load##size)					\
-	void __asan_load##size##_noabort(unsigned long);		\
-	EXPORT_SYMBOL(__asan_load##size##_noabort);			\
-	void __asan_store##size(unsigned long addr)			\
-	{								\
-		memorizer_mem_access(addr, size, true, _RET_IP_);	\
 	}								\
 	EXPORT_SYMBOL(__asan_store##size);				\
 	__alias(__asan_store##size)					\
@@ -781,8 +762,7 @@ DEFINE_ASAN_LOAD_STORE(16);
 
 void __asan_loadN(unsigned long addr, size_t size)
 {
-	//check_memory_region(addr, size, false);
-	memorizer_mem_access(addr, size, false, _RET_IP_);
+	check_memory_region(addr, size, false, MEM_KASAN_N);
 }
 EXPORT_SYMBOL(__asan_loadN);
 
@@ -792,8 +772,7 @@ EXPORT_SYMBOL(__asan_loadN_noabort);
 
 void __asan_storeN(unsigned long addr, size_t size)
 {
-	//check_memory_region(addr, size, true);
-	memorizer_mem_access(addr, size, true, _RET_IP_);
+	check_memory_region(addr, size, true, MEM_KASAN_N);
 }
 EXPORT_SYMBOL(__asan_storeN);
 

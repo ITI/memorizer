@@ -54,6 +54,12 @@
 
 #ifdef CONFIG_MEMORIZER /*----------- !CONFIG_MEMORIZER -------------------- */
 
+/* Special codes */
+enum MEMORIZER_CODES {
+    /* Assume this is the compiler but don't know */
+    MEM_KASAN_N = 0x5, /* for KASAN with no ret ip */
+};
+
 /* Init and Misc */
 void __init memorizer_init(void);
 int memorizer_init_from_driver(void);

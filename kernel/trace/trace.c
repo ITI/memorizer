@@ -2359,7 +2359,7 @@ trace_function(struct trace_array *tr,
 	struct ring_buffer *buffer = tr->trace_buffer.buffer;
 	struct ring_buffer_event *event;
 	struct ftrace_entry *entry;
-	
+
     event = __trace_buffer_lock_reserve(buffer, TRACE_FN, sizeof(*entry),
 					    flags, pc);
 	if (!event)

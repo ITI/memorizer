@@ -131,6 +131,9 @@ function_trace_call(unsigned long ip, unsigned long parent_ip,
 	int cpu;
 	int pc;
 
+    memorizer_call(ip, parent_ip);
+    return;
+
 	if (unlikely(!tr->function_enabled))
 		return;
 

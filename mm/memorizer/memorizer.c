@@ -813,13 +813,15 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
  *
  */
 void __always_inline 
-memorizer_call(uintptr_t from, uintptr_t to)
+memorizer_call(uintptr_t to, uintptr_t from)
 {
-	unsigned long flags;
+    unsigned long flags;
 	if(!cfg_log_on)
 		return;
 	if(in_memorizer())
 		return true;
+    if(current->kasan_depth > 0)
+        return;
 	__memorizer_enter();
 #if INLINE_EVENT_PARSE 
     local_irq_save(flags);
@@ -831,6 +833,7 @@ memorizer_call(uintptr_t from, uintptr_t to)
     local_irq_restore(flags);
 	__memorizer_exit();
 }
+EXPORT_SYMBOL(memorizer_call);
 
 /**
  * memorizer_mem_access() - record associated data with the load or store

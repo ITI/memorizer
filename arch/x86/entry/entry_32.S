@@ -1012,10 +1012,7 @@ ftrace_stub:
 	movl	0xc(%esp), %eax
 	movl	0x4(%ebp), %edx
 	subl	$MCOUNT_INSN_SIZE, %eax
-
-	/*call	*ftrace_trace_function*/
-	call	*memorizer_call
-
+	call	*ftrace_trace_function
 	popl	%edx
 	popl	%ecx
 	popl	%eax

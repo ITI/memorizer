@@ -17,7 +17,7 @@ static struct kmem_cache *eb_cache;
 /* Initialize the FHT global data */
 void func_hash_tbl_init(void)
 {
-	eb_cache = KMEM_CACHE(EdgeBucket, SLAB_PANIC);
+	//eb_cache = KMEM_CACHE(EdgeBucket, SLAB_PANIC);
 }
 
 struct FunctionHashTable * create_function_hashtable(){
@@ -56,11 +56,14 @@ cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t to)
   // Edge was not found. Two cases:
 
   // 1) Create new bucket if empty root
-  if (ht -> buckets[index] == NULL){
-    //ht -> buckets[index] = kmem_cache_alloc(eb_cache, GFP_ATOMIC|__GFP_REPEAT);
-    //ht -> buckets[index] = kmalloc(sizeof(struct EdgeBucket), GFP_ATOMIC|__GFP_REPEAT);
-    ht -> buckets[index] = &eblist[nexti++];
-    if(nexti>NUMBUCKS)panic("ran out of preallocated buckets for tracing");
+  if (ht->buckets[index] == NULL){
+    //ht -> buckets[index] = kmem_cache_alloc(eb_cache, GFP_ATOMIC);
+    if(ht->buckets[index]==NULL)
+    {
+      ht -> buckets[index] = &eblist[nexti++];
+      if(nexti>NUMBUCKS)
+          panic("Ran out of preallocated buckets for tracing");
+    }
     ht -> buckets[index] -> from = from;
     ht -> buckets[index] -> to = to;
     ht -> buckets[index] -> count = 1;
@@ -73,8 +76,12 @@ cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t to)
 
   // 2) Insert item onto end of existing chain
   //prev -> next = kmem_cache_alloc(eb_cache, GFP_ATOMIC);
-  prev -> next = &eblist[nexti++];
-  if(nexti>NUMBUCKS)panic("ran out of preallocated buckets for tracing");
+  if(prev->next==NULL)
+  {
+    prev -> next = &eblist[nexti++];
+    if(nexti>NUMBUCKS)
+        panic("ran out of preallocated buckets for tracing");
+  }
   prev -> next -> from = from;
   prev -> next -> to = to;
   prev -> next -> count = 1;  
@@ -106,8 +113,8 @@ void cfgmap_clear(struct FunctionHashTable * ht)
     while (b != NULL){
       struct EdgeBucket * prev = b;
       b = b -> next;
-      //kmem_cache_free(eb_cache, prev);
       memset(prev,NULL,sizeof(struct EdgeBucket));
+      //kmem_cache_free(eb_cache, prev);
     }
     ht -> buckets[index] = NULL;
   }
@@ -123,7 +130,8 @@ void destroy_function_hashtable(struct FunctionHashTable * ht){
     while (b != NULL){
       struct EdgeBucket * prev = b;
       b = b -> next;
-      kmem_cache_free(eb_cache, prev);
+      memset(prev,NULL,sizeof(struct EdgeBucket));
+      //kmem_cache_free(eb_cache, prev);
     }
   }
   kfree(ht->buckets);

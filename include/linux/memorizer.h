@@ -89,11 +89,9 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr);
 void memorizer_register_global(const void *ptr, size_t size);
 void memorizer_stack_spill(unsigned long call_site, const void *ptr, size_t
         size);
-
-
 void memorizer_fork(struct task_struct *p, long nr);
-
 void switchBuffer(void);
+void memorizer_print_stats(void);
 
 /* Temporary Debug and test code */
 int __memorizer_get_opsx(void);
@@ -119,6 +117,7 @@ static inline void memorizer_kmem_cache_free(unsigned long call_site, const void
 static inline void memorizer_register_global(const void *ptr, size_t size) {}
 static inline void memorizer_fork(struct task_struct *p, long nr) {}
 static inline void switchBuffer(void) {}
+static inline void memorizer_print_stats(void) {}
 
 #endif /* CONFIG_MEMORIZER */
 

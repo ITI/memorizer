@@ -38,6 +38,8 @@
 #include <linux/kthread.h>
 #include <linux/init.h>
 
+#include <linux/memorizer.h>
+
 #include <asm/tlb.h>
 #include "internal.h"
 
@@ -985,6 +987,8 @@ bool out_of_memory(struct oom_control *oc)
 {
 	unsigned long freed = 0;
 	enum oom_constraint constraint = CONSTRAINT_NONE;
+
+    memorizer_print_stats();
 
 	if (oom_killer_disabled)
 		return false;

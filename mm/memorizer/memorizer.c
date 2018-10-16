@@ -610,6 +610,13 @@ void __memorizer_print_events(unsigned int num_events)
 EXPORT_SYMBOL(__memorizer_print_events);
 
 
+void memorizer_print_stats(void)
+{
+    print_stats(KERN_CRIT);
+}
+EXPORT_SYMBOL(memorizer_print_stats);
+
+
 /**
  * dump_object_list() - print out the list of free'd objects
  */

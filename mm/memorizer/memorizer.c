@@ -114,6 +114,7 @@
 #include <linux/smp.h>
 #include <linux/workqueue.h>
 #include <asm/atomic.h>
+#include <asm/bitops.h>
 #include <asm/percpu.h>
 #include <linux/relay.h>
 #include <asm-generic/bug.h>
@@ -375,6 +376,10 @@ DEFINE_RWLOCK(object_list_spinlock);
 /* System wide Spinlock for the aggregating thread so nothing else interrupts */
 DEFINE_RWLOCK(aggregator_spinlock);
 
+
+//int test_and_set_bit(unsigned long nr, volatile unsigned long *addr);
+volatile unsigned long inmem;
+
 /**
  * __memorizer_enter() - increment recursion counter for entry into memorizer
  *
@@ -387,18 +392,12 @@ DEFINE_RWLOCK(aggregator_spinlock);
  */
 static inline int __memorizer_enter(void)
 {
-	//++current->memorizer_recursion;
-    int depth = ++get_cpu_var(recursive_depth);
-    put_cpu_var(recursive_depth);
-    return depth;
+    return test_and_set_bit_lock(0,&inmem);
 }
 
-static inline int __memorizer_exit(void)
+static __always_inline void __memorizer_exit(void)
 {
-	//--current->memorizer_recursion;
-    int depth = --get_cpu_var(recursive_depth);
-    put_cpu_var(recursive_depth);
-    return  depth;
+    return clear_bit_unlock (0,&inmem);
 }
 
 /**
@@ -406,10 +405,7 @@ static inline int __memorizer_exit(void)
  */
 static __always_inline bool in_memorizer(void)
 {
-    int in = get_cpu_var(recursive_depth);
-    put_cpu_var(recursive_depth);
-    return in;
-	//return current->memorizer_recursion;
+    return test_bit(0,&inmem);
 }
 
 /**
@@ -825,13 +821,12 @@ memorizer_call(uintptr_t to, uintptr_t from)
     unsigned long flags;
 	if(!cfg_log_on)
 		return;
-	if(in_memorizer())
-		return true;
     if(current->kasan_depth > 0)
         return;
-	__memorizer_enter();
-#if INLINE_EVENT_PARSE 
+	if(__memorizer_enter())
+        return;
     local_irq_save(flags);
+#if INLINE_EVENT_PARSE 
     cfg_update_counts(cfgtbl, from, to);
 #else
     //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
@@ -857,26 +852,29 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	unsigned long flags;
     struct memorizer_kernel_event * evtptr;
 
-	if(unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled)){
+	if(unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled))
+    {
         track_disabled_access();
 		return;
 	}
 
-	if(in_memorizer()){
+    if(__memorizer_enter())
+    {
         track_induced_access();
 		return;
 	}
 
-	__memorizer_enter();
 
 #if INLINE_EVENT_PARSE 
     local_irq_save(flags);
     find_and_update_kobj_access(ip,addr,-1,write); 
+    local_irq_restore(flags);
 #else
     //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
     //wq_push(addr, size, write, ip, 0);
 #endif
     
+	__memorizer_exit();
 
 #if 0
 	if(buff_init)
@@ -925,8 +923,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	}
 	//}
 #endif
-    local_irq_restore(flags);
-	__memorizer_exit();
 }
 
 void __always_inline memorizer_fork(struct task_struct *p, long nr){
@@ -1133,6 +1129,7 @@ static void clear_dead_objs(void)
 	struct list_head *tmp;
 	unsigned long flags;
 	pr_info("Clearing the free'd kernel objects\n");
+    /* Avoid rentrance while freeing the list */
 	__memorizer_enter();
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_for_each_safe(p, tmp, &object_list)
@@ -1312,20 +1309,22 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
 
-	struct memorizer_kobj *kobj;
-	unsigned long flags;
+        struct memorizer_kobj *kobj;
+        unsigned long flags;
 
-    if(unlikely(in_memorizer()))
-        return;
+        if(__memorizer_enter())
+                return;
 
-	__memorizer_enter();
+        local_irq_save(flags);
+        //wq_push(kobj_ptr, 0, Memorizer_Mem_Free, call_site, 0);
+        //trace_printk("%p->%p,%d,%d\n",call_site,kobj_ptr,0,Memorizer_Mem_Free);
+        __memorizer_free_kobj(call_site, kobj_ptr);
 
-    //wq_push(kobj_ptr, 0, Memorizer_Mem_Free, call_site, 0);
-    //trace_printk("%p->%p,%d,%d\n",call_site,kobj_ptr,0,Memorizer_Mem_Free);
-    __memorizer_free_kobj(call_site, kobj_ptr);
+        local_irq_restore(flags);
+        __memorizer_exit();
 
 #if 0
-	if(buff_init)
+        if(buff_init)
 	{
 
 		while(*buff_fill)
@@ -1360,9 +1359,6 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	}
 //	}
 #endif
-		
-	__memorizer_exit();
-	
 }
 
 /**
@@ -1382,125 +1378,126 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
         *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, enum AllocType AT)
 {
 
-	unsigned long flags;
-	struct memorizer_kobj *kobj;
-	
-	if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
-		return;
+        unsigned long flags;
+        struct memorizer_kobj *kobj;
 
-	if(unlikely(!memorizer_enabled)) {
-        track_disabled_alloc();
-		return;
-	}
+        if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
+                return;
 
-	if(in_memorizer()) {
-        track_induced_alloc();
-		return;
-	}
-
-	__memorizer_enter();
-
-#if 0
-    pid_t pid;
-    if (in_irq()) {
-        pid = 0;
-    } else if (in_softirq()) {
-        pid = 0;
-    } else {
-        pid = current->pid;
-    }
-
-    /* workqueue style */
-    wq_push(ptr, bytes_alloc, Memorizer_Mem_Alloc, call_site, current->comm);
-
-    /* ftrace event queue style */
-    trace_printk("%p->%p,%d,%d\n",call_site,ptr,bytes_alloc,Memorizer_Mem_Alloc);
-#endif 
-
-    /* inline parsing */
-	kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(gfp_flags));
-	if(!kobj){
-		pr_crit("Cannot allocate a memorizer_kobj structure\n");
-        track_failed_kobj_alloc();
-        return;
-	}
-
-    /* initialize all object metadata */
-	init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc, AT);
-    
-    /* memorizer stats tracking */
-    track_alloc(AT);
-    
-    /* mark object as live and link in lookup table */
-    lt_insert_kobj(kobj);
-    
-	/* Grab the writer lock for the object_list and insert into object list */
-    write_lock_irqsave(&object_list_spinlock, flags);
-    list_add_tail(&kobj->object_list, &object_list);
-    write_unlock_irqrestore(&object_list_spinlock, flags);
-	
-#if 0
-	if(buff_init)
-	{
-		
-		while(*buff_fill)
-		{
-			curBuff = (curBuff + 1)%NB;
-			switchBuffer();
-		}		
-
-		local_irq_save(flags);
-		mke.event_type = Memorizer_Mem_Alloc;
-		mke.event_ip = call_site;
-		mke.src_va_ptr = (uintptr_t)ptr;
-		mke.src_pa_ptr = __pa((uintptr_t)ptr);
-		mke.event_size = bytes_alloc;
-		mke.event_jiffies = jiffies;
-		/* Some of the call sites are not tracked correctly so don't try */
-		if(call_site)
-			kallsyms_lookup((unsigned long) call_site, NULL, NULL,
-				//&(kobj->modsymb), kobj->funcstr);
-				NULL, mke.funcstr);
-		/* task information */
-        if (in_irq()) {
-            mke.pid = 0;
-            strncpy(mke.comm, "hardirq", sizeof(mke.comm));
-        } else if (in_softirq()) {
-            mke.pid = 0;
-            strncpy(mke.comm, "softirq", sizeof(mke.comm));
-        } else {
-            mke.pid = current->pid;
-            /*
-             * There is a small chance of a race with set_task_comm(),
-             * however using get_task_comm() here may cause locking
-             * dependency issues with current->alloc_lock. In the worst
-             *	 case, the command line is not correct.
-             */
-            strncpy(mke.comm, current->comm, sizeof(mke.comm));
+        if(unlikely(!memorizer_enabled)) {
+                track_disabled_alloc();
+                return;
         }
 
-		mke_ptr = (struct memorizer_kernel_alloc *)buff_write_end;
-		*mke_ptr = mke;
-		buff_write_end = buff_write_end + sizeof(struct memorizer_kernel_alloc);
-		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_alloc);
+        if(__memorizer_enter())
+        {
+                track_induced_alloc();
+                return;
+        }
 
-		if(*buff_free_size < sizeof(struct memorizer_kernel_event))
-		{
-			*buff_fill = 1;
-			buff_write_end = buff_start;
-		}
-		local_irq_restore(flags);
-	}
-	else
-	{
-        track_disabled_alloc();
-	}
+#if 0
+        pid_t pid;
+        if (in_irq()) {
+                pid = 0;
+        } else if (in_softirq()) {
+                pid = 0;
+        } else {
+                pid = current->pid;
+        }
+
+        /* workqueue style */
+        wq_push(ptr, bytes_alloc, Memorizer_Mem_Alloc, call_site, current->comm);
+
+        /* ftrace event queue style */
+        trace_printk("%p->%p,%d,%d\n",call_site,ptr,bytes_alloc,Memorizer_Mem_Alloc);
+#endif 
+
+        //local_irq_save(flags);
+        /* inline parsing */
+        kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(gfp_flags));
+        if(!kobj){
+                pr_crit("Cannot allocate a memorizer_kobj structure\n");
+                track_failed_kobj_alloc();
+                return;
+        }
+
+        /* initialize all object metadata */
+        init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc, AT);
+
+        /* memorizer stats tracking */
+        track_alloc(AT);
+
+        /* mark object as live and link in lookup table */
+        lt_insert_kobj(kobj);
+
+        /* Grab the writer lock for the object_list and insert into object list */
+        write_lock_irqsave(&object_list_spinlock, flags);
+        list_add_tail(&kobj->object_list, &object_list);
+        write_unlock_irqrestore(&object_list_spinlock, flags);
+
+        //local_irq_restore(flags);
+        __memorizer_exit();
+
+#if 0
+        if(buff_init)
+        {
+
+                while(*buff_fill)
+                {
+                        curBuff = (curBuff + 1)%NB;
+                        switchBuffer();
+                }		
+
+                local_irq_save(flags);
+                mke.event_type = Memorizer_Mem_Alloc;
+                mke.event_ip = call_site;
+                mke.src_va_ptr = (uintptr_t)ptr;
+                mke.src_pa_ptr = __pa((uintptr_t)ptr);
+                mke.event_size = bytes_alloc;
+                mke.event_jiffies = jiffies;
+                /* Some of the call sites are not tracked correctly so don't try */
+                if(call_site)
+                        kallsyms_lookup((unsigned long) call_site, NULL, NULL,
+                                        //&(kobj->modsymb), kobj->funcstr);
+                                NULL, mke.funcstr);
+                /* task information */
+                if (in_irq()) {
+                        mke.pid = 0;
+                        strncpy(mke.comm, "hardirq", sizeof(mke.comm));
+                } else if (in_softirq()) {
+                        mke.pid = 0;
+                        strncpy(mke.comm, "softirq", sizeof(mke.comm));
+                } else {
+                        mke.pid = current->pid;
+                        /*
+                         * There is a small chance of a race with set_task_comm(),
+                         * however using get_task_comm() here may cause locking
+                         * dependency issues with current->alloc_lock. In the worst
+                         *	 case, the command line is not correct.
+                         */
+                        strncpy(mke.comm, current->comm, sizeof(mke.comm));
+                }
+
+                mke_ptr = (struct memorizer_kernel_alloc *)buff_write_end;
+                *mke_ptr = mke;
+                buff_write_end = buff_write_end + sizeof(struct memorizer_kernel_alloc);
+                *buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_alloc);
+
+                if(*buff_free_size < sizeof(struct memorizer_kernel_event))
+                {
+                        *buff_fill = 1;
+                        buff_write_end = buff_start;
+                }
+                local_irq_restore(flags);
+        }
+        else
+        {
+                track_disabled_alloc();
+        }
 
 #endif
 
-	//*buff_end = (unsigned long long)0xaa;
-	
-	__memorizer_exit();
+        //*buff_end = (unsigned long long)0xaa;
 }
 
 /*** HOOKS similar to the kmem points ***/

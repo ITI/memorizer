@@ -56,11 +56,12 @@
 
 /* mask to apply to memorizer allocations TODO: verify the list */
 #define gfp_memorizer_mask(gfp)	((gfp | GFP_ATOMIC) &   \
-        ( GFP_ATOMIC  \
+        ( GFP_ATOMIC            \
           | __GFP_NOTRACK	    \
+          | __GFP_NORETRY       \
         )                       \
-    )
-          //| __GFP_MEMALLOC	    \
+        )
+//| __GFP_MEMALLOC	    \
 
 /* global timestamp counter */
 static atomic_t timestamp = ATOMIC_INIT(0);

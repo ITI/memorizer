@@ -275,6 +275,29 @@ struct code_region crypto_code_region = {
 	.e = 0xffffffff814cee00
 };
 
+//==-- kobject emergency reserve ------------------------------------------==//
+#define NUM_EMERGENCY_KOBJS     10000
+static struct memorizer_kobj kobj_emergency_pool[NUM_EMERGENCY_KOBJS];
+size_t next_kobj_pool_i = 0;
+
+/**
+ * __alloc_kobj_reserve() - return a kobj metadata object from reserve pool
+ *
+ * Description: Memorizer tries to use kernel allocators for data structures
+ * used a lot, but not all the time can they be serviced. To avoid losing data
+ * we create emergency pools with which to service the allocation. They are not
+ * the most robust (statically sized) but should be good enough for practical
+ * purposes.
+ */
+static struct memorizer_kobj * __alloc_kobj_reserve(void)
+{
+        if(next_kobj_pool_i == NUM_EMERGENCY_KOBJS)
+                return NULL;
+        return &kobj_emergency_pool[next_kobj_pool_i++];
+}
+
+//==-- PER CPU data structures and control flags --------------------------==//
+
 /* TODO make this dynamically allocated based upon free memory */
 //DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls = {.selector = 0, .head = 0, .tail = 0 });
 DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
@@ -297,7 +320,7 @@ static int __init early_memorizer_enabled(char *arg){
     if(!arg)
         return 0;
     if(strcmp(arg,"yes") == 0) {
-        pr_info("Enabling boot alloc loggin\n");
+        pr_info("Enabling boot alloc logging\n");
         memorizer_enabled_boot = true;
     }
     if(strcmp(arg,"no") == 0) {
@@ -549,6 +572,7 @@ static void print_pdf_table(void)
  * circular buffer when hitting the end or printing the last set of events if
  * some of them are at the end of the linear buffer. 
  */
+/* TODO: LEGACY CODE SHOULD BE REMOVED */
 void __memorizer_print_events(unsigned int num_events)
 {
 	int i, e, log_index;
@@ -1412,13 +1436,18 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
         trace_printk("%p->%p,%d,%d\n",call_site,ptr,bytes_alloc,Memorizer_Mem_Alloc);
 #endif 
 
-        //local_irq_save(flags);
+        local_irq_save(flags);
+
         /* inline parsing */
         kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(gfp_flags));
         if(!kobj){
-                pr_crit("Cannot allocate a memorizer_kobj structure\n");
-                track_failed_kobj_alloc();
-                return;
+                kobj = __alloc_kobj_reserve();
+                if(!kobj)
+                {
+                        //pr_crit("Cannot allocate a memorizer_kobj structure\n");
+                        track_failed_kobj_alloc();
+                        goto out;
+                }
         }
 
         /* initialize all object metadata */
@@ -1431,11 +1460,12 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
         lt_insert_kobj(kobj);
 
         /* Grab the writer lock for the object_list and insert into object list */
-        write_lock_irqsave(&object_list_spinlock, flags);
+        write_lock(&object_list_spinlock);
         list_add_tail(&kobj->object_list, &object_list);
-        write_unlock_irqrestore(&object_list_spinlock, flags);
+        write_unlock(&object_list_spinlock);
 
-        //local_irq_restore(flags);
+out:
+        local_irq_restore(flags);
         __memorizer_exit();
 
 #if 0

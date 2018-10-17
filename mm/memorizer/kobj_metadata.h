@@ -95,6 +95,7 @@ static char * alloc_type_str (enum AllocType AT)
         return "NONE";
     default:
         pr_info("Searching for unavailable alloc type");
+        return "ALLOC TYPE NOT FOUND";
     }
 };
 

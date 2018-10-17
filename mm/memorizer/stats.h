@@ -56,7 +56,7 @@
 
 /* This is a flag that will macro disable stats for more efficient tracing */
 #if 1
-#define CONFIG_MEMORIZER_STATS 0
+#define CONFIG_MEMORIZER_STATS 1
 #endif
 
 //==-- External Interface --==//
@@ -71,6 +71,7 @@ void track_access(void);
 void track_induced_access(void);
 void track_disabled_access(void);
 void track_untracked_access(void);
+void track_access_counts_alloc(void);
 void track_l1_alloc(void);
 void track_l2_alloc(void);
 void track_l3_alloc(void);
@@ -87,6 +88,7 @@ static inline void track_access(void){}
 static inline void track_induced_access(void){}
 static inline void track_disabled_access(void){}
 static inline void track_untracked_access(void){}
+static inline void track_access_counts_alloc(void){}
 static inline void track_l1_alloc(void){}
 static inline void track_l2_alloc(void){}
 static inline void track_l3_alloc(void){}

@@ -135,6 +135,18 @@ struct memorizer_kobj {
 	struct list_head	access_counts;
 };
 
+/**
+ * access_counts - track reads/writes from single source IP
+ */
+ struct access_from_counts {
+	 struct list_head list;
+	 uintptr_t ip;
+	 pid_t pid;
+	 uint64_t writes;
+	 uint64_t reads;
+ };
+
+
 struct pid_obj {
 	uint32_t key;
 	pid_t pid;

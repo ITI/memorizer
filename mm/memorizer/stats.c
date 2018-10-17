@@ -111,12 +111,14 @@ static atomic64_t num_induced_allocs = ATOMIC_INIT(0);
 static atomic64_t stats_frees = ATOMIC_INIT(0);
 static atomic64_t stats_kobj_frees = ATOMIC_INIT(0);
 static atomic64_t failed_kobj_allocs = ATOMIC_INIT(0);
+static atomic64_t num_access_counts = ATOMIC_INIT(0);
 
 void __always_inline track_disabled_alloc(void) { inca(&num_allocs_while_disabled); }
 void __always_inline track_induced_alloc(void) { inca(&num_induced_allocs); }
 void __always_inline track_free(void) { inca(&stats_frees); }
 void __always_inline track_kobj_free(void) { inca(&stats_kobj_frees); }
 void __always_inline track_failed_kobj_alloc(void) { inca(&failed_kobj_allocs); }
+void __always_inline track_access_counts_alloc(void) { inca(&num_access_counts); }
 
 /* specific allocators */
 static atomic64_t num_stack_allocs = ATOMIC_INIT(0);
@@ -237,10 +239,14 @@ void print_stats(size_t pr_level)
     printk(KERN_CRIT "------- Internal Allocs -------\n");
     /* TODO: right now if we don't drain inline then this is total tracked */
     printk(KERN_CRIT "  Live KOBJs: %10llu * %d B = %6llu MB\n", 
-            _total_tracked()-geta(&stats_kobj_frees),
-            sizeof(struct memorizer_kobj), 
-            (_total_tracked()-geta(&stats_kobj_frees)) * sizeof(struct memorizer_kobj) >> 20 );
-    printk(KERN_CRIT "  Live Count Objs: TODO!!!!\n");
+            _total_tracked()-geta(&stats_kobj_frees), sizeof(struct
+                memorizer_kobj), 
+            (_total_tracked()-geta(&stats_kobj_frees)) * sizeof(struct
+                memorizer_kobj) >> 20 ); 
+    
+    printk(KERN_CRIT "  Total Edges: %10llu * %d B = %8llu MB\n",
+            geta(&num_access_counts), sizeof(struct access_from_counts),
+            geta(&num_access_counts)*sizeof(struct access_from_counts)>>20);
 
     lt_pr_stats(pr_level);
 }
@@ -278,7 +284,9 @@ int seq_print_stats(struct seq_file *seq)
             sizeof(struct memorizer_kobj), 
             (_total_tracked()-geta(&stats_kobj_frees)) * sizeof(struct memorizer_kobj) >> 20 );
             
-    seq_printf(seq,"  Live Count Objs: TODO!!!!\n");
+    seq_printf(seq,"  Total Edges: %10llu * %d B = %8llu MB\n",
+            geta(&num_access_counts), sizeof(struct access_from_counts),
+            geta(&num_access_counts) * sizeof(struct access_from_counts)>>20);
     lt_pr_stats_seq(seq);
 	return 0;
 }

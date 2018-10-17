@@ -224,17 +224,6 @@ struct mem_access_worklists {
 	long tail;
 };
 
-/**
- * access_counts - track reads/writes from single source IP
- */
- struct access_from_counts {
-	 struct list_head list;
-	 uintptr_t ip;
-	 pid_t pid;
-	 uint64_t writes;
-	 uint64_t reads;
- };
-
 /*
  * switchBuffer - switches the the buffer being written to, when the buffer is full
  */
@@ -682,6 +671,7 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
 	afc = kmem_cache_alloc(access_from_counts_cache, GFP_ATOMIC);
 	if(afc)
 		init_access_counts_object(afc, ip, pid);
+        track_access_counts_alloc();
 	return afc;
 }
 
@@ -842,22 +832,22 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
 void __always_inline 
 memorizer_call(uintptr_t to, uintptr_t from)
 {
-    unsigned long flags;
-	if(!cfg_log_on)
-		return;
-    if(current->kasan_depth > 0)
-        return;
-	if(__memorizer_enter())
-        return;
-    local_irq_save(flags);
+        unsigned long flags;
+        if(!cfg_log_on)
+                return;
+        if(current->kasan_depth > 0)
+                return;
+        if(__memorizer_enter())
+                return;
+        local_irq_save(flags);
 #if INLINE_EVENT_PARSE 
-    cfg_update_counts(cfgtbl, from, to);
+        cfg_update_counts(cfgtbl, from, to);
 #else
-    //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
-    //wq_push(addr, size, write, ip, 0);
+        //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
+        //wq_push(addr, size, write, ip, 0);
 #endif
-    local_irq_restore(flags);
-	__memorizer_exit();
+        local_irq_restore(flags);
+        __memorizer_exit();
 }
 EXPORT_SYMBOL(memorizer_call);
 
@@ -953,19 +943,13 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 	
 	unsigned long flags;
 
-	if(unlikely(!memorizer_enabled)) {
-        track_disabled_alloc();
+	if(unlikely(!memorizer_enabled))
 		return;
-	}
-	
-    if(unlikely(in_memorizer()))
-    {
-        track_induced_alloc();
+	if(__memorizer_enter())
         return;
-    }
 
-	__memorizer_enter();
     
+#if 0
     struct memorizer_kernel_event * evtptr = wq_top();
     evtptr->event_type = Memorizer_Fork;
 

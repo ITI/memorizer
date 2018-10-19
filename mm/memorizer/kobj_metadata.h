@@ -59,7 +59,8 @@
  * struct memorizer_kobj - metadata for kernel objects 
  */
 enum AllocType {
-    MEM_STACK=0,
+    MEM_STACK=1,
+    MEM_STACK_PAGE,
     MEM_HEAP,
     MEM_GLOBAL,
     MEM_KMALLOC,
@@ -67,9 +68,13 @@ enum AllocType {
     MEM_KMEM_CACHE,
     MEM_KMEM_CACHE_ND,
     MEM_ALLOC_PAGES,
+    MEM_INDUCED,
     /* TODO: Legacy type, fix in tracking code to not use */
     MEM_NONE
 };
+
+#define ALLOC_CODE_SHIFT    59
+#define ALLOC_INDUCED_CODE	(_AC(MEM_INDUCED,UL) << ALLOC_CODE_SHIFT)
 
 static char * alloc_type_str (enum AllocType AT)
 {
@@ -77,6 +82,8 @@ static char * alloc_type_str (enum AllocType AT)
     {
     case MEM_STACK:
         return "STACK";
+    case MEM_STACK_PAGE:
+        return "STACK_PAGE";
     case MEM_HEAP:
         return "HEAP";
     case MEM_GLOBAL:

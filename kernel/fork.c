@@ -485,6 +485,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 		return NULL;
 
 	stack = alloc_thread_stack_node(tsk, node);
+        memorizer_stack_page_alloc(stack, THREAD_SIZE);
 	if (!stack)
 		goto free_tsk;
 
@@ -1980,6 +1981,8 @@ long _do_fork(unsigned long clone_flags,
 	} else {
 		nr = PTR_ERR(p);
 	}
+
+	//memorizer_fork(p,nr);
 
 	return nr;
 }

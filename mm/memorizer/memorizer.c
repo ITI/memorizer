@@ -1125,7 +1125,7 @@ static void free_kobj(struct memorizer_kobj * kobj)
 	free_access_from_list(&kobj->access_counts);
 	write_unlock(&kobj->rwlock);
 	kmem_cache_free(kobj_cache, kobj);
-    track_kobj_free();
+        track_kobj_free();
 }
 
 
@@ -1594,6 +1594,24 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 	}
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)
 			       page_address(page));
+}
+
+/**
+ *
+ * Thread should have allocated and this stack should be in the table
+ */
+void memorizer_stack_page_alloc(uintptr_t va, size_t size)
+{
+    /* get the object */
+    struct memorizer_kobj * stack_kobj = lt_get_kobj(va);
+    if(!stack_kobj)
+    {
+        pr_crit("Stack not in as whole object in memorizer tree");
+        return;
+    }
+
+    /* change alloc type to stack page alloc */
+    stack_kobj->alloc_type = MEM_STACK_PAGE;
 }
 
 void memorizer_stack_spill(unsigned long call_site, const void *ptr, size_t

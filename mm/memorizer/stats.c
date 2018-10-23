@@ -60,7 +60,7 @@
 //==-- Debug and Stats Output Code --==//
 
 /* syntactic sugar to reduce line length below */
-static __always_inline uint64_t geta(atomic64_t * a) { return atomic64_read(a); }
+static __always_inline int64_t geta(atomic64_t * a) { return atomic64_read(a); }
 static __always_inline void inca(atomic64_t * a) { atomic64_inc(a); }
 
 /* Lookup Table */
@@ -159,9 +159,9 @@ void __always_inline track_alloc(enum AllocType AT)
 
 void lt_pr_stats(size_t pr_level)
 {
-    uint64_t l3s = geta(&num_l3);
-    uint64_t l2s = geta(&num_l2);
-    uint64_t l1s = geta(&num_l1);
+    int64_t l3s = geta(&num_l3);
+    int64_t l2s = geta(&num_l2);
+    int64_t l1s = geta(&num_l1);
 	printk(KERN_CRIT "------- Memorizer LT Stats -------\n");
 	printk(KERN_CRIT "  L3: %8d tbls * %6llu KB = %6llu MB\n", 
             l3s, l3size>>10, (l3s*l3size)>>20);
@@ -173,19 +173,19 @@ void lt_pr_stats(size_t pr_level)
 
 void lt_pr_stats_seq(struct seq_file *seq)
 {
-    uint64_t l3s = 1;
-    uint64_t l2s = geta(&num_l2);
-    uint64_t l1s = geta(&num_l1);
+    int64_t l3s = 1;
+    int64_t l2s = geta(&num_l2);
+    int64_t l1s = geta(&num_l1);
 	seq_printf(seq,"------- Memorizer LT Stats -------\n");
-	seq_printf(seq,"  L3: %8d tbls * %6llu KB = %6llu MB\n", 
+	seq_printf(seq,"  L3: %8d tbls * %6lld KB = %6lld MB\n", 
             l3s, l3size>>10, (l3s*l3size)>>20);
-	seq_printf(seq,"  L2: %8d tbls * %6llu KB = %6llu MB\n", 
+	seq_printf(seq,"  L2: %8d tbls * %6lld KB = %6lld MB\n", 
             l2s, l2size>>10, (l2s*l2size)>>20);
-	seq_printf(seq,"  L1: %8d tbls * %6llu KB = %6llu MB\n", 
+	seq_printf(seq,"  L1: %8d tbls * %6lld KB = %6lld MB\n", 
             l1s, l1size>>10, (l1s*l1size)>>20);
 }
 
-static uint64_t _total_tracked(void)
+static int64_t _total_tracked(void)
 {
     return geta(&num_stack_allocs)
         + geta(&num_globals)
@@ -199,7 +199,7 @@ static uint64_t _live_objs(void)
     return _total_tracked() - geta(&stats_frees);
 }
 
-static uint64_t _total_accesses(void)
+static int64_t _total_accesses(void)
 {
     return geta(&tracked_kobj_accesses)
         + geta(&num_induced_accesses)
@@ -213,38 +213,38 @@ static uint64_t _total_accesses(void)
 void print_stats(size_t pr_level)
 {
 	printk(KERN_CRIT "------- Memory Accesses -------\n");
-	printk(KERN_CRIT "  Tracked:      %16llu\n", geta(&tracked_kobj_accesses));
-	printk(KERN_CRIT "  Missing:      %16llu\n", geta(&num_untracked_obj_access));
-	printk(KERN_CRIT "  Induced:      %16llu\n", geta(&num_induced_accesses));
-	printk(KERN_CRIT "  Disabled:     %16llu\n", geta(&num_accesses_while_disabled));
+	printk(KERN_CRIT "  Tracked:      %16lld\n", geta(&tracked_kobj_accesses));
+	printk(KERN_CRIT "  Missing:      %16lld\n", geta(&num_untracked_obj_access));
+	printk(KERN_CRIT "  Induced:      %16lld\n", geta(&num_induced_accesses));
+	printk(KERN_CRIT "  Disabled:     %16lld\n", geta(&num_accesses_while_disabled));
 	printk(KERN_CRIT "    ---------------------------\n");
 	printk(KERN_CRIT "  Total Obs:    %16llu\n", _total_accesses());
 
 	printk(KERN_CRIT "------- Tracked Memory Allocations -------\n");
-	printk(KERN_CRIT "  stack:        %16llu\n", geta(&num_stack_allocs));
-	printk(KERN_CRIT "  globals:      %16llu\n", geta(&num_globals));
-	printk(KERN_CRIT "  kmalloc:      %16llu\n", geta(&num_kmalloc_allocs));
-	printk(KERN_CRIT "  kmem_cache:   %16llu\n", geta(&num_kmem_cache_allocs));
-	printk(KERN_CRIT "  page:         %16llu\n", geta(&num_page_allocs));
+	printk(KERN_CRIT "  stack:        %16lld\n", geta(&num_stack_allocs));
+	printk(KERN_CRIT "  globals:      %16lld\n", geta(&num_globals));
+	printk(KERN_CRIT "  kmalloc:      %16lld\n", geta(&num_kmalloc_allocs));
+	printk(KERN_CRIT "  kmem_cache:   %16lld\n", geta(&num_kmem_cache_allocs));
+	printk(KERN_CRIT "  page:         %16lld\n", geta(&num_page_allocs));
 	printk(KERN_CRIT "        ------\n");
-	printk(KERN_CRIT "  Total:        %16llu\n", _total_tracked());
-	printk(KERN_CRIT "  Frees:        %16llu\n", geta(&stats_frees));
-	printk(KERN_CRIT "  Live Now:     %16llu\n", _live_objs());
+	printk(KERN_CRIT "  Total:        %16lld\n", _total_tracked());
+	printk(KERN_CRIT "  Frees:        %16lld\n", geta(&stats_frees));
+	printk(KERN_CRIT "  Live Now:     %16lld\n", _live_objs());
 
 	printk(KERN_CRIT "------- Missing Allocs -------\n");
-	printk(KERN_CRIT "  Mem disabled: %16llu\n", geta(&num_allocs_while_disabled));
-	printk(KERN_CRIT "  Mem induced:  %16llu\n", geta(&num_induced_allocs));
-	printk(KERN_CRIT "  kobj fails:   %16llu\n", geta(&failed_kobj_allocs));
+	printk(KERN_CRIT "  Mem disabled: %16lld\n", geta(&num_allocs_while_disabled));
+	printk(KERN_CRIT "  Mem induced:  %16lld\n", geta(&num_induced_allocs));
+	printk(KERN_CRIT "  kobj fails:   %16lld\n", geta(&failed_kobj_allocs));
 	
     printk(KERN_CRIT "------- Internal Allocs -------\n");
     /* TODO: right now if we don't drain inline then this is total tracked */
-    printk(KERN_CRIT "  Live KOBJs: %10llu * %d B = %6llu MB\n", 
+    printk(KERN_CRIT "  Live KOBJs: %10lld * %d B = %6lld MB\n", 
             _total_tracked()-geta(&stats_kobj_frees), sizeof(struct
                 memorizer_kobj), 
             (_total_tracked()-geta(&stats_kobj_frees)) * sizeof(struct
                 memorizer_kobj) >> 20 ); 
     
-    printk(KERN_CRIT "  Total Edges: %10llu * %d B = %8llu MB\n",
+    printk(KERN_CRIT "  Total Edgs: %10lld * %d B = %6lld MB\n",
             geta(&num_access_counts), sizeof(struct access_from_counts),
             geta(&num_access_counts)*sizeof(struct access_from_counts)>>20);
 
@@ -254,37 +254,37 @@ void print_stats(size_t pr_level)
 int seq_print_stats(struct seq_file *seq)
 {
 	seq_printf(seq,"------- Memory Accesses -------\n");
-	seq_printf(seq,"  Tracked:      %16llu\n", geta(&tracked_kobj_accesses));
-	seq_printf(seq,"  Missing:      %16llu\n", geta(&num_untracked_obj_access));
-	seq_printf(seq,"  Induced:      %16llu\n", geta(&num_induced_accesses));
-	seq_printf(seq,"  Disabled:     %16llu\n", geta(&num_accesses_while_disabled));
+	seq_printf(seq,"  Tracked:      %16lld\n", geta(&tracked_kobj_accesses));
+	seq_printf(seq,"  Missing:      %16lld\n", geta(&num_untracked_obj_access));
+	seq_printf(seq,"  Induced:      %16lld\n", geta(&num_induced_accesses));
+	seq_printf(seq,"  Disabled:     %16lld\n", geta(&num_accesses_while_disabled));
 	seq_printf(seq,"    ---------------------------\n");
-	seq_printf(seq,"  Total Obs:    %16llu\n", _total_accesses());
+	seq_printf(seq,"  Total Obs:    %16lld\n", _total_accesses());
 
 	seq_printf(seq,"------- Tracked Memory Allocations -------\n");
-	seq_printf(seq,"  stack:        %16llu\n", geta(&num_stack_allocs));
-	seq_printf(seq,"  globals:      %16llu\n", geta(&num_globals));
-	seq_printf(seq,"  kmalloc:      %16llu\n", geta(&num_kmalloc_allocs));
-	seq_printf(seq,"  kmem_cache:   %16llu\n", geta(&num_kmem_cache_allocs));
-	seq_printf(seq,"  page:         %16llu\n", geta(&num_page_allocs));
+	seq_printf(seq,"  stack:        %16lld\n", geta(&num_stack_allocs));
+	seq_printf(seq,"  globals:      %16lld\n", geta(&num_globals));
+	seq_printf(seq,"  kmalloc:      %16lld\n", geta(&num_kmalloc_allocs));
+	seq_printf(seq,"  kmem_cache:   %16lld\n", geta(&num_kmem_cache_allocs));
+	seq_printf(seq,"  page:         %16lld\n", geta(&num_page_allocs));
 	seq_printf(seq,"        ------\n");
-	seq_printf(seq,"  Total:        %16llu\n", _total_tracked());
-	seq_printf(seq,"  Frees:        %16llu\n", geta(&stats_frees));
-	seq_printf(seq,"  Live Now:     %16llu\n", _live_objs());
+	seq_printf(seq,"  Total:        %16lld\n", _total_tracked());
+	seq_printf(seq,"  Frees:        %16lld\n", geta(&stats_frees));
+	seq_printf(seq,"  Live Now:     %16lld\n", _live_objs());
 
 	seq_printf(seq,"------- Missing Allocs -------\n");
-	seq_printf(seq,"  Mem disabled: %16llu\n", geta(&num_allocs_while_disabled));
-	seq_printf(seq,"  Mem induced:  %16llu\n", geta(&num_induced_allocs));
-	seq_printf(seq,"  kobj fails:   %16llu\n", geta(&failed_kobj_allocs));
+	seq_printf(seq,"  Mem disabled: %16lld\n", geta(&num_allocs_while_disabled));
+	seq_printf(seq,"  Mem induced:  %16lld\n", geta(&num_induced_allocs));
+	seq_printf(seq,"  kobj fails:   %16lld\n", geta(&failed_kobj_allocs));
 	
     seq_printf(seq,"------- Internal Allocs -------\n");
     /* TODO: right now if we don't drain inline then this is total tracked */
-    seq_printf(seq,"  Live KOBJs: %10llu * %d B = %6llu MB\n", 
+    seq_printf(seq,"  Live KOBJs: %10lld * %d B = %6lld MB\n", 
             _total_tracked()-geta(&stats_kobj_frees),
             sizeof(struct memorizer_kobj), 
             (_total_tracked()-geta(&stats_kobj_frees)) * sizeof(struct memorizer_kobj) >> 20 );
             
-    seq_printf(seq,"  Total Edges: %10llu * %d B = %8llu MB\n",
+    seq_printf(seq,"  Total Edges: %10lld * %d B = %6lld MB\n",
             geta(&num_access_counts), sizeof(struct access_from_counts),
             geta(&num_access_counts) * sizeof(struct access_from_counts)>>20);
     lt_pr_stats_seq(seq);

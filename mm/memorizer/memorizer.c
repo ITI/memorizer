@@ -1613,7 +1613,7 @@ void memorizer_stack_page_alloc(uintptr_t va, size_t size)
     struct memorizer_kobj * stack_kobj = lt_get_kobj(va);
     if(!stack_kobj)
     {
-        pr_crit("Stack not in as whole object in memorizer tree");
+        pr_crit("Whole stack not in live object list");
         return;
     }
 

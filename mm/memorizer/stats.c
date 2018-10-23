@@ -110,6 +110,7 @@ static atomic64_t num_allocs_while_disabled = ATOMIC_INIT(0);
 static atomic64_t num_induced_allocs = ATOMIC_INIT(0);
 static atomic64_t stats_frees = ATOMIC_INIT(0);
 static atomic64_t num_induced_frees = ATOMIC_INIT(0);
+static atomic64_t stats_untracked_obj_frees = ATOMIC_INIT(0);
 static atomic64_t stats_kobj_frees = ATOMIC_INIT(0);
 static atomic64_t failed_kobj_allocs = ATOMIC_INIT(0);
 static atomic64_t num_access_counts = ATOMIC_INIT(0);
@@ -117,6 +118,7 @@ static atomic64_t num_access_counts = ATOMIC_INIT(0);
 void __always_inline track_disabled_alloc(void) { inca(&num_allocs_while_disabled); }
 void __always_inline track_induced_alloc(void) { inca(&num_induced_allocs); }
 void __always_inline track_free(void) { inca(&stats_frees); }
+void __always_inline track_untracked_obj_free(void) { inca(&stats_untracked_obj_frees); }
 void __always_inline track_induced_free(void) { inca(&num_induced_frees); }
 void __always_inline track_kobj_free(void) { inca(&stats_kobj_frees); }
 void __always_inline track_failed_kobj_alloc(void) { inca(&failed_kobj_allocs); }
@@ -237,6 +239,7 @@ void print_stats(size_t pr_level)
 	printk(KERN_CRIT "  Mem disabled: %16lld\n", geta(&num_allocs_while_disabled));
 	printk(KERN_CRIT "  Allocs(InMem):%16lld\n", geta(&num_induced_allocs));
 	printk(KERN_CRIT "  Frees(InMem): %16lld\n", geta(&num_induced_frees));
+	printk(KERN_CRIT "  Frees(NoObj): %16lld\n", geta(&stats_untracked_obj_frees));
 	printk(KERN_CRIT "  kobj fails:   %16lld\n", geta(&failed_kobj_allocs));
 	
     printk(KERN_CRIT "------- Internal Allocs -------\n");
@@ -279,6 +282,7 @@ int seq_print_stats(struct seq_file *seq)
 	seq_printf(seq,"  Mem disabled: %16lld\n", geta(&num_allocs_while_disabled));
 	seq_printf(seq,"  Allocs(InMem):%16lld\n", geta(&num_induced_allocs));
 	seq_printf(seq,"  Frees(InMem): %16lld\n", geta(&num_induced_frees));
+	seq_printf(seq,"  Frees(NoObj): %16lld\n", geta(&stats_untracked_obj_frees));
 	seq_printf(seq,"  kobj fails:   %16lld\n", geta(&failed_kobj_allocs));
 	
     seq_printf(seq,"------- Internal Allocs -------\n");

@@ -863,14 +863,14 @@ EXPORT_SYMBOL(memorizer_call);
 void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 					  write, uintptr_t ip)
 {
-	unsigned long flags;
-    struct memorizer_kernel_event * evtptr;
+        unsigned long flags;
+        struct memorizer_kernel_event * evtptr;
 
-	if(unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled))
-    {
-        track_disabled_access();
-		return;
-	}
+        if(unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled))
+        {
+                track_disabled_access();
+                return;
+        }
 
     if(__memorizer_enter())
     {
@@ -880,62 +880,62 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 
 #if INLINE_EVENT_PARSE 
-    local_irq_save(flags);
-    find_and_update_kobj_access(ip,addr,-1,write); 
-    local_irq_restore(flags);
+        local_irq_save(flags);
+        find_and_update_kobj_access(ip,addr,-1,write); 
+        local_irq_restore(flags);
 #else
-    //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
-    //wq_push(addr, size, write, ip, 0);
+        //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
+        //wq_push(addr, size, write, ip, 0);
 #endif
-    
-	__memorizer_exit();
+
+        __memorizer_exit();
 
 #if 0
-	if(buff_init)
-	{
-		while(*buff_fill)
-		{
-			curBuff = (curBuff + 1)%NB;
-			pr_info("Trying Buffer %u\n",curBuff);
-			switchBuffer();
-		}
+        if(buff_init)
+        {
+                while(*buff_fill)
+                {
+                        curBuff = (curBuff + 1)%NB;
+                        pr_info("Trying Buffer %u\n",curBuff);
+                        switchBuffer();
+                }
 
-		local_irq_save(flags);
+                local_irq_save(flags);
 
-		if(write)
-			mke.event_type = Memorizer_Mem_Write;
-		else
-			mke.event_type = Memorizer_Mem_Read;
+                if(write)
+                        mke.event_type = Memorizer_Mem_Write;
+                else
+                        mke.event_type = Memorizer_Mem_Read;
 
-		mke.pid = task_pid_nr(current);
-		mke.event_size = size;
-		mke.event_ip = ip;
-		mke.src_va_ptr = addr;
-		mke.event_jiffies = jiffies;
-		
-		mke_ptr = (struct memorizer_kernel_access *)buff_write_end;
-		*mke_ptr = mke;
-		buff_write_end = buff_write_end + sizeof(struct memorizer_kernel_access);
-		*buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_access);
+                mke.pid = task_pid_nr(current);
+                mke.event_size = size;
+                mke.event_ip = ip;
+                mke.src_va_ptr = addr;
+                mke.event_jiffies = jiffies;
 
-        /* Check after writing the event to the buffer if there is any more
-         * space for the next entry to go in - Need to choose the struct with
-         * the biggest size for this otherwise it may lead to a problem wherein
-         * the write pointer still points to the end of the buffer and there is
-         * another event ready to be written which might be bigger than the
-         * size of the struct that could have reset the pointer 
-        */
-		if(*buff_free_size < sizeof(struct memorizer_kernel_event))
-		{
+                mke_ptr = (struct memorizer_kernel_access *)buff_write_end;
+                *mke_ptr = mke;
+                buff_write_end = buff_write_end + sizeof(struct memorizer_kernel_access);
+                *buff_free_size = *buff_free_size - sizeof(struct memorizer_kernel_access);
 
-			pr_info("Current Buffer Full, Setting the fill bit\n");
-			*buff_fill = 1;
-			buff_write_end = buff_start;
-		}
-		local_irq_restore(flags);
-		//*buff_end = (unsigned long long)0xbb;
-	}
-	//}
+                /* Check after writing the event to the buffer if there is any more
+                 * space for the next entry to go in - Need to choose the struct with
+                 * the biggest size for this otherwise it may lead to a problem wherein
+                 * the write pointer still points to the end of the buffer and there is
+                 * another event ready to be written which might be bigger than the
+                 * size of the struct that could have reset the pointer 
+                 */
+                if(*buff_free_size < sizeof(struct memorizer_kernel_event))
+                {
+
+                        pr_info("Current Buffer Full, Setting the fill bit\n");
+                        *buff_fill = 1;
+                        buff_write_end = buff_start;
+                }
+                local_irq_restore(flags);
+                //*buff_end = (unsigned long long)0xbb;
+        }
+        //}
 #endif
 }
 
@@ -1139,7 +1139,7 @@ static void clear_dead_objs(void)
 	struct list_head *tmp;
 	unsigned long flags;
 	pr_info("Clearing the free'd kernel objects\n");
-    /* Avoid rentrance while freeing the list */
+        /* Avoid rentrance while freeing the list */
 	__memorizer_enter();
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_for_each_safe(p, tmp, &object_list)
@@ -1278,28 +1278,30 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
 
-	struct memorizer_kobj *kobj;
-	unsigned long flags;
-		
-    /* find and remove the kobj from the lookup table and return the
-     * kobj */
-    kobj = lt_remove_kobj(kobj_ptr);
+        struct memorizer_kobj *kobj;
+        unsigned long flags;
 
-    /* 
-     *   * If this is null it means we are freeing something we did
-     *   not insert
-     *       * into our tree and we have a missed alloc track,
-     *       otherwise we update
-     *           * some of the metadata for free.
-     *               */
-    if(kobj){
-        /* Update the free_jiffies for the object */
-        write_lock_irqsave(&kobj->rwlock, flags);
-        kobj->free_jiffies = get_ts();
-        kobj->free_ip = call_site;
-        write_unlock_irqrestore(&kobj->rwlock, flags);
-        track_free();
-    }
+        /* find and remove the kobj from the lookup table and return the
+         * kobj */
+        kobj = lt_remove_kobj(kobj_ptr);
+
+        /* 
+         *   * If this is null it means we are freeing something we did
+         *   not insert
+         *       * into our tree and we have a missed alloc track,
+         *       otherwise we update
+         *           * some of the metadata for free.
+         *               */
+        if(kobj){
+                /* Update the free_jiffies for the object */
+                write_lock_irqsave(&kobj->rwlock, flags);
+                kobj->free_jiffies = get_ts();
+                kobj->free_ip = call_site;
+                write_unlock_irqrestore(&kobj->rwlock, flags);
+                track_free();
+        }
+        else
+                track_untracked_obj_free();
 }
 
 /**
@@ -1323,7 +1325,10 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
         unsigned long flags;
 
         if(__memorizer_enter())
+        {
+                track_induced_free();
                 return;
+        }
 
         local_irq_save(flags);
         //wq_push(kobj_ptr, 0, Memorizer_Mem_Free, call_site, 0);

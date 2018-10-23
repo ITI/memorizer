@@ -66,6 +66,7 @@ void track_disabled_alloc(void);
 void track_induced_alloc(void);
 void track_failed_kobj_alloc(void);
 void track_free(void);
+void track_induced_free(void);
 void track_kobj_free(void);
 void track_access(void);
 void track_induced_access(void);

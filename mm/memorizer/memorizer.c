@@ -354,7 +354,7 @@ static int __init early_cfg_log_boot(char *arg){
 early_param("cfg_log_boot", early_cfg_log_boot);
 
 /* flag enable/disable printing of live objects */
-static bool print_live_obj = false;
+static bool print_live_obj = true;
 static bool test_obj = false;
 
 /* Function has table */
@@ -2316,7 +2316,7 @@ void __init memorizer_init(void)
     } else {
         cfg_log_on = false;
     }
-	print_live_obj = false;
+	print_live_obj = true;
 	local_irq_restore(flags);
 	__memorizer_exit();
 }

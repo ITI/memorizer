@@ -123,6 +123,7 @@
 #include <linux/fs.h>
 #include <linux/sched.h>
 #include <linux/bootmem.h>
+#include <linux/kasan-checks.h>
 
 #include "kobj_metadata.h"
 #include "event_structs.h" 
@@ -268,6 +269,7 @@ struct code_region crypto_code_region = {
 #define NUM_EMERGENCY_KOBJS     10000
 static struct memorizer_kobj kobj_emergency_pool[NUM_EMERGENCY_KOBJS];
 size_t next_kobj_pool_i = 0;
+static struct memorizer_kobj * general_stack_kobj;
 
 /**
  * __alloc_kobj_reserve() - return a kobj metadata object from reserve pool
@@ -733,33 +735,50 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
  * cannot sleep.
  */
 static inline int find_and_update_kobj_access(uintptr_t src_va_ptr, 
-        uintptr_t va_ptr, pid_t pid, size_t access_type) 
+        uintptr_t va_ptr, pid_t pid, size_t access_type, size_t size) 
 {
-	struct memorizer_kobj *kobj = NULL;
-	struct access_from_counts *afc = NULL;
+        struct memorizer_kobj *kobj = NULL;
+        struct access_from_counts *afc = NULL;
 
-	/* Get the kernel object associated with this VA */
-	kobj = lt_get_kobj(va_ptr);
+        /* Get the kernel object associated with this VA */
+        kobj = lt_get_kobj(va_ptr);
 
-	if(!kobj){
-        track_untracked_access();
-		return -1;
-	}
+        if(!kobj){
 
-    track_access();
+#if 0 // TODO FIgure out how to use kasan
+                if(kasan_obj_alive(va_ptr,size))
+                        track_induced_access();
+                else
+#endif 0
+                        return -1;
+                if(kasan_obj_stack(va_ptr,size))
+                {
+                        kobj =  general_stack_kobj;        
+                        track_stack_access();
+                        goto update;
+                }
+                else
+                {
+                        track_untracked_access();
+                }
+                return -1;
+        }
 
-	/* Grab the object lock here */
-	write_lock(&kobj->rwlock);
+        track_access();
 
-	/* Search access queue to the entry associated with src_ip */
-	afc = unlckd_insert_get_access_counts(src_va_ptr, pid, kobj);
+update:
+        /* Grab the object lock here */
+        write_lock(&kobj->rwlock);
 
-	/* increment the counter associated with the access type */
-	if(afc)
-		access_type ? ++(afc->writes) : ++(afc->reads);
+        /* Search access queue to the entry associated with src_ip */
+        afc = unlckd_insert_get_access_counts(src_va_ptr, pid, kobj);
 
-	write_unlock(&kobj->rwlock);
-	return afc ? 0 : -1;
+        /* increment the counter associated with the access type */
+        if(afc)
+                access_type ? ++(afc->writes) : ++(afc->reads);
+
+        write_unlock(&kobj->rwlock);
+        return afc ? 0 : -1;
 }
 
 /**
@@ -835,8 +854,8 @@ memorizer_call(uintptr_t to, uintptr_t from)
         unsigned long flags;
         if(!cfg_log_on)
                 return;
-        if(current->kasan_depth > 0)
-                return;
+        //if(current->kasan_depth > 0)
+        //        return;
         if(__memorizer_enter())
                 return;
         local_irq_save(flags);
@@ -865,7 +884,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 {
         unsigned long flags;
         struct memorizer_kernel_event * evtptr;
-
+	
         if(unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled))
         {
                 track_disabled_access();
@@ -1609,23 +1628,25 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
  */
 void memorizer_stack_page_alloc(uintptr_t va, size_t size)
 {
-    /* get the object */
-    struct memorizer_kobj * stack_kobj = lt_get_kobj(va);
-    if(!stack_kobj)
-    {
-        pr_crit("Whole stack not in live object list");
+        /* get the object */
         return;
-    }
 
-    /* change alloc type to stack page alloc */
-    stack_kobj->alloc_type = MEM_STACK_PAGE;
+        struct memorizer_kobj * stack_kobj = lt_get_kobj(va);
+        if(!stack_kobj)
+        {
+                pr_crit("Whole stack not in live object list");
+                return;
+        }
+
+        /* change alloc type to stack page alloc */
+        stack_kobj->alloc_type = MEM_STACK_PAGE;
 }
 
-void memorizer_stack_spill(unsigned long call_site, const void *ptr, size_t
+void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
         size)
 {
-    pr_crit("Call stack spill");
-	__memorizer_kmalloc(call_site, ptr, size, size, 0, MEM_STACK);
+        //pr_crit("Call stack spill");
+        __memorizer_kmalloc(call_site, ptr, size, size, 0, MEM_STACK);
 }
 
 void memorizer_register_global(const void *ptr, size_t size)
@@ -2282,43 +2303,45 @@ static int create_char_devs(void)
  */
 void __init memorizer_init(void)
 {
-	unsigned long flags;
+        unsigned long flags;
 
-	__memorizer_enter();
+        __memorizer_enter();
 #if INLINE_EVENT_PARSE == 0
-	init_mem_access_wls();
+        init_mem_access_wls();
 #endif
 
-    /* create kmem caches for memorizer data */
-	create_obj_kmem_cache();
-	create_access_counts_kmem_cache();
+        /* create kmem caches for memorizer data */
+        create_obj_kmem_cache();
+        create_access_counts_kmem_cache();
 
-    /* initialize the lookup table */
-	lt_init();
+        /* initialize the lookup table */
+        lt_init();
 
-    /* initialize the table tracking CFG edges */
-    func_hash_tbl_init();
-    cfgtbl = create_function_hashtable();
+        /* initialize the table tracking CFG edges */
+        func_hash_tbl_init();
+        cfgtbl = create_function_hashtable();
 
-	local_irq_save(flags);
-    if(memorizer_enabled_boot){
-        memorizer_enabled = true;
-    } else {
-        memorizer_enabled = false;
-    }
-    if(mem_log_boot){
-        memorizer_log_access = true;
-    } else {
-        memorizer_log_access = false;
-    }
-    if(cfg_log_boot){
-        cfg_log_on = true;
-    } else {
-        cfg_log_on = false;
-    }
-	print_live_obj = true;
-	local_irq_restore(flags);
-	__memorizer_exit();
+        local_irq_save(flags);
+        if(memorizer_enabled_boot){
+                memorizer_enabled = true;
+        } else {
+                memorizer_enabled = false;
+        }
+        if(mem_log_boot){
+                memorizer_log_access = true;
+        } else {
+                memorizer_log_access = false;
+        }
+        if(cfg_log_boot){
+                cfg_log_on = true;
+        } else {
+                cfg_log_on = false;
+        }
+        print_live_obj = true;
+        /* initialize catch all stack tracker */
+        init_kobj(general_stack_kobj, 0, 0, 0, MEM_STACK_PAGE); 
+        local_irq_restore(flags);
+        __memorizer_exit();
 }
 
 /*

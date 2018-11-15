@@ -78,6 +78,7 @@ void __always_inline track_l3_alloc(void){inca(&num_l3);};
 /* Memory Access */
 static atomic64_t tracked_kobj_accesses = ATOMIC_INIT(0);
 static atomic64_t num_induced_accesses = ATOMIC_INIT(0);
+static atomic64_t num_stack_accesses = ATOMIC_INIT(0);
 static atomic64_t num_accesses_while_disabled = ATOMIC_INIT(0);
 static atomic64_t num_untracked_obj_access = ATOMIC_INIT(0);
 
@@ -94,6 +95,12 @@ track_induced_access(void)
 }
 
 void __always_inline 
+track_stack_access(void)
+{
+    inca(&num_stack_accesses);
+}
+
+void __always_inline
 track_disabled_access(void) 
 {
     inca(&num_accesses_while_disabled);
@@ -217,10 +224,11 @@ static int64_t _total_accesses(void)
 void print_stats(size_t pr_level)
 {
 	printk(KERN_CRIT "------- Memory Accesses -------\n");
-	printk(KERN_CRIT "  Tracked:      %16lld\n", geta(&tracked_kobj_accesses));
-	printk(KERN_CRIT "  Missing:      %16lld\n", geta(&num_untracked_obj_access));
-	printk(KERN_CRIT "  Induced:      %16lld\n", geta(&num_induced_accesses));
-	printk(KERN_CRIT "  Disabled:     %16lld\n", geta(&num_accesses_while_disabled));
+	printk(KERN_CRIT "   Tracked:%16lld\n", geta(&tracked_kobj_accesses));
+	printk(KERN_CRIT "     Stack:%16lld\n", geta(&num_stack_accesses));
+	printk(KERN_CRIT "   Missing:%16lld\n", geta(&num_untracked_obj_access));
+	printk(KERN_CRIT "   Induced:%16lld\n", geta(&num_induced_accesses));
+	printk(KERN_CRIT "  Disabled:%16lld\n", geta(&num_accesses_while_disabled));
 	printk(KERN_CRIT "    ---------------------------\n");
 	printk(KERN_CRIT "  Total Obs:    %16llu\n", _total_accesses());
 

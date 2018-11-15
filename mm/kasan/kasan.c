@@ -327,6 +327,27 @@ static void check_memory_region(unsigned long addr,
 	check_memory_region_inline(addr, size, write, ret_ip);
 }
 
+bool kasan_obj_alive(const void *p, unsigned int size)
+{
+	//if (unlikely((void *)addr <
+	//	kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
+	//	return;
+    //}
+	if (likely(!memory_is_poisoned(p, size)))
+		return true;
+    return false;
+}
+
+bool kasan_obj_stack(const void *p, unsigned int size)
+{
+	//if (unlikely((void *)addr <
+	//	kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
+	//	return;
+    //}
+	if (likely(!memory_is_poisoned(p, size)))
+		return true;
+    return false;
+}
 void kasan_check_read(const void *p, unsigned int size)
 {
 	check_memory_region((unsigned long)p, size, false, _RET_IP_);

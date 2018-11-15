@@ -71,6 +71,7 @@ void track_induced_free(void);
 void track_kobj_free(void);
 void track_access(void);
 void track_induced_access(void);
+void track_stack_access(void);
 void track_disabled_access(void);
 void track_untracked_access(void);
 void track_access_counts_alloc(void);
@@ -90,6 +91,7 @@ static inline void track_induced_free(void);
 static inline void track_kobj_free(void){}
 static inline void track_access(void){}
 static inline void track_induced_access(void){}
+static inline void track_stack_access(void){}
 static inline void track_disabled_access(void){}
 static inline void track_untracked_access(void){}
 static inline void track_access_counts_alloc(void){}

@@ -2032,13 +2032,13 @@ parse_events(struct event_list_wq_data * data)
 
         switch(mke->event_type)
         {
-        case Memorizer_READ: find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr, 
+        case Memorizer_READ: find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr,
 					     (uintptr_t) mke->data.et.va_ptr,(pid_t)mke->pid, 
-					     (size_t) mke->event_type); 
+					     (size_t) mke->event_type, mke->data.et.event_size);
 			     			break;
-        case Memorizer_WRITE:find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr, 
+        case Memorizer_WRITE:find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr,
 					     (uintptr_t) mke->data.et.va_ptr,(pid_t)mke->pid, 
-					     (size_t) mke->event_type); 
+					     (size_t) mke->event_type,mke->data.et.event_size);
 			     			break;
         case Memorizer_Mem_Alloc:
             kobj = kmem_cache_alloc(kobj_cache, gfp_flags);

@@ -891,16 +891,22 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
                 return;
         }
 
-    if(__memorizer_enter())
-    {
-        track_induced_access();
-		return;
-	}
+        if(current->kasan_depth > 0)
+        {
+                track_induced_access();
+                return;
+        }
+
+        if(__memorizer_enter())
+        {
+                track_induced_access();
+                return;
+        }
 
 
 #if INLINE_EVENT_PARSE 
         local_irq_save(flags);
-        find_and_update_kobj_access(ip,addr,-1,write); 
+        find_and_update_kobj_access(ip,addr,-1,write,size);
         local_irq_restore(flags);
 #else
         //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
@@ -995,8 +1001,19 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
     trace_printk("fork:%s,PID:%d\n",p->comm,nr);
 #endif
 
-
     local_irq_restore(flags);
+#endif 
+    /* check to see if stack is allocated */
+    //if(lt_get_kobj(p->stack))
+    {
+        //pr_crit("Forked: Is stack in live objs? TRUE\n");
+    }
+    //else
+    {
+        //pr_crit("Forked: Is stack in live objs? FALSE\n");
+    }
+
+	__memorizer_exit();
 
 #if 0
 	if(buff_init)
@@ -1045,8 +1062,6 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 	}
 
 #endif
-
-	__memorizer_exit();
 }
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
@@ -2339,7 +2354,7 @@ void __init memorizer_init(void)
         }
         print_live_obj = true;
         /* initialize catch all stack tracker */
-        init_kobj(general_stack_kobj, 0, 0, 0, MEM_STACK_PAGE); 
+        init_kobj(general_stack_kobj, 0, 0, 0, MEM_STACK_PAGE);
         local_irq_restore(flags);
         __memorizer_exit();
 }
@@ -2429,35 +2444,36 @@ late_initcall(memorizer_late_init);
  */
 int memorizer_init_from_driver(void)
 {
-	unsigned long flags;
+        unsigned long flags;
 
-	__memorizer_enter();
+        __memorizer_enter();
 
-	pr_info("Running test from driver...");
+        pr_info("Running test from driver...");
 
-	local_irq_save(flags);
-	memorizer_enabled = true;
-	memorizer_log_access = true;
-	cfg_log_on = true;
-	local_irq_restore(flags);
+        local_irq_save(flags);
 
-	print_stats(KERN_INFO);
+        memorizer_enabled = true;
+        memorizer_log_access = true;
+       cfg_log_on = true;
+       local_irq_restore(flags);
+
+        print_stats(KERN_INFO);
 
 #if MEMORIZER_DEBUG >= 5
-	//read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+        //read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
 
-	pr_info("The free'd Kobj list");
-	dump_object_list();
+        pr_info("The free'd Kobj list");
+        dump_object_list();
 
-	pr_info("The live kernel object tree now:");
-	__print_active_rb_tree(active_kobj_rbtree_root.rb_node);
+        pr_info("The live kernel object tree now:");
+        __print_active_rb_tree(active_kobj_rbtree_root.rb_node);
 
-	//read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+        //read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
 #endif
 
-	print_stats(KERN_INFO);
+        print_stats(KERN_INFO);
 
-	__memorizer_exit();
-	return 0;
+        __memorizer_exit();
+        return 0;
 }
 EXPORT_SYMBOL(memorizer_init_from_driver);

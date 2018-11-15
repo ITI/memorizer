@@ -269,6 +269,7 @@ int seq_print_stats(struct seq_file *seq)
 {
 	seq_printf(seq,"------- Memory Accesses -------\n");
 	seq_printf(seq,"  Tracked:      %16lld\n", geta(&tracked_kobj_accesses));
+	seq_printf(seq,"    Stack:      %16lld\n", geta(&num_stack_accesses));
 	seq_printf(seq,"  Missing:      %16lld\n", geta(&num_untracked_obj_access));
 	seq_printf(seq,"  Induced:      %16lld\n", geta(&num_induced_accesses));
 	seq_printf(seq,"  Disabled:     %16lld\n", geta(&num_accesses_while_disabled));

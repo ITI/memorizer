@@ -750,7 +750,6 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
                         track_induced_access();
                 else
 #endif 0
-                        return -1;
                 if(kasan_obj_stack(va_ptr,size))
                 {
                         kobj =  general_stack_kobj;        
@@ -2353,8 +2352,16 @@ void __init memorizer_init(void)
                 cfg_log_on = false;
         }
         print_live_obj = true;
-        /* initialize catch all stack tracker */
+
+        /* initialzie catch all stack kobj */
+        general_stack_kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
         init_kobj(general_stack_kobj, 0, 0, 0, MEM_STACK_PAGE);
+
+        /* Grab the writer lock for the object_list and insert into object list */
+        write_lock(&object_list_spinlock);
+        list_add_tail(&general_stack_kobj->object_list, &object_list);
+        write_unlock(&object_list_spinlock);
+
         local_irq_restore(flags);
         __memorizer_exit();
 }

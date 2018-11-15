@@ -880,9 +880,9 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 
 
 #if INLINE_EVENT_PARSE 
-        local_irq_save(flags);
-        find_and_update_kobj_access(ip,addr,-1,write,size);
-        local_irq_restore(flags);
+    local_irq_save(flags);
+    find_and_update_kobj_access(ip,addr,-1,write); 
+    local_irq_restore(flags);
 #else
     //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
     //wq_push(addr, size, write, ip, 0);

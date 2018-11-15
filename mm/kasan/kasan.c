@@ -340,13 +340,25 @@ bool kasan_obj_alive(const void *p, unsigned int size)
 
 bool kasan_obj_stack(const void *p, unsigned int size)
 {
-	//if (unlikely((void *)addr <
-	//	kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
-	//	return;
-    //}
-	if (likely(!memory_is_poisoned(p, size)))
-		return true;
-    return false;
+    s8 * shadow_value = (s8 *)kasan_mem_to_shadow(p);
+
+    panic("p:%p, val:%llx, shadowp:%p, shadowval: 0x%hhx\n", 
+            p, *(uint64_t*)p, shadow_value, *shadow_value); 
+
+    switch(*shadow_value)
+    {
+        case KASAN_STACK_LEFT:
+        case KASAN_STACK_MID:
+        case KASAN_STACK_RIGHT:
+        case KASAN_STACK_PARTIAL:
+            return true;
+        default:
+            return false;
+    }
+
+	//if (likely(!memory_is_poisoned(p, size)))
+		//return true;
+    //return false;
 }
 void kasan_check_read(const void *p, unsigned int size)
 {
@@ -823,7 +835,7 @@ EXPORT_SYMBOL(__asan_poison_stack_memory);
 void __asan_unpoison_stack_memory(const void *addr, size_t size)
 {
 	kasan_unpoison_shadow(addr, size);
-    memorizer_stack_spill(_RET_IP_, addr, size);
+    //memorizer_stack_spill(_RET_IP_, addr, size);
 }
 EXPORT_SYMBOL(__asan_unpoison_stack_memory);
 

@@ -329,10 +329,10 @@ static void check_memory_region(unsigned long addr,
 
 bool kasan_obj_alive(const void *p, unsigned int size)
 {
-	//if (unlikely((void *)addr <
-	//	kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
-	//	return;
-    //}
+	if (unlikely((void *)p <
+		kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
+		return false;
+    }
 	if (likely(!memory_is_poisoned(p, size)))
 		return true;
     return false;
@@ -340,10 +340,25 @@ bool kasan_obj_alive(const void *p, unsigned int size)
 
 bool kasan_obj_stack(const void *p, unsigned int size)
 {
+    size_t i = 0;
+
+	if (unlikely((void *)p <
+		kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
+		return false;
+    }
+    
     s8 * shadow_value = (s8 *)kasan_mem_to_shadow(p);
 
-    panic("p:%p, val:%llx, shadowp:%p, shadowval: 0x%hhx\n", 
-            p, *(uint64_t*)p, shadow_value, *shadow_value); 
+    while(*shadow_value==0 && i++ < 10*4096)
+    //while(*shadow_value==0 && i++ < PAGE_SIZE*(1 << (THREAD_SIZE_ORDER)))
+    {
+        shadow_value += 1;
+    }
+    if(*shadow_value==0xF1)
+    {
+        pr_info("i: %d, p:%p, val:%llx, shadowp:%p, shadowval: 0x%hhx\n", 
+                i, p, *(uint64_t*)p, shadow_value, *shadow_value); 
+    }
 
     switch(*shadow_value)
     {
@@ -355,10 +370,6 @@ bool kasan_obj_stack(const void *p, unsigned int size)
         default:
             return false;
     }
-
-	//if (likely(!memory_is_poisoned(p, size)))
-		//return true;
-    //return false;
 }
 void kasan_check_read(const void *p, unsigned int size)
 {

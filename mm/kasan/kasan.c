@@ -338,52 +338,35 @@ bool kasan_obj_alive(const void *p, unsigned int size)
     return false;
 }
 
-
-// Nick copied from report.c, not exporting from there. 
-static const void *find_first_bad_addr(const void *addr, size_t size)
-{
-	u8 shadow_val = *(u8 *)kasan_mem_to_shadow(addr);
-	const void *first_bad_addr = addr;
-
-	while (!shadow_val && first_bad_addr < addr + size) {
-		first_bad_addr += KASAN_SHADOW_SCALE_SIZE;
-		shadow_val = *(u8 *)kasan_mem_to_shadow(first_bad_addr);
-	}
-	return first_bad_addr;
-}
-
-
 bool kasan_obj_stack(const void *p, unsigned int size)
 {
-
-  if (unlikely((void *)p <
-	       kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
-    return false;
-  }
-
-  
-  // Find first poisoned byte
-  void * first_bad_addr = find_first_bad_addr(p, 4096 * 3);
-  u8 shadow_byte = *(u8 *)kasan_mem_to_shadow(first_bad_addr);
-  
-  // Compare to the stack redzone shadow values
-  switch(shadow_byte)
-    {
-    case KASAN_STACK_LEFT:
-    case KASAN_STACK_MID:
-    case KASAN_STACK_RIGHT:
-    case KASAN_STACK_PARTIAL:
-      pr_info("Stack access! Address=%p, shadow_byte=%x\n", p, shadow_byte);
-      // Note to Nathan: set to true! Triggers a deadlock bug though.
-      // return true;
-      return false;
-    default:
-      return false;
+    if (unlikely((void *)p <
+                kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
+        return false;
     }
-  
-  // I left this if you want it while debugging
-  // pr_info("i: %d, p:%p, val:%llx, shadowp:%p, shadowval: 0x%hhx\n", 
-  //            i, p, *(uint64_t*)p, p, shadow_byte);   
+
+    /* get shadow info for access address */
+    u8 shadow_val = *(u8 *)kasan_mem_to_shadow(p);
+    const void *first_poisoned_addr = p;
+
+    /* Search forward from this address for the guard */
+    long search_size = PAGE_SIZE;
+    while (!shadow_val && first_poisoned_addr < p + search_size) {
+        first_poisoned_addr += KASAN_SHADOW_SCALE_SIZE;
+        shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
+    }
+
+    // Compare to the stack redzone shadow values
+    switch(shadow_val)
+    {
+        case KASAN_STACK_LEFT:
+        case KASAN_STACK_MID:
+        case KASAN_STACK_RIGHT:
+        case KASAN_STACK_PARTIAL:
+            return true;
+        default:
+            return false;
+    }
 }
 
 void kasan_check_read(const void *p, unsigned int size)

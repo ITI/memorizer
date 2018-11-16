@@ -349,10 +349,32 @@ bool kasan_obj_stack(const void *p, unsigned int size)
     u8 shadow_val = *(u8 *)kasan_mem_to_shadow(p);
     const void *first_poisoned_addr = p;
 
-    /* Search forward from this address for the guard */
-    long search_size = PAGE_SIZE;
+    /* We now search for a shadow value. We search both
+       forwards and backwards without leaving the current
+       page so we don't trigger any invalid accesses. This
+       may fail if there really is a stack obj larger than
+       a page, but for now we will accept these as losses.
+       That should be very rare.
+       A possible extension is searching beyond 1 page,
+       but first checking to see if that will be valid.
+    */
+    
+    // Calculate the page-aligned address we are on
+    void * p_aligned = (long) p & (~((1 << PAGE_SHIFT) - 1));
+    
+    // Calculate the max forwards search distance
+    long search_size = (long) (p_aligned + PAGE_SIZE - p);
+    
+    // Search forwards
     while (!shadow_val && first_poisoned_addr < p + search_size) {
         first_poisoned_addr += KASAN_SHADOW_SCALE_SIZE;
+        shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
+    }
+
+    // If no hit, search backwards too. Stay higher than p_aligned
+    first_poisoned_addr = p;
+    while (!shadow_val && first_poisoned_addr > (p_aligned + KASAN_SHADOW_SCALE_SIZE)) {
+        first_poisoned_addr -= KASAN_SHADOW_SCALE_SIZE;
         shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
     }
 

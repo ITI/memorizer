@@ -130,6 +130,7 @@
 #include "FunctionHashTable.h"
 #include "memorizer.h"
 #include "stats.h"
+#include "../kasan/kasah.h"
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1

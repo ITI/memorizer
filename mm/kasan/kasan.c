@@ -338,26 +338,32 @@ bool kasan_obj_alive(const void *p, unsigned int size)
     return false;
 }
 
-bool kasan_obj_stack(const void *p, unsigned int size)
-{
-    if (unlikely((void *)p <
-                kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
-        return false;
-    }
+/* Memorizer-introduced function to detect if an access is going to
+   kernel space.  We might be interested in filtering out accesses
+   or assigning them to a USERSPACE obj. */
+bool in_kernel_space(void * p){
+  return p > kasan_shadow_to_mem((void *)KASAN_SHADOW_START);
+}
+
+/* Memorizer-introduced function to classify an access based on the
+   metadata in shadow space made available by KASAN. It returns the
+   shadow value type that it finds. See kasan.h for the possible
+   values. With the current design, it will return 0x00 if the obj
+   is larger than a page. This might make it unsuitable for heap
+   objects, but for stacks and globals it should be very accurate.*/
+u8 detect_access_kind(void * p){
 
     /* get shadow info for access address */
     u8 shadow_val = *(u8 *)kasan_mem_to_shadow(p);
     const void *first_poisoned_addr = p;
 
-    /* We now search for a shadow value. We search both
-       forwards and backwards without leaving the current
-       page so we don't trigger any invalid accesses. This
-       may fail if there really is a stack obj larger than
-       a page, but for now we will accept these as losses.
-       That should be very rare.
-       A possible extension is searching beyond 1 page,
-       but first checking to see if that will be valid.
-    */
+    /* We now search for a shadow value. We search both forwards and
+       backwards without leaving the current page so we don't trigger
+       any invalid accesses. This may fail if there really is an obj
+       larger than a page, but for now we will accept these as losses.
+       That should be very rare for stacks/globals. A possible
+       extension is searching beyond 1 page, but first checking to see
+       if that will be valid.  */
     
     // Calculate the page-aligned address we are on
     void * p_aligned = (long) p & (~((1 << PAGE_SHIFT) - 1));
@@ -377,6 +383,18 @@ bool kasan_obj_stack(const void *p, unsigned int size)
         first_poisoned_addr -= KASAN_SHADOW_SCALE_SIZE;
         shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
     }
+
+    return shadow_val;
+}
+
+bool kasan_obj_stack(const void *p, unsigned int size)
+{
+    if (unlikely((void *)p <
+                kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
+        return false;
+    }
+
+    u8 shadow_val = detect_access_kind(p);
 
     // Compare to the stack redzone shadow values
     switch(shadow_val)

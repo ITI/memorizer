@@ -13,6 +13,10 @@
 #define KASAN_KMALLOC_FREE      0xFB  /* object was freed (kmem_cache_free/kfree) */
 #define KASAN_GLOBAL_REDZONE    0xFA  /* redzone for global variable */
 
+// Memorizer-added exports from KASAN
+bool in_kernel_space(void * p);
+u8 detect_access_kind(void * p);
+
 /*
  * Stack redzone shadow values
  * (Those are compiler's ABI, don't change them)

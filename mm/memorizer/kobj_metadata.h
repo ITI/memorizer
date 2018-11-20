@@ -55,27 +55,6 @@
 #include <linux/rwlock.h>
 #include <linux/sched.h>
 
-/** 
- * struct memorizer_kobj - metadata for kernel objects 
- */
-enum AllocType {
-    MEM_STACK=1,
-    MEM_STACK_PAGE,
-    MEM_HEAP,
-    MEM_GLOBAL,
-    MEM_KMALLOC,
-    MEM_KMALLOC_ND,
-    MEM_KMEM_CACHE,
-    MEM_KMEM_CACHE_ND,
-    MEM_ALLOC_PAGES,
-    MEM_INDUCED,
-    /* TODO: Legacy type, fix in tracking code to not use */
-    MEM_NONE
-};
-
-#define ALLOC_CODE_SHIFT    59
-#define ALLOC_INDUCED_CODE	(_AC(MEM_INDUCED,UL) << ALLOC_CODE_SHIFT)
-
 static char * alloc_type_str (enum AllocType AT)
 {
     switch(AT)
@@ -98,6 +77,12 @@ static char * alloc_type_str (enum AllocType AT)
         return "KMEM_CACHE_ND";
     case MEM_ALLOC_PAGES:
         return "ALLOC_PAGES";
+    case MEM_INDUCED:
+        return "INDUCED_ALLOC";
+    case MEM_USER:
+        return "USER";
+    case MEM_BUG:
+        return "BUG";
     case MEM_NONE:
         return "NONE";
     default:
@@ -254,6 +239,7 @@ void lt_init(void);
 int lt_insert_kobj(struct memorizer_kobj *kobj);
 struct memorizer_kobj * lt_remove_kobj(uintptr_t va);
 struct memorizer_kobj * lt_get_kobj(uintptr_t va);
+int lt_insert_induced(void * vaddr, size_t size);
 
 #endif /* __KOBJ_METADATA_H_ */
 

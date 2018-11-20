@@ -52,6 +52,26 @@
 
 #include <linux/types.h>
 
+/** 
+ * struct memorizer_kobj - metadata for kernel objects 
+ */
+enum AllocType {
+    MEM_STACK=1,
+    MEM_STACK_PAGE,
+    MEM_HEAP,
+    MEM_GLOBAL,
+    MEM_KMALLOC,
+    MEM_KMALLOC_ND,
+    MEM_KMEM_CACHE,
+    MEM_KMEM_CACHE_ND,
+    MEM_ALLOC_PAGES,
+    MEM_INDUCED,
+    MEM_USER,
+    MEM_BUG,
+    /* TODO: Legacy type, fix in tracking code to not use */
+    MEM_NONE
+};
+
 #ifdef CONFIG_MEMORIZER /*----------- !CONFIG_MEMORIZER -------------------- */
 
 /* Special codes */

@@ -338,13 +338,6 @@ bool kasan_obj_alive(const void *p, unsigned int size)
     return false;
 }
 
-/* Memorizer-introduced function to detect if an access is going to
-   kernel space.  We might be interested in filtering out accesses
-   or assigning them to a USERSPACE obj. */
-bool in_kernel_space(void * p){
-  return p > kasan_shadow_to_mem((void *)KASAN_SHADOW_START);
-}
-
 /* Memorizer-introduced function to classify an access based on the
    metadata in shadow space made available by KASAN. It returns the
    shadow value type that it finds. See kasan.h for the possible
@@ -387,25 +380,38 @@ u8 detect_access_kind(void * p){
     return shadow_val;
 }
 
-bool kasan_obj_stack(const void *p, unsigned int size)
+enum AllocType kasan_obj_type(const void *p, unsigned int size)
 {
-    if (unlikely((void *)p <
-                kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
-        return false;
-    }
-
-    u8 shadow_val = detect_access_kind(p);
-
-    // Compare to the stack redzone shadow values
-    switch(shadow_val)
-    {
-        case KASAN_STACK_LEFT:
-        case KASAN_STACK_MID:
-        case KASAN_STACK_RIGHT:
-        case KASAN_STACK_PARTIAL:
-            return true;
-        default:
-            return false;
+    /* If we are below the Kernel address space */
+	if (p < kasan_shadow_to_mem((void *)KASAN_SHADOW_START)) {
+        /* our pointer is to page 0... null ptr */
+		if ((unsigned long)p < PAGE_SIZE)
+            return MEM_BUG;
+        /* our pointer is in 0 to User space end addr range  */
+		else if ((unsigned long)p < TASK_SIZE)
+            return MEM_USER;
+        /* crazy other stuff */
+		else
+            return MEM_BUG;
+    } else {
+        /* get shadow info for access address */
+        u8 shadow_val = detect_access_kind(p);
+        switch(shadow_val)
+        {
+            case KASAN_PAGE_REDZONE:
+                return MEM_ALLOC_PAGES;
+            case KASAN_KMALLOC_REDZONE:
+                return MEM_HEAP;
+            case KASAN_GLOBAL_REDZONE:
+                return MEM_GLOBAL;
+            case KASAN_STACK_LEFT:
+            case KASAN_STACK_MID:
+            case KASAN_STACK_RIGHT:
+            case KASAN_STACK_PARTIAL:
+                return MEM_STACK_PAGE;
+            default: 
+                return MEM_NONE;
+        }
     }
 }
 

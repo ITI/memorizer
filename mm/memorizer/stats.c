@@ -51,6 +51,7 @@
 #include <linux/printk.h>
 #include <linux/seq_file.h>
 
+#include <linux/memorizer.h>
 #include "stats.h"
 #include "kobj_metadata.h"
 

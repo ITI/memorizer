@@ -55,10 +55,14 @@
 #include <linux/slab.h>
 #include <linux/jiffies.h>
 #include <linux/seq_file.h>
+#include <linux/memorizer.h>
 
 #include "kobj_metadata.h"
 #include "memorizer.h"
 #include "stats.h"
+
+#define ALLOC_CODE_SHIFT    59
+#define ALLOC_INDUCED_CODE	(_AC(MEM_INDUCED,UL) << ALLOC_CODE_SHIFT)
 
 /* Caches for lookup tables */
 static struct kmem_cache *lt_l1_tbl_cache;

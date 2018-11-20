@@ -744,28 +744,22 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
         kobj = lt_get_kobj(va_ptr);
 
         if(!kobj){
-
-#if 0 // TODO FIgure out how to use kasan
-                if(kasan_obj_alive(va_ptr,size))
-                        track_induced_access();
-                else
-#endif 0
-                if(kasan_obj_stack(va_ptr,size))
+                enum AllocType AT = kasan_obj_type(va_ptr,size);
+                if(AT==MEM_STACK_PAGE)
                 {
-                        kobj =  general_stack_kobj;        
                         track_stack_access();
-                        goto update;
-                }
+                        kobj = general_stack_kobj;
+                } 
                 else
                 {
                         track_untracked_access();
+                        return -1;
                 }
-                return -1;
+        } else {
+
+                track_access();
         }
 
-        track_access();
-
-update:
         /* Grab the object lock here */
         write_lock(&kobj->rwlock);
 

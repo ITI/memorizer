@@ -745,14 +745,13 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 
         if(!kobj){
                 enum AllocType AT = kasan_obj_type(va_ptr,size);
+                track_untracked_access(AT);
                 if(AT==MEM_STACK_PAGE)
                 {
-                        track_stack_access();
                         kobj = general_stack_kobj;
                 } 
                 else
                 {
-                        track_untracked_access();
                         return -1;
                 }
         } else {

@@ -64,6 +64,9 @@
 static __always_inline int64_t geta(atomic64_t * a) { return atomic64_read(a); }
 static __always_inline void inca(atomic64_t * a) { atomic64_inc(a); }
 
+/* stats data structure accounting for each type of alloc */
+static atomic64_t untracked_refs[NumAllocTypes];
+
 /* Lookup Table */
 static atomic64_t num_l3 = ATOMIC_INIT(0);
 static atomic64_t num_l2 = ATOMIC_INIT(0);
@@ -108,9 +111,10 @@ track_disabled_access(void)
 }
 
 void __always_inline 
-track_untracked_access(void) 
+track_untracked_access(enum AllocType AT) 
 { 
-    inca(&num_untracked_obj_access); 
+    inca(&num_untracked_obj_access);
+    inca(&untracked_refs[AT]); 
 }
 
 /* General object info */
@@ -226,7 +230,7 @@ void print_stats(size_t pr_level)
 {
 	printk(KERN_CRIT "------- Memory Accesses -------\n");
 	printk(KERN_CRIT "   Tracked:%16lld\n", geta(&tracked_kobj_accesses));
-	printk(KERN_CRIT "     Stack:%16lld\n", geta(&num_stack_accesses));
+	printk(KERN_CRIT "     Stack:%16lld\n", geta(&untracked_refs[MEM_STACK_PAGE]));
 	printk(KERN_CRIT "   Missing:%16lld\n", geta(&num_untracked_obj_access));
 	printk(KERN_CRIT "   Induced:%16lld\n", geta(&num_induced_accesses));
 	printk(KERN_CRIT "  Disabled:%16lld\n", geta(&num_accesses_while_disabled));
@@ -270,7 +274,7 @@ int seq_print_stats(struct seq_file *seq)
 {
 	seq_printf(seq,"------- Memory Accesses -------\n");
 	seq_printf(seq,"  Tracked:      %16lld\n", geta(&tracked_kobj_accesses));
-	seq_printf(seq,"    Stack:      %16lld\n", geta(&num_stack_accesses));
+	seq_printf(seq,"    Stack:      %16lld\n", geta(&untracked_refs[MEM_STACK_PAGE]));
 	seq_printf(seq,"  Missing:      %16lld\n", geta(&num_untracked_obj_access));
 	seq_printf(seq,"  Induced:      %16lld\n", geta(&num_induced_accesses));
 	seq_printf(seq,"  Disabled:     %16lld\n", geta(&num_accesses_while_disabled));

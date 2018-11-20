@@ -69,7 +69,8 @@ enum AllocType {
     MEM_USER,
     MEM_BUG,
     /* TODO: Legacy type, fix in tracking code to not use */
-    MEM_NONE
+    MEM_NONE,
+    NumAllocTypes
 };
 
 #ifdef CONFIG_MEMORIZER /*----------- !CONFIG_MEMORIZER -------------------- */

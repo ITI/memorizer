@@ -52,6 +52,7 @@
 #define _STATS_H_
 
 #include <asm/atomic.h>
+#include <linux/memorizer.h>
 #include "kobj_metadata.h"
 
 /* This is a flag that will macro disable stats for more efficient tracing */
@@ -73,7 +74,7 @@ void track_access(void);
 void track_induced_access(void);
 void track_stack_access(void);
 void track_disabled_access(void);
-void track_untracked_access(void);
+void track_untracked_access(enum AllocType AT);
 void track_access_counts_alloc(void);
 void track_l1_alloc(void);
 void track_l2_alloc(void);

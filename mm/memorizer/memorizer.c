@@ -998,9 +998,9 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
     //wq_push(0,0,Memorizer_Fork,0,p->comm);
     //trace_printk("%p->%s,%d,%c\n",p,p->comm,0,Memorizer_Mem_Free);
     trace_printk("fork:%s,PID:%d\n",p->comm,nr);
-#endif 
 
     local_irq_restore(flags);
+#endif 
     /* check to see if stack is allocated */
     //if(lt_get_kobj(p->stack))
     {

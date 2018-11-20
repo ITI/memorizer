@@ -485,7 +485,7 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 		return NULL;
 
 	stack = alloc_thread_stack_node(tsk, node);
-        memorizer_stack_page_alloc(stack, THREAD_SIZE);
+    memorizer_stack_page_alloc(stack, THREAD_SIZE);
 	if (!stack)
 		goto free_tsk;
 

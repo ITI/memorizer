@@ -64,7 +64,7 @@ static char * alloc_type_str (enum AllocType AT)
     case MEM_STACK_PAGE:
         return "STACK_PAGE";
     case MEM_HEAP:
-        return "HEAP";
+        return "GEN_HEAP";
     case MEM_GLOBAL:
         return "GLOBAL";
     case MEM_KMALLOC:

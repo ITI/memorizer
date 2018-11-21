@@ -745,19 +745,19 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 
         if(!kobj){
                 enum AllocType AT = kasan_obj_type(va_ptr,size);
-                track_untracked_access(AT);
                 if(AT==MEM_STACK_PAGE)
                 {
                         kobj = general_stack_kobj;
                 } 
                 else
                 {
+                        track_untracked_access(AT);
                         return -1;
                 }
-        } else {
-
-                track_access();
         }
+
+        /* track access by type of object accessed */
+        track_access(kobj->alloc_type);
 
         /* Grab the object lock here */
         write_lock(&kobj->rwlock);

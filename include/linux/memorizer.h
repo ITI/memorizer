@@ -56,7 +56,7 @@
  * struct memorizer_kobj - metadata for kernel objects 
  */
 enum AllocType {
-    MEM_STACK=1,
+    MEM_STACK=0,
     MEM_STACK_PAGE,
     MEM_HEAP,
     MEM_GLOBAL,

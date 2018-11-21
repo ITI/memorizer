@@ -70,7 +70,7 @@ void track_free(void);
 void track_untracked_obj_free(void);
 void track_induced_free(void);
 void track_kobj_free(void);
-void track_access(void);
+void track_access(enum AllocType AT);
 void track_induced_access(void);
 void track_stack_access(void);
 void track_disabled_access(void);

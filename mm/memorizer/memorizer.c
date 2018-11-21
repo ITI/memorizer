@@ -1863,7 +1863,12 @@ static const struct file_operations clear_printed_list_fops = {
 static ssize_t cfgmap_write(struct file *file, const char __user
 				   *user_buf, size_t size, loff_t *ppos)
 {
+    unsigned long flags;
+	__memorizer_enter();
+    local_irq_save(flags);
     cfgmap_clear(cfgtbl);
+    local_irq_restore(flags);
+	__memorizer_exit();
 	*ppos += size;
 	return size;
 }

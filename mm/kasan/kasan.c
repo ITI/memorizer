@@ -890,7 +890,7 @@ EXPORT_SYMBOL(__asan_poison_stack_memory);
 void __asan_unpoison_stack_memory(const void *addr, size_t size)
 {
 	kasan_unpoison_shadow(addr, size);
-    //memorizer_stack_spill(_RET_IP_, addr, size);
+    memorizer_stack_alloc(_RET_IP_, addr, size);
 }
 EXPORT_SYMBOL(__asan_unpoison_stack_memory);
 

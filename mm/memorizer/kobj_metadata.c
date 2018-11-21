@@ -52,6 +52,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/gfp.h>
+#include <linux/atomic.h>
 #include <linux/slab.h>
 #include <linux/jiffies.h>
 #include <linux/seq_file.h>
@@ -63,6 +64,9 @@
 
 #define ALLOC_CODE_SHIFT    59
 #define ALLOC_INDUCED_CODE	(_AC(MEM_INDUCED,UL) << ALLOC_CODE_SHIFT)
+
+/* atomic object counter */
+static atomic_long_t global_kobj_id = ATOMIC_INIT(0);
 
 /* Caches for lookup tables */
 static struct kmem_cache *lt_l1_tbl_cache;
@@ -82,6 +86,29 @@ struct pages_pool {
     size_t entries;     /* number of entries to last page */
     size_t pg_size;     /* size of object for indexing */
 };
+
+//int test_and_set_bit(unsigned long nr, volatile unsigned long *addr);
+volatile unsigned long inlt;
+
+/**
+ * __lt_enter() - increment recursion counter for entry into memorizer
+ *
+ * The primary goal of this is to stop recursive handling of events. Memorizer
+ * by design tracks two types of events: allocations and accesses. Effectively,
+ * while tracking either type we do not want to re-enter and track memorizer
+ * events that are sources from within memorizer. Yes this means we may not
+ * track legitimate access of some types, but these are caused by memorizer and
+ * we want to ignore them. 
+ */
+static inline int __lt_enter(void)
+{
+    return test_and_set_bit_lock(0,&inlt);
+}
+
+static __always_inline void __lt_exit(void)
+{
+    return clear_bit_unlock (0,&inlt);
+}
 
 /**
  * get_pg_from_pool() --- get the next page from the pool
@@ -157,29 +184,29 @@ static struct memorizer_kobj **tbl_get_l1_entry(uint64_t va)
  */
 static struct lt_l1_tbl * l1_alloc(void)
 {
-	struct lt_l1_tbl *l1_tbl;
-	int i = 0;
+        struct lt_l1_tbl *l1_tbl;
+        int i = 0;
 
-	l1_tbl = kmem_cache_alloc(lt_l1_tbl_cache, gfp_memorizer_mask(0));
-	if(!l1_tbl)
-    {
-        l1_tbl = (struct lt_l1_tbl *) get_pg_from_pool(&l1_tbl_reserve);
+        l1_tbl = kmem_cache_alloc(lt_l1_tbl_cache, gfp_memorizer_mask(0));
         if(!l1_tbl)
         {
-            /* while in dev we want to print error and panic */
-            print_stats(KERN_CRIT);
-            panic("Failed to allocate L1 table for memorizer kobj\n");
+                l1_tbl = (struct lt_l1_tbl *) get_pg_from_pool(&l1_tbl_reserve);
+                if(!l1_tbl)
+                {
+                        /* while in dev we want to print error and panic */
+                        print_stats(KERN_CRIT);
+                        panic("Failed to allocate L1 table for memorizer kobj\n");
+                }
         }
-    }
 
-	/* Zero out the memory */
-	for(i = 0; i < LT_L1_ENTRIES; ++i)
-		l1_tbl->kobj_ptrs[i] = 0;
+        /* Zero out the memory */
+        for(i = 0; i < LT_L1_ENTRIES; ++i)
+                l1_tbl->kobj_ptrs[i] = 0;
 
-    /* increment stats counter */
-    track_l1_alloc();
+        /* increment stats counter */
+        track_l1_alloc();
 
-	return l1_tbl;
+        return l1_tbl;
 }
 
 /** 
@@ -187,26 +214,26 @@ static struct lt_l1_tbl * l1_alloc(void)
  */
 static struct lt_l2_tbl * l2_alloc(void)
 {
-	struct lt_l2_tbl *l2_tbl;
-	int i = 0;
+        struct lt_l2_tbl *l2_tbl;
+        int i = 0;
 
-	l2_tbl = kmem_cache_alloc(lt_l2_tbl_cache, gfp_memorizer_mask(0));
-	if(!l2_tbl)
-    {
-        l2_tbl = (struct lt_l2_tbl *) get_pg_from_pool(&l2_tbl_reserve);
+        l2_tbl = kmem_cache_alloc(lt_l2_tbl_cache, gfp_memorizer_mask(0));
         if(!l2_tbl)
-            print_stats(KERN_CRIT);
-            panic("Failed to allocate L2 table for memorizer kobj\n");
-    }
+        {
+                l2_tbl = (struct lt_l2_tbl *) get_pg_from_pool(&l2_tbl_reserve);
+                if(!l2_tbl)
+                        print_stats(KERN_CRIT);
+                panic("Failed to allocate L2 table for memorizer kobj\n");
+        }
 
-	/* Zero out the memory */
-	for(i = 0; i < LT_L2_ENTRIES; ++i)
-		l2_tbl->l1_tbls[i] = 0;
+        /* Zero out the memory */
+        for(i = 0; i < LT_L2_ENTRIES; ++i)
+                l2_tbl->l1_tbls[i] = 0;
 
-    /* increment stats counter */
-    track_l2_alloc();
+        /* increment stats counter */
+        track_l2_alloc();
 
-	return l2_tbl;
+        return l2_tbl;
 }
 
 /**
@@ -250,60 +277,75 @@ static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t va)
 }
 
 /**
+ *
+ */
+static bool is_tracked_obj(uintptr_t l1entry)
+{
+        return ((uint64_t) l1entry >> ALLOC_CODE_SHIFT) != (uint64_t) MEM_INDUCED;
+}
+
+/**
  * lt_remove_kobj() --- remove object from the table
  * @va: pointer to the beginning of the object
  *
  * This code assumes that it will only ever get a remove from the beginning of
  * the kobj. TODO: check the beginning of the kobj to make sure.
  *
- * Return: the object at the location that was removed. 
+ * Return: the kobject at the location that was removed. 
  */
 struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
 {
-	struct memorizer_kobj **l1e, *kobj;
-	uintptr_t kobjend;
+        struct memorizer_kobj **l1e, *kobj;
+        uintptr_t obj_id, l1entry = 0;
 
-	/* 
-	 * Get the l1 entry for the va, if there is not entry then we not only
-	 * haven't tracked the object, but we also haven't allocated a l1 page
-	 * for the particular address
-	 */
-	l1e = tbl_get_l1_entry(va);
-	if(!l1e)
-		return NULL;
+        /*
+         * Get the l1 entry for the va, if there is not entry then we not only
+         * haven't tracked the object, but we also haven't allocated a l1 page
+         * for the particular address
+         */
+        l1e = tbl_get_l1_entry(va);
+        if(!l1e)
+                return NULL;
 
-	kobj = *l1e;
+        /* Setup the return: if it is an induced object then no kobj exists */
+        /* the code is in the most significant bits so shift and compare */
+        if(is_tracked_obj(*l1e))
+        {
+                kobj = *l1e;
+        }
+        else
+        {
+                kobj = NULL;
+        }
 
-	/* 
-	 * get the beginning VA entry for this object in case we called free
-	 * from within the object at some offset 
-	 */
-	//kobj = tbl_get_l1_entry(va);
+        /* For each byte in the object set the l1 entry to NULL */
+        obj_id = *l1e;
+        while(obj_id==*l1e)
+        {
+                /* *free* the byte by setting NULL */
+                *l1e = NULL;
 
-	if(kobj){
-		/* For each byte in the object set the l1 entry to NULL */
-		kobjend = kobj->va_ptr + kobj->size;
-		while(va<kobjend){
-			/* TODO Optimize this: can just use the indices on the l1
-			 * tbl instead of getting the entry from the top each
-			 * time.
-			 */
-			l1e = tbl_get_l1_entry(va);
-			if(l1e)
-				*l1e = NULL;
-			va += 1;
-		}
-	}
-	return kobj;
+                /* move l1e to the next entry */
+                l1e = tbl_get_l1_entry(++va);
+
+                /*
+                 * we might get an object that ends at the end of a table and
+                 * therefore the next call will fail to get the l1 table.
+                 */
+                if(!l1e)
+                        break;
+        }
+        return kobj;
 }
 
 inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
 {
-	struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
-	if(l1e)
-		return *l1e;
-	else
-		return NULL;
+        struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
+        if(!l1e)
+                return NULL;
+        if(is_tracked_obj((uintptr_t)*l1e))
+                return *l1e;
+        return NULL;
 }
 
 /* 
@@ -317,10 +359,14 @@ inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
  * previous entry and set up its free times with a special code denoting it was
  * evicted from the table in an erroneous fasion.
  */
-static void handle_overlapping_insert(uintptr_t va, struct memorizer_kobj **l1e)
+static void handle_overlapping_insert(uintptr_t va)
 {
     unsigned long flags;
-    struct memorizer_kobj *obj = lt_remove_kobj(va);
+    struct memorizer_kobj *obj = lt_get_kobj(va);
+
+    if(!obj)
+        return;
+
     /* 
      * Note we don't need to free because the object is in the free list and
      * will get expunged later.
@@ -328,7 +374,6 @@ static void handle_overlapping_insert(uintptr_t va, struct memorizer_kobj **l1e)
     write_lock_irqsave(&obj->rwlock, flags);
     obj->free_jiffies = get_ts();
     obj->free_ip = 0xDEADBEEF;
-    track_free();
     write_unlock_irqrestore(&obj->rwlock, flags);
 }
 
@@ -344,13 +389,13 @@ static void handle_overlapping_insert(uintptr_t va, struct memorizer_kobj **l1e)
  * object, iterate through the table setting each entry of the object to the
  * given kobj pointer. 
  */
-int lt_insert_kobj(struct memorizer_kobj *kobj)
+int __lt_insert(uintptr_t va_ptr, size_t size, uintptr_t metadata)
 {
 	struct lt_l1_tbl **l2e;
 	struct lt_l2_tbl **l3e;
 	uint64_t l1_i = 0;
-	uintptr_t va = kobj->va_ptr;
-	uintptr_t kobjend = kobj->va_ptr + kobj->size;
+	uintptr_t va = va_ptr;
+	uintptr_t kobjend = va_ptr + size;
 
 	while(va < kobjend)
 	{
@@ -361,11 +406,11 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 		l2e = l2_entry_may_alloc(*l3e, va);
 
 		/* 
-		 * Get the index for this va for boundary on this l1 table;
-		 * however, TODO, this might not be needed as our table indices
-		 * are page aligned and it might be unlikely allocations are
-		 * page aligned and will not traverse the boundary of an l1
-		 * table. Note that I have not tested this condition yet.
+                 * Get the index for this va for boundary on this l1 table;
+                 * however, TODO, this might not be needed as our table indices
+                 * are page aligned and it might be unlikely allocations are
+                 * page aligned and will not traverse the boundary of an l1
+                 * table. Note that I have not tested this condition yet.
 		 */
 		l1_i = lt_l1_tbl_index(va);
 
@@ -376,17 +421,40 @@ int lt_insert_kobj(struct memorizer_kobj *kobj)
 
 			/* If it is not null then we are double allocating */
 			if(*l1e)
-				handle_overlapping_insert(va, l1e);
+				handle_overlapping_insert(va);
 
-			/* insert the object pointer in the table for byte va */
-			*l1e = kobj;
+			/* insert object pointer in the table for byte va */
+			*l1e = metadata;
 
-			/* Track the end of the table and the object tracking */
-			va += 1;
+                        /* Track end of the table and the object tracking */
+                        va += 1;
 			++l1_i;
 		}
 	}
 	return 0;
+}
+
+/**
+ * We create a unique label for each induced allocated object so that we can
+ * easily free. We insert a 5 bit code for the type with the MSB as 0 to make
+ * sure we don't have a false positive with a real address. We then make the 59
+ * least significatn bits a unique identifier for this obj. By inserting this
+ * way the free just finds all matching entries in the table.
+ */
+int lt_insert_induced(void * va_ptr, size_t size)
+{
+        if(__lt_enter())
+                return;
+        uintptr_t label = ((uintptr_t) MEM_INDUCED << ALLOC_CODE_SHIFT) |
+                        atomic_long_inc_return(&global_kobj_id); 
+        __lt_insert(va_ptr, size, label);
+        __lt_exit();
+        return 1;
+}
+
+int lt_insert_kobj(struct memorizer_kobj *kobj)
+{
+        return __lt_insert(kobj->va_ptr, kobj->size, kobj);
 }
 
 void plt_insert(struct pid_obj pobj)

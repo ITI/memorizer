@@ -270,13 +270,6 @@ struct code_region crypto_code_region = {
 static struct memorizer_kobj kobj_emergency_pool[NUM_EMERGENCY_KOBJS];
 size_t next_kobj_pool_i = 0;
 static struct memorizer_kobj * general_kobjs[NumAllocTypes];
-static struct memorizer_kobj * general_user_kobj;
-static struct memorizer_kobj * general_bug_kobj;
-static struct memorizer_kobj * general_none_kobj;
-static struct memorizer_kobj * general_global_kobj;
-static struct memorizer_kobj * general_heap_kobj;
-static struct memorizer_kobj * general_page_kobj;
-static struct memorizer_kobj * general_stack_kobj;
 
 /**
  * __alloc_kobj_reserve() - return a kobj metadata object from reserve pool
@@ -751,40 +744,12 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
         kobj = lt_get_kobj(va_ptr);
 
         if(!kobj){
-                switch(kasan_obj_type(va_ptr,size))
-                {
-                case MEM_USER:
-                        kobj = general_user_kobj;
-                        track_untracked_access(kobj->alloc_type);
-                        break;
-                case MEM_BUG:
-                        kobj = general_bug_kobj;
-                        track_untracked_access(kobj->alloc_type);
-                        break;
-                case MEM_NONE:
-                        kobj = general_none_kobj;
-                        track_untracked_access(kobj->alloc_type);
-                        break;
-                case MEM_GLOBAL:
-                        kobj = general_global_kobj;
-                        track_untracked_access(kobj->alloc_type);
-                        break;
-                case MEM_ALLOC_PAGES:
-                        kobj = general_page_kobj;
-                        track_untracked_access(kobj->alloc_type);
-                        break;
-                case MEM_HEAP:
-                        kobj = general_heap_kobj;
-                        track_untracked_access(kobj->alloc_type);
-                        break;
-                case MEM_STACK_PAGE:
-                        kobj = general_stack_kobj;
-                        /* we consider stack as tracked here */
-                        track_access(kobj->alloc_type);
-                        break;
-                default:
-                        panic("Default fall through on alloc type");
-                }
+                enum AllocType AT = kasan_obj_type(va_ptr,size);
+                kobj = general_kobjs[AT];
+                if(AT == MEM_STACK_PAGE)
+                        track_access(AT);
+                else
+                        track_untracked_access(AT);
         }
         else
         {
@@ -2343,6 +2308,7 @@ static int create_char_devs(void)
 void __init memorizer_init(void)
 {
         unsigned long flags;
+        int i = 0;
 
         __memorizer_enter();
 #if INLINE_EVENT_PARSE == 0
@@ -2378,33 +2344,14 @@ void __init memorizer_init(void)
         }
         print_live_obj = true;
 
-        /* initialzie catch all kobjs */
-        general_user_kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
-        general_bug_kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
-        general_none_kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
-        general_global_kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
-        general_heap_kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
-        general_page_kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
-        general_stack_kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
-
-        init_kobj(general_user_kobj, 0, 0, 0, MEM_NONE);
-        init_kobj(general_bug_kobj, 0, 0, 0, MEM_NONE);
-        init_kobj(general_none_kobj, 0, 0, 0, MEM_NONE);
-        init_kobj(general_global_kobj, 0, 0, 0, MEM_GLOBAL);
-        init_kobj(general_heap_kobj, 0, 0, 0, MEM_HEAP);
-        init_kobj(general_page_kobj, 0, 0, 0, MEM_NONE);
-        init_kobj(general_stack_kobj, 0, 0, 0, MEM_STACK_PAGE);
-
-        /* Grab the writer lock for the object_list and insert into object list */
-        write_lock(&object_list_spinlock);
-        list_add_tail(&general_user_kobj->object_list, &object_list);
-        list_add_tail(&general_bug_kobj->object_list, &object_list);
-        list_add_tail(&general_none_kobj->object_list, &object_list);
-        list_add_tail(&general_global_kobj->object_list, &object_list);
-        list_add_tail(&general_heap_kobj->object_list, &object_list);
-        list_add_tail(&general_page_kobj->object_list, &object_list);
-        list_add_tail(&general_stack_kobj->object_list, &object_list);
-        write_unlock(&object_list_spinlock);
+        for(i=0;i<NumAllocTypes;i++)
+        {
+                general_kobjs[i] = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
+                init_kobj(general_kobjs[i], 0, 0, 0, i);
+                write_lock(&object_list_spinlock);
+                list_add_tail(&general_kobjs[i]->object_list, &object_list);
+                write_unlock(&object_list_spinlock);
+        }
 
         local_irq_restore(flags);
         __memorizer_exit();

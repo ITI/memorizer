@@ -1432,6 +1432,9 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
         unsigned long flags;
         struct memorizer_kobj *kobj;
 
+        if(gfp_flags & __GFP_NOTRACK)
+            return;
+
         if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
                 return;
 

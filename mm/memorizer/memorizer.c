@@ -1434,8 +1434,10 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
         if(__memorizer_enter())
         {
                 /* link in lookup table with dummy event */
-                //lt_insert_induced((uintptr_t)ptr,bytes_alloc);
+                local_irq_save(flags);
+                lt_insert_induced((uintptr_t)ptr,bytes_alloc);
                 track_induced_alloc();
+                local_irq_restore(flags);
                 return;
         }
 

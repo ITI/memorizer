@@ -186,7 +186,7 @@ static struct lt_l1_tbl * l1_alloc(void)
 {
         struct lt_l1_tbl *l1_tbl;
         int i = 0;
-
+        
         l1_tbl = kmem_cache_alloc(lt_l1_tbl_cache, gfp_memorizer_mask(0));
         if(!l1_tbl)
         {
@@ -241,19 +241,16 @@ static struct lt_l2_tbl * l2_alloc(void)
  * @l2_tbl:	pointer to the l2 table to look into
  * @va:		Pointer of the va to index into the table
  *
- * Check if the l1 table exists, if not allocate. Lock this update so that we
- * don't get double allocations for the entry.
+ * Check if the l1 table exists, if not allocate.
  */
 static struct lt_l1_tbl **l2_entry_may_alloc(struct lt_l2_tbl *l2_tbl, uintptr_t
 					     va)
 {
 	unsigned long flags;
 	struct lt_l1_tbl **l2e;
-	write_lock_irqsave(&lookup_tbl_rw_lock, flags);
 	l2e = lt_l2_entry(l2_tbl, va);
 	if(unlikely(!*l2e))
 		*l2e = l1_alloc();
-	write_unlock_irqrestore(&lookup_tbl_rw_lock, flags);
 	return l2e;
 }
 
@@ -261,18 +258,15 @@ static struct lt_l1_tbl **l2_entry_may_alloc(struct lt_l2_tbl *l2_tbl, uintptr_t
  * l3_entry_may_alloc() - get the l3 entry and alloc if needed
  * @va:		Pointer of the va to index into the table
  *
- * Check if the l2 table exists, if not allocate. Lock this update so that we
- * don't get double allocations for the entry.
+ * Check if the l2 table exists, if not allocate.
  */
 static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t va)
 {
 	unsigned long flags;
 	struct lt_l2_tbl **l3e;
-	write_lock_irqsave(&lookup_tbl_rw_lock, flags);
 	l3e = lt_l3_entry(&kobj_l3_tbl, va);
 	if(unlikely(!*l3e))
 		*l3e = l2_alloc();
-	write_unlock_irqrestore(&lookup_tbl_rw_lock, flags);
 	return l3e;
 }
 
@@ -441,14 +435,12 @@ int __lt_insert(uintptr_t va_ptr, size_t size, uintptr_t metadata)
  * least significatn bits a unique identifier for this obj. By inserting this
  * way the free just finds all matching entries in the table.
  */
+size_t d = 0;
 int lt_insert_induced(void * va_ptr, size_t size)
 {
-        if(__lt_enter())
-                return;
         uintptr_t label = ((uintptr_t) MEM_INDUCED << ALLOC_CODE_SHIFT) |
                         atomic_long_inc_return(&global_kobj_id); 
-        __lt_insert(va_ptr, size, label);
-        __lt_exit();
+            __lt_insert(va_ptr, size, label);
         return 1;
 }
 

@@ -278,6 +278,14 @@ static bool is_tracked_obj(uintptr_t l1entry)
         return ((uint64_t) l1entry >> ALLOC_CODE_SHIFT) != (uint64_t) MEM_INDUCED;
 }
 
+bool is_induced_obj(uintptr_t va)
+{
+        struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
+        if(!l1e)
+            return false;
+        return ((uint64_t) *l1e >> ALLOC_CODE_SHIFT) == (uint64_t) MEM_INDUCED;
+}
+
 /**
  * lt_remove_kobj() --- remove object from the table
  * @va: pointer to the beginning of the object

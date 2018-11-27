@@ -130,6 +130,7 @@
 #include "FunctionHashTable.h"
 #include "memorizer.h"
 #include "stats.h"
+#include "util.h"
 #include "../slab.h"
 
 //==-- Debugging and print information ------------------------------------==//
@@ -1578,13 +1579,31 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 }
 
+const char * l1str = "lt_l1_tbl";
+const char * l2str = "lt_l2_tbl";
+const char * memorizer_kobjstr = "memorizer_kobj";
+const char * access_from_countsstr = "access_from_counts";
+bool is_memorizer_cache_alloc(char * cache_str)
+{
+        if(!memstrcmp(l1str,cache_str))
+                return true;
+        if(!memstrcmp(l2str,cache_str))
+                return true;
+        if(!memstrcmp(memorizer_kobjstr,cache_str))
+                return true;
+        if(!memstrcmp(access_from_countsstr,cache_str))
+                return true;
+        return false;
+}
+
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
                 struct kmem_cache *s, gfp_t gfp_flags)
 {
         if (unlikely(ptr == NULL))
                 return;
-        __memorizer_kmalloc(call_site, ptr, s->object_size, s->size, gfp_flags,
-                        MEM_KMEM_CACHE);
+        if(!is_memorizer_cache_alloc(s->name))
+                __memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
+                                gfp_flags, MEM_KMEM_CACHE);
 }
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
@@ -1592,8 +1611,9 @@ void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
 {
         if (unlikely(ptr == NULL))
                 return;
-        __memorizer_kmalloc(call_site, ptr, s->object_size, s->size, gfp_flags,
-                        MEM_KMEM_CACHE_ND);
+        if(!is_memorizer_cache_alloc(s->name))
+                __memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
+                                gfp_flags, MEM_KMEM_CACHE_ND);
 }
 
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)

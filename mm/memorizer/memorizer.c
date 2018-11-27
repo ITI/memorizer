@@ -2370,6 +2370,16 @@ void __init memorizer_init(void)
         /* initialize the table tracking CFG edges */
         func_hash_tbl_init();
         cfgtbl = create_function_hashtable();
+        
+        for(i=0;i<NumAllocTypes;i++)
+        {
+                general_kobjs[i] = kmem_cache_alloc(kobj_cache,
+                                gfp_memorizer_mask(0));
+                init_kobj(general_kobjs[i], 0, 0, 0, i);
+                write_lock(&object_list_spinlock);
+                list_add_tail(&general_kobjs[i]->object_list, &object_list);
+                write_unlock(&object_list_spinlock);
+        }
 
         local_irq_save(flags);
         if(memorizer_enabled_boot){
@@ -2388,15 +2398,6 @@ void __init memorizer_init(void)
                 cfg_log_on = false;
         }
         print_live_obj = true;
-
-        for(i=0;i<NumAllocTypes;i++)
-        {
-                general_kobjs[i] = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(0));
-                init_kobj(general_kobjs[i], 0, 0, 0, i);
-                write_lock(&object_list_spinlock);
-                list_add_tail(&general_kobjs[i]->object_list, &object_list);
-                write_unlock(&object_list_spinlock);
-        }
 
         local_irq_restore(flags);
         __memorizer_exit();

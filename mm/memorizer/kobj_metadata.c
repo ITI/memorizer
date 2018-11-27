@@ -325,7 +325,7 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
         while(obj_id==*l1e)
         {
                 /* *free* the byte by setting NULL */
-                *l1e = NULL;
+                *l1e = 0;
 
                 /* move l1e to the next entry */
                 l1e = tbl_get_l1_entry(++va);
@@ -343,9 +343,7 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
 inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
 {
         struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
-        if(!l1e)
-                return NULL;
-        if(is_tracked_obj((uintptr_t)*l1e))
+        if(l1e && is_tracked_obj((uintptr_t)*l1e))
                 return *l1e;
         return NULL;
 }
@@ -446,10 +444,10 @@ int __lt_insert(uintptr_t va_ptr, size_t size, uintptr_t metadata)
 size_t d = 0;
 int lt_insert_induced(void * va_ptr, size_t size)
 {
-        uintptr_t label = ((uintptr_t) MEM_INDUCED << ALLOC_CODE_SHIFT) |
-                        atomic_long_inc_return(&global_kobj_id); 
-            __lt_insert(va_ptr, size, label);
-        return 1;
+    uintptr_t label = ((uintptr_t) MEM_INDUCED << ALLOC_CODE_SHIFT) |
+        atomic_long_inc_return(&global_kobj_id); 
+    __lt_insert(va_ptr, size, label);
+    return 1;
 }
 
 int lt_insert_kobj(struct memorizer_kobj *kobj)

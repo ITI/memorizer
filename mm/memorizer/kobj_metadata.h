@@ -240,6 +240,7 @@ int lt_insert_kobj(struct memorizer_kobj *kobj);
 struct memorizer_kobj * lt_remove_kobj(uintptr_t va);
 struct memorizer_kobj * lt_get_kobj(uintptr_t va);
 int lt_insert_induced(void * vaddr, size_t size);
+bool is_induced_obj(uintptr_t va);
 
 #endif /* __KOBJ_METADATA_H_ */
 

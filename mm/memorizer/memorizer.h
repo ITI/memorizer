@@ -55,7 +55,7 @@
 #include <linux/gfp.h>
 
 /* mask to apply to memorizer allocations TODO: verify the list */
-#define gfp_memorizer_mask(gfp)	((gfp | GFP_ATOMIC) &   \
+#define gfp_memorizer_mask(gfp)	((gfp | GFP_ATOMIC | __GFP_NOTRACK | __GFP_NORETRY) &   \
         ( GFP_ATOMIC            \
           | __GFP_NOTRACK	    \
           | __GFP_NORETRY       \

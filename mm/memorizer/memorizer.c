@@ -92,6 +92,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/bug.h>
+#include <linux/gfp.h>
 #include <linux/cpumask.h>
 #include <linux/debugfs.h>
 #include <linux/err.h>
@@ -672,7 +673,7 @@ static inline struct access_from_counts *
 alloc_and_init_access_counts(uint64_t ip, pid_t pid)
 {
 	struct access_from_counts * afc = NULL;
-	afc = kmem_cache_alloc(access_from_counts_cache, GFP_ATOMIC);
+	afc = kmem_cache_alloc(access_from_counts_cache, gfp_memorizer_mask(0));
 	if(afc)
 		init_access_counts_object(afc, ip, pid);
         track_access_counts_alloc();
@@ -2063,7 +2064,7 @@ parse_events(struct event_list_wq_data * data)
 					     (size_t) mke->event_type,mke->data.et.event_size);
 			     			break;
         case Memorizer_Mem_Alloc:
-            kobj = kmem_cache_alloc(kobj_cache, gfp_flags);
+            kobj = kmem_cache_alloc(kobj_cache, gfp_flags|__GFP_NOTRACK);
             if(!kobj){ 
                 pr_err("Cannot allocate a memorizer_kobj structure\n"); 
             }

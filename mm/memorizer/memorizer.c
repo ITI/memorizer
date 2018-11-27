@@ -130,6 +130,7 @@
 #include "FunctionHashTable.h"
 #include "memorizer.h"
 #include "stats.h"
+#include "../slab.h"
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
@@ -1577,19 +1578,22 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 }
 
-void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t
-				bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
+void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
+                struct kmem_cache *s, gfp_t gfp_flags)
 {
-    __memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags,
-            MEM_KMEM_CACHE);
+        if (unlikely(ptr == NULL))
+                return;
+        __memorizer_kmalloc(call_site, ptr, s->object_size, s->size, gfp_flags,
+                        MEM_KMEM_CACHE);
 }
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
-				      size_t bytes_req, size_t bytes_alloc,
-				      gfp_t gfp_flags, int node)
+        struct kmem_cache *s, gfp_t gfp_flags, int node)
 {
-    __memorizer_kmalloc(call_site, ptr, bytes_req, bytes_alloc, gfp_flags,
-            MEM_KMEM_CACHE_ND);
+        if (unlikely(ptr == NULL))
+                return;
+        __memorizer_kmalloc(call_site, ptr, s->object_size, s->size, gfp_flags,
+                        MEM_KMEM_CACHE_ND);
 }
 
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)

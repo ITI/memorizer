@@ -113,7 +113,7 @@ void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
 void memorizer_fork(struct task_struct *p, long nr);
 void switchBuffer(void);
 void memorizer_print_stats(void);
-void memorizer_stack_page_alloc(uintptr_t va, size_t size);
+void memorizer_stack_page_alloc(struct task_struct * task);
 
 /* Temporary Debug and test code */
 int __memorizer_get_opsx(void);
@@ -140,7 +140,7 @@ static inline void memorizer_register_global(const void *ptr, size_t size) {}
 static inline void memorizer_fork(struct task_struct *p, long nr) {}
 static inline void switchBuffer(void) {}
 static inline void memorizer_print_stats(void) {}
-static inline void memorizer_stack_page_alloc(){}
+static inline void memorizer_stack_page_alloc(struct task_struct * task){}
 
 #endif /* CONFIG_MEMORIZER */
 

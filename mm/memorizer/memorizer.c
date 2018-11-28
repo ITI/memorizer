@@ -107,7 +107,6 @@
 #include <linux/printk.h>
 #include <linux/rbtree.h>
 #include <linux/rwlock.h>
-#include <linux/sched.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/stat.h>
@@ -753,7 +752,6 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
                         track_access(MEM_INDUCED);
                 }
                 else{
-
                         enum AllocType AT = kasan_obj_type(va_ptr,size);
                         kobj = general_kobjs[AT];
                         if(AT == MEM_STACK_PAGE)
@@ -1670,26 +1668,27 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
  *
  * Thread should have allocated and this stack should be in the table
  */
-void memorizer_stack_page_alloc(uintptr_t va, size_t size)
+void memorizer_stack_page_alloc(struct task_struct *task) 
 {
         /* get the object */
-        return;
-
-        struct memorizer_kobj * stack_kobj = lt_get_kobj(va);
+        struct memorizer_kobj * stack_kobj = lt_get_kobj(task->stack);
+        /* if there then just mark it, but it appears to be filtered out */
         if(!stack_kobj)
         {
-                pr_crit("Whole stack not in live object list");
-                return;
+                void *base = task_stack_page(task);
+                __memorizer_kmalloc(_RET_IP_, base, THREAD_SIZE, THREAD_SIZE,
+                                0, MEM_STACK_PAGE); 
         }
-
-        /* change alloc type to stack page alloc */
-        stack_kobj->alloc_type = MEM_STACK_PAGE;
+        else
+        {
+                /* change alloc type to stack page alloc */
+                stack_kobj->alloc_type = MEM_STACK_PAGE;
+        }
 }
 
 void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
-        size)
+                size)
 {
-        //pr_crit("Call stack spill");
         __memorizer_kmalloc(call_site, ptr, size, size, 0, MEM_STACK);
 }
 

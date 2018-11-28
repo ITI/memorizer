@@ -87,14 +87,14 @@ static inline void track_disabled_alloc(void){}
 static inline void track_induced_alloc(void){}
 static inline void track_failed_kobj_alloc(void){}
 static inline void track_free(void){}
-static inline void track_untracked_obj_free(void);
-static inline void track_induced_free(void);
+static inline void track_untracked_obj_free(void){}
+static inline void track_induced_free(void){}
 static inline void track_kobj_free(void){}
-static inline void track_access(void){}
+static inline void track_access(enum AllocType AT) {}
 static inline void track_induced_access(void){}
 static inline void track_stack_access(void){}
 static inline void track_disabled_access(void){}
-static inline void track_untracked_access(void){}
+static inline void track_untracked_access(enum AllocType AT){}
 static inline void track_access_counts_alloc(void){}
 static inline void track_l1_alloc(void){}
 static inline void track_l2_alloc(void){}

@@ -133,7 +133,6 @@ struct memorizer_kobj {
  struct access_from_counts {
 	 struct list_head list;
 	 uintptr_t ip;
-	 pid_t pid;
 	 uint64_t writes;
 	 uint64_t reads;
  };

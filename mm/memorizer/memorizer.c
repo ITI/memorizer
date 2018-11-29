@@ -124,6 +124,7 @@
 #include <linux/sched.h>
 #include <linux/bootmem.h>
 #include <linux/kasan-checks.h>
+#include <linux/mempool.h>
 
 #include "kobj_metadata.h"
 #include "event_structs.h" 
@@ -289,26 +290,6 @@ static struct memorizer_kobj * __alloc_kobj_reserve(void)
         return &kobj_emergency_pool[next_kobj_pool_i++];
 }
 
-#define NUM_EMERGENCY_AFCS     100000
-static struct access_from_counts afc_emergency_pool[NUM_EMERGENCY_AFCS];
-size_t next_afc_pool_i = 0;
-
-/**
- * __alloc_kobj_reserve() - return a kobj metadata object from reserve pool
- *
- * Description: Memorizer tries to use kernel allocators for data structures
- * used a lot, but not all the time can they be serviced. To avoid losing data
- * we create emergency pools with which to service the allocation. They are not
- * the most robust (statically sized) but should be good enough for practical
- * purposes.
- */
-static struct access_from_counts * __alloc_afc_reserve(void)
-{
-        if(next_afc_pool_i == NUM_EMERGENCY_AFCS)
-                panic("Ran out of emergency access from count pool objects");
-        return &afc_emergency_pool[next_afc_pool_i++];
-}
-
 //==-- PER CPU data structures and control flags --------------------------==//
 
 /* TODO make this dynamically allocated based upon free memory */
@@ -386,9 +367,6 @@ struct FunctionHashTable * cfgtbl;
 
 /* object cache for memorizer kobjects */
 static struct kmem_cache *kobj_cache;
-
-/* object cache for access count objects */
-static struct kmem_cache *access_from_counts_cache;
 
 /* Object Cache for Serialized KObjects to be printed out to the RelayFS */
 //static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial", sizeof(struct memorizer_kobj), 0, SLAB_PANIC,  NULL);
@@ -471,7 +449,8 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	list_for_each(listptr, &(kobj->access_counts)){
 		entry = list_entry(listptr, struct access_from_counts, list);
 		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
-			(void *) entry->ip, entry->pid,
+			//(void *) entry->ip, entry->pid,
+			(void *) entry->ip, 0,
 			(unsigned long long) entry->writes,
 			(unsigned long long) entry->reads);
 	}
@@ -670,6 +649,54 @@ static void dump_object_list(void)
 //==-- Memorizer Access Processing ----------------------------------------==//
 //----
 
+#define AFC_POOL_MINIMUM        10000
+#define NUM_EMERGENCY_AFCS      1000000
+
+/* object cache for access count objects */
+static struct kmem_cache *access_from_counts_cache;
+mempool_t * afc_pool;
+
+static struct access_from_counts afc_emergency_pool[NUM_EMERGENCY_AFCS];
+size_t next_afc_pool_i = 0;
+
+#if 0
+LIST_HEAD(access_pools);
+struct access_pool
+{
+        struct page *pool_start;
+        size_t num_pages;
+}
+#endif
+
+/**
+ * __alloc_kobj_reserve() - return a kobj metadata object from reserve pool
+ *
+ * Description: Memorizer tries to use kernel allocators for data structures
+ * used a lot, but not all the time can they be serviced. To avoid losing data
+ * we create emergency pools with which to service the allocation. They are not
+ * the most robust (statically sized) but should be good enough for practical
+ * purposes.
+ */
+static struct access_from_counts * __alloc_afc_reserve(void)
+{
+        if(next_afc_pool_i == NUM_EMERGENCY_AFCS)
+                panic("Ran out of emergency access from count pool objects");
+        return &afc_emergency_pool[next_afc_pool_i++];
+}
+
+static struct access_from_counts *
+__alloc_afc(void)
+{
+	struct access_from_counts * afc = NULL;
+        afc = (struct access_from_counts *) mempool_alloc(afc_pool,
+                        gfp_memorizer_mask(0)); 
+                //kmem_cache_alloc(access_from_counts_cache,
+                //gfp_memorizer_mask(0));
+        if(!afc)
+                afc = __alloc_afc_reserve();
+        return afc;
+}
+
 /**
  * init_access_counts_object() - initialize data for the object
  * @afc:	object to init 
@@ -679,9 +706,11 @@ static inline void
 init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 			  pid)
 {
-	memset(afc, 0, sizeof(struct access_from_counts));
+	INIT_LIST_HEAD(&(afc->list));
 	afc->ip = ip;
-	afc->pid = pid;
+        //afc->pid = pid;
+        afc->writes = 0; 
+        afc->reads = 0;
 }
 
 /**
@@ -692,15 +721,11 @@ static inline struct access_from_counts *
 alloc_and_init_access_counts(uint64_t ip, pid_t pid)
 {
 	struct access_from_counts * afc = NULL;
-	afc = kmem_cache_alloc(access_from_counts_cache, gfp_memorizer_mask(0));
-        if(!afc)
-                afc = __alloc_afc_reserve();
+        afc = __alloc_afc();
         init_access_counts_object(afc, ip, pid);
         track_access_counts_alloc();
 	return afc;
 }
-
-
 
 /**
  * access_from_counts - search kobj's access_from for an entry from src_ip
@@ -724,8 +749,6 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
         struct access_from_counts * afc = NULL;
         list_for_each(listptr, &(kobj->access_counts)){
                 entry = list_entry(listptr, struct access_from_counts, list);
-                if(!entry)
-                        continue;
                 if(src_ip == entry->ip){
                         return entry;
                 } else if(src_ip < entry->ip){
@@ -1142,7 +1165,8 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
  */
 static void free_access_from_entry(struct access_from_counts *afc)
 {
-	kmem_cache_free(access_from_counts_cache, afc);
+	//kmem_cache_free(access_from_counts_cache, afc);
+        mempool_free(afc, afc_pool);
 }
 
 /**
@@ -1799,7 +1823,6 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	{
 		seq_printf(seq, "  %p,%llu,%llu\n",
 			   (void *) afc->ip, 
-               // FIXME Hack: remove pid // afc->pid,
 			   (unsigned long long) afc->writes,
 			   (unsigned long long) afc->reads);
 	}
@@ -2001,7 +2024,10 @@ static void create_obj_kmem_cache(void)
 static void create_access_counts_kmem_cache(void)
 {
 	/* TODO: Investigate these flags SLAB_TRACE | SLAB_NOLEAKTRACE */
-	access_from_counts_cache = KMEM_CACHE(access_from_counts, SLAB_PANIC);
+        access_from_counts_cache = KMEM_CACHE(access_from_counts, SLAB_PANIC);
+        afc_pool = mempool_create(AFC_POOL_MINIMUM,
+                        mempool_alloc_slab, mempool_free_slab,
+                        access_from_counts_cache);
 	pr_info("Just created kmem_cache for access_from_counts\n");
 }
 

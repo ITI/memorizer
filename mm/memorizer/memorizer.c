@@ -289,6 +289,26 @@ static struct memorizer_kobj * __alloc_kobj_reserve(void)
         return &kobj_emergency_pool[next_kobj_pool_i++];
 }
 
+#define NUM_EMERGENCY_AFCS     100000
+static struct access_from_counts afc_emergency_pool[NUM_EMERGENCY_AFCS];
+size_t next_afc_pool_i = 0;
+
+/**
+ * __alloc_kobj_reserve() - return a kobj metadata object from reserve pool
+ *
+ * Description: Memorizer tries to use kernel allocators for data structures
+ * used a lot, but not all the time can they be serviced. To avoid losing data
+ * we create emergency pools with which to service the allocation. They are not
+ * the most robust (statically sized) but should be good enough for practical
+ * purposes.
+ */
+static struct access_from_counts * __alloc_afc_reserve(void)
+{
+        if(next_afc_pool_i == NUM_EMERGENCY_AFCS)
+                panic("Ran out of emergency access from count pool objects");
+        return &afc_emergency_pool[next_afc_pool_i++];
+}
+
 //==-- PER CPU data structures and control flags --------------------------==//
 
 /* TODO make this dynamically allocated based upon free memory */
@@ -673,8 +693,9 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
 {
 	struct access_from_counts * afc = NULL;
 	afc = kmem_cache_alloc(access_from_counts_cache, gfp_memorizer_mask(0));
-	if(afc)
-		init_access_counts_object(afc, ip, pid);
+        if(!afc)
+                afc = __alloc_afc_reserve();
+        init_access_counts_object(afc, ip, pid);
         track_access_counts_alloc();
 	return afc;
 }
@@ -699,25 +720,23 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
 				memorizer_kobj *kobj)
 {
 	struct list_head * listptr;
-	struct access_from_counts *entry;
-	struct access_from_counts * afc = NULL;
-	list_for_each(listptr, &(kobj->access_counts)){
-		entry = list_entry(listptr, struct access_from_counts, list);
-        if(src_ip == entry->ip){
-            /* FIXME: Hack to reduce size is to remove pid */
-            //if(pid == entry->pid)
-            return entry;
-            //else if(pid < entry->pid)
-            //    break;
-        } else if(src_ip < entry->ip){
-            break;
-		}
-	}
-	/* allocate the new one and initialize the count none in list */
-	afc = alloc_and_init_access_counts(src_ip, pid);
-	if(afc)
-		list_add_tail(&(afc->list), listptr);
-	return afc;
+        struct access_from_counts *entry;
+        struct access_from_counts * afc = NULL;
+        list_for_each(listptr, &(kobj->access_counts)){
+                entry = list_entry(listptr, struct access_from_counts, list);
+                if(!entry)
+                        continue;
+                if(src_ip == entry->ip){
+                        return entry;
+                } else if(src_ip < entry->ip){
+                        break;
+                }
+        }
+        /* allocate the new one and initialize the count none in list */
+        afc = alloc_and_init_access_counts(src_ip, pid);
+        if(afc)
+                list_add_tail(&(afc->list), listptr);
+        return afc;
 }
 
 /**

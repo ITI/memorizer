@@ -650,23 +650,66 @@ static void dump_object_list(void)
 //----
 
 #define AFC_POOL_MINIMUM        10000
+#define NUM_ACCESS_POOLS        1000000
+#define AFC_POOL_ORDER          10
 #define NUM_EMERGENCY_AFCS      1000000
+#define pool_bytes		(_AC(1,UL) << AFC_POOL_ORDER)
 
 /* object cache for access count objects */
 static struct kmem_cache *access_from_counts_cache;
 mempool_t * afc_pool;
 
-static struct access_from_counts afc_emergency_pool[NUM_EMERGENCY_AFCS];
-size_t next_afc_pool_i = 0;
-
-#if 0
-LIST_HEAD(access_pools);
 struct access_pool
 {
-        struct page *pool_start;
-        size_t num_pages;
+        uint64_t start;
+        uint64_t next_avail_byte;
+        uint64_t last_avail_byte;
+};
+struct access_pool access_pools[NUM_ACCESS_POOLS];
+struct access_pool * active_pool;
+const size_t afc_pool_order = 10;
+//const long pool_bytes = 1 << AFC_POOL_ORDER;
+uint64_t curr_pool = 0;
+size_t afc_size = sizeof(struct access_from_counts);
+
+static int
+__alloc_afc_pool(void)
+{
+        uintptr_t page = NULL;
+
+        //pr_crit("allocating new access pool curr_pool: %d", curr_pool);
+        if(curr_pool+1 == NUM_ACCESS_POOLS)
+                panic("Ran out of memory pools for access tracking");
+        page = __get_free_pages(gfp_memorizer_mask(0),AFC_POOL_ORDER);
+        if(!page)
+        {
+                pr_crit("Couldn't alloc pages");
+                return -1;
+        }
+        active_pool = &access_pools[++curr_pool];
+        //pr_crit("\tafter alloc: curr_pool: %d", curr_pool);
+        active_pool->start = page;
+        active_pool->next_avail_byte = page;
+        active_pool->last_avail_byte = page + pool_bytes;
+        return 0;
 }
-#endif
+
+static struct access_from_counts *
+__alloc_afc_from_pool(void)
+{
+        struct access_from_counts * afc = NULL; 
+        /* check for space */
+	//if (unlikely(in_irq()) || unlikely(in_softirq()))
+                //return NULL;
+        if(active_pool->next_avail_byte + afc_size > active_pool->last_avail_byte)
+        {
+                if(__alloc_afc_pool() < 0)
+                        return NULL;
+        }
+        afc = (struct access_from_counts *) active_pool->next_avail_byte;
+        active_pool->next_avail_byte += afc_size;
+        return afc;
+}
 
 /**
  * __alloc_kobj_reserve() - return a kobj metadata object from reserve pool
@@ -677,6 +720,8 @@ struct access_pool
  * the most robust (statically sized) but should be good enough for practical
  * purposes.
  */
+static struct access_from_counts afc_emergency_pool[NUM_EMERGENCY_AFCS];
+size_t next_afc_pool_i = 0;
 static struct access_from_counts * __alloc_afc_reserve(void)
 {
         if(next_afc_pool_i == NUM_EMERGENCY_AFCS)
@@ -688,10 +733,11 @@ static struct access_from_counts *
 __alloc_afc(void)
 {
 	struct access_from_counts * afc = NULL;
-        afc = (struct access_from_counts *) mempool_alloc(afc_pool,
-                        gfp_memorizer_mask(0)); 
-                //kmem_cache_alloc(access_from_counts_cache,
-                //gfp_memorizer_mask(0));
+        //afc = __alloc_afc_from_pool();
+        //afc = (struct access_from_counts *) mempool_alloc(afc_pool,
+                        //gfp_memorizer_mask(0)); 
+        afc = kmem_cache_alloc(access_from_counts_cache,
+                        gfp_memorizer_mask(0));
         if(!afc)
                 afc = __alloc_afc_reserve();
         return afc;
@@ -708,7 +754,6 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 {
 	INIT_LIST_HEAD(&(afc->list));
 	afc->ip = ip;
-        //afc->pid = pid;
         afc->writes = 0; 
         afc->reads = 0;
 }

@@ -51,8 +51,8 @@
 #ifndef _MEMALLOC_H_
 #define _MEMALLOC_H_
 
-#define MEMORIZER_POOL_SIZE     (_AC(1,UL) << 36)
-void * get_pool_base(void);
+/* Start with minimally 3GB region else lookup tables will fail */
+#define MEMORIZER_POOL_SIZE     (_AC(1,UL) << 33)
 void * memalloc(unsigned long size);
 void print_pool_info(void);
 #endif /* __memalloc.h_H_ */

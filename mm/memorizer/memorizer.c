@@ -734,14 +734,7 @@ static struct access_from_counts *
 __alloc_afc(void)
 {
 	struct access_from_counts * afc = NULL;
-#if 1
-        //afc = __alloc_afc_from_pool();
         afc = (struct access_from_counts *) memalloc(sizeof(struct access_from_counts));
-#else
-        //afc = (struct access_from_counts *) mempool_alloc(afc_pool,
-         //               gfp_memorizer_mask(0)); 
-        afc = kmem_cache_alloc(access_from_counts_cache, gfp_memorizer_mask(0));
-#endif
         if(!afc)
                 afc = __alloc_afc_reserve();
         return afc;
@@ -973,8 +966,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 					  write, uintptr_t ip)
 {
         unsigned long flags;
-        struct memorizer_kernel_event * evtptr;
-	
         if(unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled))
         {
                 track_disabled_access();
@@ -1563,7 +1554,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
         local_irq_save(flags);
 
         /* inline parsing */
-        kobj = kmem_cache_alloc(kobj_cache, gfp_memorizer_mask(gfp_flags));
+        kobj = memalloc(sizeof(struct memorizer_kobj));
         if(!kobj){
                 kobj = __alloc_kobj_reserve();
                 if(!kobj)
@@ -2168,7 +2159,7 @@ parse_events(struct event_list_wq_data * data)
 					     (size_t) mke->event_type,mke->data.et.event_size);
 			     			break;
         case Memorizer_Mem_Alloc:
-            kobj = kmem_cache_alloc(kobj_cache, gfp_flags|__GFP_NOTRACK);
+		kobj = memalloc(sizeof(struct memorizer_kobj));
             if(!kobj){ 
                 pr_err("Cannot allocate a memorizer_kobj structure\n"); 
             }
@@ -2466,8 +2457,7 @@ void __init memorizer_init(void)
         
         for(i=0;i<NumAllocTypes;i++)
         {
-                general_kobjs[i] = kmem_cache_alloc(kobj_cache,
-                                gfp_memorizer_mask(0));
+                general_kobjs[i] = memalloc(sizeof(struct memorizer_kobj));
                 init_kobj(general_kobjs[i], 0, 0, 0, i);
                 write_lock(&object_list_spinlock);
                 list_add_tail(&general_kobjs[i]->object_list, &object_list);

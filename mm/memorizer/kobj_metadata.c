@@ -1,11 +1,11 @@
 /*===-- LICENSE ------------------------------------------------------------===
- * 
- * University of Illinois/NCSA Open Source License 
+ *
+ * University of Illinois/NCSA Open Source License
  *
  * Copyright (C) 2016, The Board of Trustees of the University of Illinois.
- * All rights reserved. 
+ * All rights reserved.
  *
- * Developed by: 
+ * Developed by:
  *
  *    Research Group of Professor Vikram Adve in the Department of Computer
  *    Science The University of Illinois at Urbana-Champaign
@@ -18,17 +18,17 @@
  * with the Software without restriction, including without limitation the
  * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
  * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions: 
+ * furnished to do so, subject to the following conditions:
  *
  * Redistributions of source code must retain the above copyright notice, this
- * list of conditions and the following disclaimers. 
+ * list of conditions and the following disclaimers.
  *
  * Redistributions in binary form must reproduce the above copyright notice,
  * this list of conditions and the following disclaimers in the documentation
  * and/or other materials provided with the distribution.  Neither the names of
  * Nathan Dautenhahn or the University of Illinois, nor the names of its
  * contributors may be used to endorse or promote products derived from this
- * Software without specific prior written permission. 
+ * Software without specific prior written permission.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -36,7 +36,7 @@
  * CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH
- * THE SOFTWARE. 
+ * THE SOFTWARE.
  *
  *===-----------------------------------------------------------------------===
  *
@@ -61,6 +61,7 @@
 #include "kobj_metadata.h"
 #include "memorizer.h"
 #include "stats.h"
+#include "memalloc.h"
 
 #define ALLOC_CODE_SHIFT    59
 #define ALLOC_INDUCED_CODE	(_AC(MEM_INDUCED,UL) << ALLOC_CODE_SHIFT)
@@ -76,7 +77,7 @@ static struct kmem_cache *lt_l2_tbl_cache;
 DEFINE_RWLOCK(lookup_tbl_rw_lock);
 
 static struct lt_l3_tbl kobj_l3_tbl;
-static struct lt_pid_tbl pid_tbl; 
+static struct lt_pid_tbl pid_tbl;
 
 /* Emergency Pools for l1 + l2 pages */
 #define NUM_EMERGENCY_PAGES 200
@@ -98,7 +99,7 @@ volatile unsigned long inlt;
  * while tracking either type we do not want to re-enter and track memorizer
  * events that are sources from within memorizer. Yes this means we may not
  * track legitimate access of some types, but these are caused by memorizer and
- * we want to ignore them. 
+ * we want to ignore them.
  */
 static inline int __lt_enter(void)
 {
@@ -153,7 +154,7 @@ struct pages_pool l2_tbl_reserve =
  * tbl_get_l1_entry() --- get the l1 entry
  * @va:	The virtual address to lookup
  *
- * Typical table walk starting from top to bottom. 
+ * Typical table walk starting from top to bottom.
  *
  * Return: the return value is a pointer to the entry in the table, which means
  * it is a double pointer to the object pointed to by the region. To simplify
@@ -186,8 +187,8 @@ static struct lt_l1_tbl * l1_alloc(void)
 {
         struct lt_l1_tbl *l1_tbl;
         int i = 0;
-        
-        l1_tbl = kmem_cache_alloc(lt_l1_tbl_cache, gfp_memorizer_mask(0));
+
+        l1_tbl = memalloc(sizeof(struct lt_l1_tbl));
         if(!l1_tbl)
         {
                 l1_tbl = (struct lt_l1_tbl *) get_pg_from_pool(&l1_tbl_reserve);
@@ -195,8 +196,8 @@ static struct lt_l1_tbl * l1_alloc(void)
                 {
                         /* while in dev we want to print error and panic */
                         print_stats(KERN_CRIT);
-                        panic("Failed to allocate L1 table for memorizer kobj\n");
-                }
+			panic("Failed to allocate L1 table for memorizer kobj\n");
+		}
         }
 
         /* Zero out the memory */
@@ -209,7 +210,7 @@ static struct lt_l1_tbl * l1_alloc(void)
         return l1_tbl;
 }
 
-/** 
+/**
  * l2_alloc() - alloc level 2 table
  */
 static struct lt_l2_tbl * l2_alloc(void)
@@ -217,7 +218,7 @@ static struct lt_l2_tbl * l2_alloc(void)
         struct lt_l2_tbl *l2_tbl;
         int i = 0;
 
-        l2_tbl = kmem_cache_alloc(lt_l2_tbl_cache, gfp_memorizer_mask(0));
+        l2_tbl = memalloc(sizeof(struct lt_l2_tbl));
         if(!l2_tbl)
         {
                 l2_tbl = (struct lt_l2_tbl *) get_pg_from_pool(&l2_tbl_reserve);
@@ -275,7 +276,8 @@ static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t va)
  */
 static bool is_tracked_obj(uintptr_t l1entry)
 {
-        return ((uint64_t) l1entry >> ALLOC_CODE_SHIFT) != (uint64_t) MEM_INDUCED;
+	return ((uint64_t) l1entry >> ALLOC_CODE_SHIFT) != (uint64_t)
+		MEM_INDUCED;
 }
 
 bool is_induced_obj(uintptr_t va)
@@ -293,7 +295,7 @@ bool is_induced_obj(uintptr_t va)
  * This code assumes that it will only ever get a remove from the beginning of
  * the kobj. TODO: check the beginning of the kobj to make sure.
  *
- * Return: the kobject at the location that was removed. 
+ * Return: the kobject at the location that was removed.
  */
 struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
 {
@@ -348,7 +350,7 @@ inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
         return NULL;
 }
 
-/* 
+/*
  * handle_overalpping_insert() -- hanlde the overlapping insert case
  * @va:		the virtual address that is currently not vacant
  * @l1e:	the l1 entry pointer for the va
@@ -367,7 +369,7 @@ static void handle_overlapping_insert(uintptr_t va)
     if(!obj)
         return;
 
-    /* 
+    /*
      * Note we don't need to free because the object is in the free list and
      * will get expunged later.
      */
@@ -387,7 +389,7 @@ static void handle_overlapping_insert(uintptr_t va)
  * then allocates the table. The same goes for looking up the l1 table for the
  * given va. Once the particular l1 table is obtained for the start va of the
  * object, iterate through the table setting each entry of the object to the
- * given kobj pointer. 
+ * given kobj pointer.
  */
 int __lt_insert(uintptr_t va_ptr, size_t size, uintptr_t metadata)
 {
@@ -405,7 +407,7 @@ int __lt_insert(uintptr_t va_ptr, size_t size, uintptr_t metadata)
 		/* Pointer to the l2 entry for va and alloc if needed */
 		l2e = l2_entry_may_alloc(*l3e, va);
 
-		/* 
+		/*
                  * Get the index for this va for boundary on this l1 table;
                  * however, TODO, this might not be needed as our table indices
                  * are page aligned and it might be unlikely allocations are
@@ -445,7 +447,7 @@ size_t d = 0;
 int lt_insert_induced(void * va_ptr, size_t size)
 {
     uintptr_t label = ((uintptr_t) MEM_INDUCED << ALLOC_CODE_SHIFT) |
-        atomic_long_inc_return(&global_kobj_id); 
+        atomic_long_inc_return(&global_kobj_id);
     __lt_insert(va_ptr, size, label);
     return 1;
 }

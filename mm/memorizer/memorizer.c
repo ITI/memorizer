@@ -269,28 +269,6 @@ struct code_region crypto_code_region = {
 	.e = 0xffffffff814cee00
 };
 
-//==-- kobject emergency reserve ------------------------------------------==//
-#define NUM_EMERGENCY_KOBJS     10000
-static struct memorizer_kobj kobj_emergency_pool[NUM_EMERGENCY_KOBJS];
-size_t next_kobj_pool_i = 0;
-static struct memorizer_kobj * general_kobjs[NumAllocTypes];
-
-/**
- * __alloc_kobj_reserve() - return a kobj metadata object from reserve pool
- *
- * Description: Memorizer tries to use kernel allocators for data structures
- * used a lot, but not all the time can they be serviced. To avoid losing data
- * we create emergency pools with which to service the allocation. They are not
- * the most robust (statically sized) but should be good enough for practical
- * purposes.
- */
-static struct memorizer_kobj * __alloc_kobj_reserve(void)
-{
-        if(next_kobj_pool_i == NUM_EMERGENCY_KOBJS)
-                return NULL;
-        return &kobj_emergency_pool[next_kobj_pool_i++];
-}
-
 //==-- PER CPU data structures and control flags --------------------------==//
 
 /* TODO make this dynamically allocated based upon free memory */
@@ -366,9 +344,6 @@ static bool test_obj = false;
 /* Function has table */
 struct FunctionHashTable * cfgtbl;
 
-/* object cache for memorizer kobjects */
-static struct kmem_cache *kobj_cache;
-
 /* Object Cache for Serialized KObjects to be printed out to the RelayFS */
 //static struct kmem_cache *kobj_serial_cache = kmem_cache_create("Serial", sizeof(struct memorizer_kobj), 0, SLAB_PANIC,  NULL);
 
@@ -380,6 +355,9 @@ static LIST_HEAD(object_list);
 
 /* global object id reference counter */
 static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
+
+/* General kobj for catchall object references */
+static struct memorizer_kobj * general_kobjs[NumAllocTypes];
 
 //==-- Locks --=//
 /* RW Spinlock for access to rb tree */
@@ -403,7 +381,7 @@ volatile unsigned long inmem;
  * while tracking either type we do not want to re-enter and track memorizer
  * events that are sources from within memorizer. Yes this means we may not
  * track legitimate access of some types, but these are caused by memorizer and
- * we want to ignore them. 
+ * we want to ignore them.
  */
 static inline int __memorizer_enter(void)
 {
@@ -650,99 +628,18 @@ static void dump_object_list(void)
 //==-- Memorizer Access Processing ----------------------------------------==//
 //----
 
-#define AFC_POOL_MINIMUM        10000
-#define NUM_ACCESS_POOLS        1000000
-#define AFC_POOL_ORDER          10
-#define NUM_EMERGENCY_AFCS      1000000
-#define pool_bytes		(_AC(1,UL) << AFC_POOL_ORDER)
-
-/* object cache for access count objects */
-static struct kmem_cache *access_from_counts_cache;
-mempool_t * afc_pool;
-
-struct access_pool
-{
-        uint64_t start;
-        uint64_t next_avail_byte;
-        uint64_t last_avail_byte;
-};
-struct access_pool access_pools[NUM_ACCESS_POOLS];
-struct access_pool * active_pool;
-const size_t afc_pool_order = 10;
-//const long pool_bytes = 1 << AFC_POOL_ORDER;
-uint64_t curr_pool = 0;
-size_t afc_size = sizeof(struct access_from_counts);
-
-static int
-__alloc_afc_pool(void)
-{
-        uintptr_t page = NULL;
-
-        //pr_crit("allocating new access pool curr_pool: %d", curr_pool);
-        if(curr_pool+1 == NUM_ACCESS_POOLS)
-                panic("Ran out of memory pools for access tracking");
-        page = __get_free_pages(gfp_memorizer_mask(0),AFC_POOL_ORDER);
-        if(!page)
-        {
-                pr_crit("Couldn't alloc pages");
-                return -1;
-        }
-        active_pool = &access_pools[++curr_pool];
-        //pr_crit("\tafter alloc: curr_pool: %d", curr_pool);
-        active_pool->start = page;
-        active_pool->next_avail_byte = page;
-        active_pool->last_avail_byte = page + pool_bytes;
-        return 0;
-}
-
-static struct access_from_counts *
-__alloc_afc_from_pool(void)
-{
-        struct access_from_counts * afc = NULL; 
-        /* check for space */
-	//if (unlikely(in_irq()) || unlikely(in_softirq()))
-                //return NULL;
-        if(active_pool->next_avail_byte + afc_size > active_pool->last_avail_byte)
-        {
-                if(__alloc_afc_pool() < 0)
-                        return NULL;
-        }
-        afc = (struct access_from_counts *) active_pool->next_avail_byte;
-        active_pool->next_avail_byte += afc_size;
-        return afc;
-}
-
-/**
- * __alloc_kobj_reserve() - return a kobj metadata object from reserve pool
- *
- * Description: Memorizer tries to use kernel allocators for data structures
- * used a lot, but not all the time can they be serviced. To avoid losing data
- * we create emergency pools with which to service the allocation. They are not
- * the most robust (statically sized) but should be good enough for practical
- * purposes.
- */
-static struct access_from_counts afc_emergency_pool[NUM_EMERGENCY_AFCS];
-size_t next_afc_pool_i = 0;
-static struct access_from_counts * __alloc_afc_reserve(void)
-{
-        if(next_afc_pool_i == NUM_EMERGENCY_AFCS)
-                panic("Ran out of emergency access from count pool objects");
-        return &afc_emergency_pool[next_afc_pool_i++];
-}
-
 static struct access_from_counts *
 __alloc_afc(void)
 {
 	struct access_from_counts * afc = NULL;
-        afc = (struct access_from_counts *) memalloc(sizeof(struct access_from_counts));
-        if(!afc)
-                afc = __alloc_afc_reserve();
-        return afc;
+	afc = (struct access_from_counts *)
+		memalloc(sizeof(struct access_from_counts));
+	return afc;
 }
 
 /**
  * init_access_counts_object() - initialize data for the object
- * @afc:	object to init 
+ * @afc:	object to init
  * @ip:		ip of access
  */
 static inline void
@@ -751,7 +648,7 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 {
 	INIT_LIST_HEAD(&(afc->list));
 	afc->ip = ip;
-        afc->writes = 0; 
+        afc->writes = 0;
         afc->reads = 0;
 }
 
@@ -1205,8 +1102,9 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
  */
 static void free_access_from_entry(struct access_from_counts *afc)
 {
+	//TODO clean up all the kmem_cache_free stuff
 	//kmem_cache_free(access_from_counts_cache, afc);
-        mempool_free(afc, afc_pool);
+	//TODO Create Free function here with new memalloc allocator
 }
 
 /**
@@ -1239,7 +1137,8 @@ static void free_kobj(struct memorizer_kobj * kobj)
 	write_lock(&kobj->rwlock);
 	free_access_from_list(&kobj->access_counts);
 	write_unlock(&kobj->rwlock);
-	kmem_cache_free(kobj_cache, kobj);
+	//kmem_cache_free(kobj_cache, kobj);
+	//TODO add new free function here from memalloc allocator
         track_kobj_free();
 }
 
@@ -1334,7 +1233,8 @@ static struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj
 			pr_err("Cannot insert 0x%lx into the object search tree"
 			       " (overlaps existing)\n", kobj->va_ptr);
 			__print_memorizer_kobj(parent, "");
-			kmem_cache_free(kobj_cache, kobj);
+			//kmem_cache_free(kobj_cache, kobj);
+			//TODO add free here
 			kobj = NULL;
 			break;
 		}
@@ -1417,6 +1317,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
                 kobj->free_ip = call_site;
                 write_unlock_irqrestore(&kobj->rwlock, flags);
                 track_free();
+		//TODO add free function here 
         }
         else
                 track_untracked_obj_free();
@@ -1554,14 +1455,10 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
         /* inline parsing */
         kobj = memalloc(sizeof(struct memorizer_kobj));
         if(!kobj){
-                kobj = __alloc_kobj_reserve();
-                if(!kobj)
-                {
-                        //pr_crit("Cannot allocate a memorizer_kobj structure\n");
-                        track_failed_kobj_alloc();
-                        goto out;
-                }
-        }
+		//pr_crit("Cannot allocate a memorizer_kobj structure\n");
+		track_failed_kobj_alloc();
+		goto out;
+	}
 
         /* initialize all object metadata */
         init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc, AT);
@@ -2047,28 +1944,6 @@ static const struct file_operations show_stats_fops = {
 
 //==-- Memorizer Initializtion --------------------------------------------==//
 
-/**
- * create_obj_kmem_cache() - create the kernel object kmem_cache
- */
-static void create_obj_kmem_cache(void)
-{
-	/* TODO: Investigate these flags SLAB_TRACE | SLAB_NOLEAKTRACE */
-	kobj_cache = KMEM_CACHE(memorizer_kobj, SLAB_PANIC);
-}
-
-/**
- * create_access_counts_kmem_cache() - create the kmem_cache for access_counts
- */
-static void create_access_counts_kmem_cache(void)
-{
-	/* TODO: Investigate these flags SLAB_TRACE | SLAB_NOLEAKTRACE */
-        access_from_counts_cache = KMEM_CACHE(access_from_counts, SLAB_PANIC);
-        afc_pool = mempool_create(AFC_POOL_MINIMUM,
-                        mempool_alloc_slab, mempool_free_slab,
-                        access_from_counts_cache);
-	pr_info("Just created kmem_cache for access_from_counts\n");
-}
-
 static int create_buffers(void)
 {
 	int i;
@@ -2434,54 +2309,50 @@ static int create_char_devs(void)
  */
 void __init memorizer_init(void)
 {
-        unsigned long flags;
-        int i = 0;
+	unsigned long flags;
+	int i = 0;
 
-        __memorizer_enter();
+	__memorizer_enter();
 #if INLINE_EVENT_PARSE == 0
-        init_mem_access_wls();
+	init_mem_access_wls();
 #endif
 
-        /* create kmem caches for memorizer data */
-        create_obj_kmem_cache();
-        create_access_counts_kmem_cache();
+	/* initialize the lookup table */
+	lt_init();
 
-        /* initialize the lookup table */
-        lt_init();
+	/* initialize the table tracking CFG edges */
+	func_hash_tbl_init();
+	cfgtbl = create_function_hashtable();
 
-        /* initialize the table tracking CFG edges */
-        func_hash_tbl_init();
-        cfgtbl = create_function_hashtable();
-        
-        for(i=0;i<NumAllocTypes;i++)
-        {
-                general_kobjs[i] = memalloc(sizeof(struct memorizer_kobj));
-                init_kobj(general_kobjs[i], 0, 0, 0, i);
-                write_lock(&object_list_spinlock);
-                list_add_tail(&general_kobjs[i]->object_list, &object_list);
-                write_unlock(&object_list_spinlock);
-        }
+	for(i=0;i<NumAllocTypes;i++)
+	{
+		general_kobjs[i] = memalloc(sizeof(struct memorizer_kobj));
+		init_kobj(general_kobjs[i], 0, 0, 0, i);
+		write_lock(&object_list_spinlock);
+		list_add_tail(&general_kobjs[i]->object_list, &object_list);
+		write_unlock(&object_list_spinlock);
+	}
 
-        local_irq_save(flags);
-        if(memorizer_enabled_boot){
-                memorizer_enabled = true;
-        } else {
-                memorizer_enabled = false;
-        }
-        if(mem_log_boot){
-                memorizer_log_access = true;
-        } else {
-                memorizer_log_access = false;
-        }
-        if(cfg_log_boot){
-                cfg_log_on = true;
-        } else {
-                cfg_log_on = false;
-        }
-        print_live_obj = true;
+	local_irq_save(flags);
+	if(memorizer_enabled_boot){
+		memorizer_enabled = true;
+	} else {
+		memorizer_enabled = false;
+	}
+	if(mem_log_boot){
+		memorizer_log_access = true;
+	} else {
+		memorizer_log_access = false;
+	}
+	if(cfg_log_boot){
+		cfg_log_on = true;
+	} else {
+		cfg_log_on = false;
+	}
+	print_live_obj = true;
 
-        local_irq_restore(flags);
-        __memorizer_exit();
+	local_irq_restore(flags);
+	__memorizer_exit();
 }
 
 /*

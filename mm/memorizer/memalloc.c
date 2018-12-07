@@ -55,39 +55,37 @@
 uintptr_t pool_base;
 uintptr_t pool_end;
 uintptr_t pool_next_avail_byte;
+unsigned long memalloc_size = MEMORIZER_POOL_SIZE;
 
-static int __init early_memorizer_enabled(char *arg){
-    if(!arg)
-        return 0;
-    if(strcmp(arg,"yes") == 0) {
-        pr_info("Enabling boot alloc logging\n");
-        memorizer_enabled_boot = true;
-    }
-    if(strcmp(arg,"no") == 0) {
-        pr_info("Disable boot alloc logging\n");
-        memorizer_enabled_boot = false;
-    }
+/* function to let the size be specified as a boot parameter */
+static int __init early_memalloc_size(char *arg)
+{
+	unsigned long sizeGB;
+	if(!arg || kstrtoul(arg, 0, &sizeGB))
+		return 0;
+	memalloc_size = sizeGB<<30;
+	return 1;
 }
-early_param("memorizer_enabled_boot", early_memorizer_enabled);
+early_param("memalloc_size", early_memalloc_size);
 
 void memorizer_alloc_init(void)
 {
-    pool_base = alloc_bootmem(MEMORIZER_POOL_SIZE);
-    pool_end = pool_base + MEMORIZER_POOL_SIZE;
-    pool_next_avail_byte = pool_base;
+	pool_base = alloc_bootmem(memalloc_size);
+	pool_end = pool_base + memalloc_size;
+	pool_next_avail_byte = pool_base;
 }
 
 void * memalloc(unsigned long size)
 {
-    void * va = pool_next_avail_byte;
-    if(pool_next_avail_byte + size > pool_end)
-        panic("Memorizer ran out of internal heap");
-    pool_next_avail_byte += size;
-    return va;
+	void * va = pool_next_avail_byte;
+	if(pool_next_avail_byte + size > pool_end)
+		panic("Memorizer ran out of internal heap");
+	pool_next_avail_byte += size;
+	return va;
 }
 
 void print_pool_info(void)
 {
-    pr_info("Mempool begin: 0x%p, end: 0x%p\n", pool_base, pool_end);
-}
+	pr_info("Mempool begin: 0x%p, end: 0x%p, size:%llu GB\n", pool_base,
+		pool_end, (pool_end-pool_base)>>30); }
 

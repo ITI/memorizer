@@ -2,14 +2,14 @@
  * 
  * University of Illinois/NCSA Open Source License 
  *
- * Copyright (C) 2018, The Board of Trustees of the University of Illinois.
- * All rights reserved. 
+ * Copyright (C) 2018, The Board of Trustees of Rice University.
+ * All rights reserved.
  *
- * Developed by: 
+ * Developed by:
  *
- *    Research Group of Professor Vikram Adve in the Department of Computer
- *    Science The University of Illinois at Urbana-Champaign
- *    http://web.engr.illinois.edu/~vadve/Home.html
+ *    Research Group of Professor Nathan Dautenhahn in the Department of Computer
+ *    Science at Rice Unversity
+ *    http://nathandautenhahn.com
  *
  * Copyright (c) 2018, Nathan Dautenhahn
  *

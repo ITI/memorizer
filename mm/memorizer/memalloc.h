@@ -41,29 +41,19 @@
  *
  *===------------------------------------------------------------------------===
  *
- *       Filename:  utilities.h
+ *       Filename:  memalloc.h
  *
- *    Description:  G
+ *    Description:  
  *
  *===------------------------------------------------------------------------===
  */
 
-#ifndef _UTIL_H_
-#define _UTIL_H_
+#ifndef _MEMALLOC_H_
+#define _MEMALLOC_H_
 
-int memstrcmp(const char *cs, const char *ct)
-{
-	unsigned char c1, c2;
-
-	while (1) {
-		c1 = *cs++;
-		c2 = *ct++;
-		if (c1 != c2)
-			return c1 < c2 ? -1 : 1;
-		if (!c1)
-			break;
-	}
-	return 0;
-}
-#endif /* __utilities.h_H_ */
+#define MEMORIZER_POOL_SIZE     (_AC(1,UL) << 36)
+void * get_pool_base(void);
+void * memalloc(unsigned long size);
+void print_pool_info(void);
+#endif /* __memalloc.h_H_ */
 

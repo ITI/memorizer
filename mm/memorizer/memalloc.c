@@ -1,7 +1,6 @@
-/*===-- LICENSE
- * -------------------------------------------------------------===
- * 
- * University of Illinois/NCSA Open Source License 
+/*===-- LICENSE -------------------------------------------------------------===
+ *
+ * University of Illinois/NCSA Open Source License
  *
  * Copyright (C) 2018, The Board of Trustees of Rice University.
  * All rights reserved.
@@ -19,17 +18,17 @@
  * with the Software without restriction, including without limitation the
  * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
  * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions: 
+ * furnished to do so, subject to the following conditions:
  *
  * Redistributions of source code must retain the above copyright notice, this
- * list of conditions and the following disclaimers. 
+ * list of conditions and the following disclaimers.
  *
  * Redistributions in binary form must reproduce the above copyright notice,
  * this list of conditions and the following disclaimers in the documentation
  * and/or other materials provided with the distribution.  Neither the names of
  * Nathan Dautenhahn or the University of Illinois, nor the names of its
  * contributors may be used to endorse or promote products derived from this
- * Software without specific prior written permission. 
+ * Software without specific prior written permission.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -37,33 +36,58 @@
  * CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
- * WITH THE SOFTWARE. 
+ * WITH THE SOFTWARE.
  *
  *===------------------------------------------------------------------------===
  *
- *       Filename:  utilities.h
+ *       Filename:  memalloc.c
  *
- *    Description:  G
+ *    Description:
  *
  *===------------------------------------------------------------------------===
  */
 
-#ifndef _UTIL_H_
-#define _UTIL_H_
+#include <linux/bootmem.h>
+#include <linux/memorizer.h>
 
-int memstrcmp(const char *cs, const char *ct)
-{
-	unsigned char c1, c2;
+#include "memalloc.h"
 
-	while (1) {
-		c1 = *cs++;
-		c2 = *ct++;
-		if (c1 != c2)
-			return c1 < c2 ? -1 : 1;
-		if (!c1)
-			break;
-	}
-	return 0;
+uintptr_t pool_base;
+uintptr_t pool_end;
+uintptr_t pool_next_avail_byte;
+
+static int __init early_memorizer_enabled(char *arg){
+    if(!arg)
+        return 0;
+    if(strcmp(arg,"yes") == 0) {
+        pr_info("Enabling boot alloc logging\n");
+        memorizer_enabled_boot = true;
+    }
+    if(strcmp(arg,"no") == 0) {
+        pr_info("Disable boot alloc logging\n");
+        memorizer_enabled_boot = false;
+    }
 }
-#endif /* __utilities.h_H_ */
+early_param("memorizer_enabled_boot", early_memorizer_enabled);
+
+void memorizer_alloc_init(void)
+{
+    pool_base = alloc_bootmem(MEMORIZER_POOL_SIZE);
+    pool_end = pool_base + MEMORIZER_POOL_SIZE;
+    pool_next_avail_byte = pool_base;
+}
+
+void * memalloc(unsigned long size)
+{
+    void * va = pool_next_avail_byte;
+    if(pool_next_avail_byte + size > pool_end)
+        panic("Memorizer ran out of internal heap");
+    pool_next_avail_byte += size;
+    return va;
+}
+
+void print_pool_info(void)
+{
+    pr_info("Mempool begin: 0x%p, end: 0x%p\n", pool_base, pool_end);
+}
 

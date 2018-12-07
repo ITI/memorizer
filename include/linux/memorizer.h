@@ -52,6 +52,10 @@
 
 #include <linux/types.h>
 
+#if 1
+#define FILTER_KASAN 1
+#endif
+
 /** 
  * struct memorizer_kobj - metadata for kernel objects 
  */

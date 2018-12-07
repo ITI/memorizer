@@ -305,8 +305,8 @@ static __always_inline void check_memory_region_inline(unsigned long addr,
 		return;
 
 	memorizer_mem_access(addr, size, write, ret_ip);
-    /* TODO: JUST RETURN TO SAVE TIME */
-    return;
+	/* TODO: JUST RETURN TO SAVE TIME */
+	return;
 
 	if (unlikely((void *)addr <
 		kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
@@ -671,6 +671,9 @@ bool kasan_slab_free(struct kmem_cache *cache, void *object)
 	if (unlikely(!(cache->flags & SLAB_KASAN)))
 		return false;
 
+#ifdef FILTER_KASAN
+    return false;
+#endif
 	set_track(&get_alloc_info(cache, object)->free_track, GFP_NOWAIT);
 	quarantine_put(get_free_info(cache, object), cache);
 	return true;
@@ -697,7 +700,9 @@ void kasan_kmalloc(struct kmem_cache *cache, const void *object, size_t size,
 	kasan_poison_shadow((void *)redzone_start, redzone_end - redzone_start,
 		KASAN_KMALLOC_REDZONE);
 
-	//memorizer_alloc(object, cache->object_size);
+#ifdef FILTER_KASAN
+    return;
+#endif
 	if (cache->flags & SLAB_KASAN)
 		set_track(&get_alloc_info(cache, object)->alloc_track, flags);
 }
@@ -881,7 +886,7 @@ void __asan_poison_stack_memory(const void *addr, size_t size)
 	 */
 	kasan_poison_shadow(addr, round_up(size, KASAN_SHADOW_SCALE_SIZE),
 			    KASAN_USE_AFTER_SCOPE);
-    memorizer_kfree(_RET_IP_, addr);
+	memorizer_kfree(_RET_IP_, addr);
 
 }
 EXPORT_SYMBOL(__asan_poison_stack_memory);
@@ -890,7 +895,7 @@ EXPORT_SYMBOL(__asan_poison_stack_memory);
 void __asan_unpoison_stack_memory(const void *addr, size_t size)
 {
 	kasan_unpoison_shadow(addr, size);
-    memorizer_stack_alloc(_RET_IP_, addr, size);
+	memorizer_stack_alloc(_RET_IP_, addr, size);
 }
 EXPORT_SYMBOL(__asan_unpoison_stack_memory);
 

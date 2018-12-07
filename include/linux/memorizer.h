@@ -84,6 +84,7 @@ enum MEMORIZER_CODES {
 /* Init and Misc */
 void __init memorizer_init(void);
 int memorizer_init_from_driver(void);
+void memorizer_alloc_init(void);
 
 /* Memorize access */
 void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip);
@@ -124,6 +125,7 @@ void __memorizer_print_events(unsigned int num_events);
 
 static inline void __init memorizer_init(void) {}
 static inline void memorizer_init_from_driver(void) {}
+static inline void memorizer_alloc_init(void) {}
 static inline void memorizer_mem_access(uintptr_t addr, size_t size, bool write, uintptr_t ip) {}
 static inline void memorizer_call(uintptr_t from, uintptr_t to) {}
 static inline void __memorizer_get_opsx(void) {}

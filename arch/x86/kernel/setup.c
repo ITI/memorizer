@@ -69,6 +69,7 @@
 #include <linux/crash_dump.h>
 #include <linux/tboot.h>
 #include <linux/jiffies.h>
+#include <linux/memorizer.h>
 
 #include <video/edid.h>
 
@@ -1209,6 +1210,8 @@ void __init setup_arch(char **cmdline_p)
 	x86_init.paging.pagetable_init();
 
 	kasan_init();
+
+	memorizer_alloc_init();
 
 #ifdef CONFIG_X86_32
 	/* sync back kernel address range */

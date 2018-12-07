@@ -132,6 +132,7 @@
 #include "memorizer.h"
 #include "stats.h"
 #include "util.h"
+#include "memalloc.h"
 #include "../slab.h"
 
 //==-- Debugging and print information ------------------------------------==//
@@ -733,11 +734,14 @@ static struct access_from_counts *
 __alloc_afc(void)
 {
 	struct access_from_counts * afc = NULL;
+#if 1
         //afc = __alloc_afc_from_pool();
+        afc = (struct access_from_counts *) memalloc(sizeof(struct access_from_counts));
+#else
         //afc = (struct access_from_counts *) mempool_alloc(afc_pool,
-                        //gfp_memorizer_mask(0)); 
-        afc = kmem_cache_alloc(access_from_counts_cache,
-                        gfp_memorizer_mask(0));
+         //               gfp_memorizer_mask(0)); 
+        afc = kmem_cache_alloc(access_from_counts_cache, gfp_memorizer_mask(0));
+#endif
         if(!afc)
                 afc = __alloc_afc_reserve();
         return afc;
@@ -2562,6 +2566,7 @@ static int memorizer_late_init(void)
 	pr_info("Memorizer initialized\n");
 	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
 	pr_info("Size of memorizer_kernel_event:%d\n",sizeof(struct memorizer_kernel_event));
+	print_pool_info();
 	print_stats(KERN_INFO);
 	
 	__memorizer_exit();

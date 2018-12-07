@@ -1255,7 +1255,8 @@ static void clear_dead_objs(void)
 	unsigned long flags;
 	pr_info("Clearing the free'd kernel objects\n");
         /* Avoid rentrance while freeing the list */
-	__memorizer_enter();
+        while(!__memorizer_enter())
+               yield();
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_for_each_safe(p, tmp, &object_list)
 	{

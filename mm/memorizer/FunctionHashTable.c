@@ -1,10 +1,11 @@
 #ifndef FUNCTIONHASHTABLE_C
 #define FUNCTIONHASHTABLE_C
 
-#include "FunctionHashTable.h"
 #include <linux/printk.h>
 #include <linux/slab.h>
 #include <linux/kernel.h>
+#include "FunctionHashTable.h"
+#include "memalloc.h"
 
 
 #define NUMBUCKS 1000000
@@ -22,19 +23,19 @@ void func_hash_tbl_init(void)
 
 struct FunctionHashTable * create_function_hashtable(){
 
-  struct FunctionHashTable * h = kmalloc(sizeof(struct FunctionHashTable),GFP_KERNEL);
-  h -> buckets = kzalloc(NUM_BUCKETS * sizeof(struct EdgeBucket *), GFP_KERNEL);
-  h -> number_buckets = NUM_BUCKETS;
-  h -> full_buckets = 0;
-  h -> stored_items = 0;
-  
-  return h;
+	struct FunctionHashTable * h = memalloc(sizeof(struct FunctionHashTable));
+	h -> buckets = zmemalloc(NUM_BUCKETS * sizeof(struct EdgeBucket *));
+	h -> number_buckets = NUM_BUCKETS;
+	h -> full_buckets = 0;
+	h -> stored_items = 0;
+
+	return h;
 }
-  
-void 
+
+void
 cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t to)
 {
-  
+
   //pr_crit("Entering: %p -> %p", from,to);
   // Compute index by xoring the from and to fields then masking away high bits
   int index = (from ^ to) & (ht -> number_buckets - 1);
@@ -49,7 +50,7 @@ cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t to)
       return;
     } else {
       prev = search;
-      search = search -> next;      
+      search = search -> next;
     }
   }
 

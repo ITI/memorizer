@@ -1,11 +1,11 @@
 /*===-- LICENSE ------------------------------------------------------------===
- * 
- * University of Illinois/NCSA Open Source License 
+ *
+ * University of Illinois/NCSA Open Source License
  *
  * Copyright (C) 2015, The Board of Trustees of the University of Illinois.
- * All rights reserved. 
+ * All rights reserved.
  *
- * Developed by: 
+ * Developed by:
  *
  *    Research Group of Professor Vikram Adve in the Department of Computer
  *    Science The University of Illinois at Urbana-Champaign
@@ -18,17 +18,17 @@
  * with the Software without restriction, including without limitation the
  * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
  * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions: 
+ * furnished to do so, subject to the following conditions:
  *
  * Redistributions of source code must retain the above copyright notice, this
- * list of conditions and the following disclaimers. 
+ * list of conditions and the following disclaimers.
  *
  * Redistributions in binary form must reproduce the above copyright notice,
  * this list of conditions and the following disclaimers in the documentation
  * and/or other materials provided with the distribution.  Neither the names of
  * Nathan Dautenhahn or the University of Illinois, nor the names of its
  * contributors may be used to endorse or promote products derived from this
- * Software without specific prior written permission. 
+ * Software without specific prior written permission.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -44,38 +44,38 @@
  *
  *    Description:  Memorizer is a memory tracing tool. It hooks into KASAN
  *		    events to record object allocation/frees and all
- *		    loads/stores. 
+ *		    loads/stores.
  *
  *===-----------------------------------------------------------------------===
  *
- * Locking:  
+ * Locking:
  *
  *	Memorizer has two global and a percpu data structure:
- *	
+ *
  *		- global rbtree of active kernel objects - queue for holding
  *		  free'd objects that haven't logged - A percpu event queue to
  *		  track memory access events
- *		    
+ *
  *     Therefore, we have the following locks:
  *
- *		- active_kobj_rbtree_spinlock: 
- *		
+ *		- active_kobj_rbtree_spinlock:
+ *
  *			The insert routine is generic to any kobj_rbtree and
  *			therefore is only provided in an unlocked variant
  *			currently. The code must take this lock prior to
- *			inserting into the rbtree.  
- * 
- *		- object_list_spinlock: 
- *			
+ *			inserting into the rbtree.
+ *
+ *		- object_list_spinlock:
+ *
  *			Lock for the list of all objects. This list is added to
  *			on each kobj free. On log this queue should collect any
  *			queued writes in the local PerCPU access queues and then
  *			remove it from the list.
  *
- *		- memorizer_kobj.rwlock: 
+ *		- memorizer_kobj.rwlock:
  *
- *			RW spinlock for access to object internals. 
- * 
+ *			RW spinlock for access to object internals.
+ *
  * Re-Entrance:
  *
  *	This system hooks all memory reads/writes and object allocation,
@@ -84,7 +84,7 @@
  *	very careful about any external functions called to ensure correct
  *	behavior. This is particulary critical of the memorize access function.
  *	The others can call external, but note that the memory ld/st as a
- *	response to that call will be recorded. 
+ *	response to that call will be recorded.
  *
  *===-----------------------------------------------------------------------===
  */
@@ -190,7 +190,7 @@ static dev_t *dev1;
 static dev_t *dev2;
 static struct cdev *cd1;
 static struct cdev *cd2;
-	
+
 /**
  * struct memorizer_mem_access - structure to capture all memory related events
  * @access_type: type of event
@@ -233,7 +233,7 @@ struct mem_access_worklists {
  * switchBuffer - switches the the buffer being written to, when the buffer is full
  */
 void __always_inline switchBuffer()
-{	
+{
 	buff_end = (char *)buffList[curBuff] + ML*4096-1;
 	buff_write_end = (char *)buffList[curBuff];
 	buff_fill = buff_write_end;
@@ -281,11 +281,11 @@ DEFINE_PER_CPU(struct mem_access_worklists, mem_access_wls);
 // recursion.
 DEFINE_PER_CPU(int, recursive_depth = 0);
 
-/* 
- * Flags to keep track of whether or not to track writes 
+/*
+ * Flags to keep track of whether or not to track writes
  *
  * Make this and the next open for early boot param manipulation via bootloader
- * kernel args: root=/hda1 memorizer_enabled=[yes|no] 
+ * kernel args: root=/hda1 memorizer_enabled=[yes|no]
  */
 static bool memorizer_enabled = false;
 static bool memorizer_enabled_boot = true;
@@ -677,7 +677,7 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
  * object, therefore we can easily do insertion if we don't find it, keeping a
  * linearly monotonic sorted list.
  *
- * Here we insert a new entry for each (ip,threadid) tuple. 
+ * Here we insert a new entry for each (ip,threadid) tuple.
  */
 static inline struct access_from_counts *
 unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
@@ -2322,6 +2322,8 @@ void __init memorizer_init(void)
 #if INLINE_EVENT_PARSE == 0
 	init_mem_access_wls();
 #endif
+	/* allocate and initialize memorizer internal allocator */
+	memorizer_alloc_init();
 
 	/* initialize the lookup table */
 	lt_init();

@@ -69,10 +69,6 @@
 /* atomic object counter */
 static atomic_long_t global_kobj_id = ATOMIC_INIT(0);
 
-/* Caches for lookup tables */
-static struct kmem_cache *lt_l1_tbl_cache;
-static struct kmem_cache *lt_l2_tbl_cache;
-
 /* RW Spinlock for access to table */
 DEFINE_RWLOCK(lookup_tbl_rw_lock);
 
@@ -470,9 +466,6 @@ void __init lt_init(void)
 	memset(&kobj_l3_tbl, 0, sizeof(kobj_l3_tbl));
 	// Zero Out the Contents of the PID Table
 	memset(&pid_tbl, 0, sizeof(pid_tbl));
-    /* Init the kmem table caches */
-	lt_l1_tbl_cache = KMEM_CACHE(lt_l1_tbl, SLAB_PANIC);
-	lt_l2_tbl_cache = KMEM_CACHE(lt_l2_tbl, SLAB_PANIC);
-    /* track that we statically allocated an l3 */
-    track_l3_alloc();
+	/* track that we statically allocated an l3 */
+	track_l3_alloc();
 }

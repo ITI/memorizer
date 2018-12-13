@@ -1211,7 +1211,7 @@ void __init setup_arch(char **cmdline_p)
 
 	kasan_init();
 
-	memorizer_alloc_init();
+	memorizer_init();
 
 #ifdef CONFIG_X86_32
 	/* sync back kernel address range */

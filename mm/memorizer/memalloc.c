@@ -84,6 +84,16 @@ void * memalloc(unsigned long size)
 	return va;
 }
 
+void * zmemalloc(unsigned long size)
+{
+	unsigned long i = 0;
+	void * va = memalloc(size);
+	char * vatmp = va;
+	for(i=0;i<size;i++)
+		vatmp[i] = 0;
+	return va;
+}
+
 void print_pool_info(void)
 {
 	pr_info("Mempool begin: 0x%p, end: 0x%p, size:%llu GB\n", pool_base,

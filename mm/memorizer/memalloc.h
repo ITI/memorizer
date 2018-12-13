@@ -54,6 +54,7 @@
 /* Start with minimally 3GB region else lookup tables will fail */
 #define MEMORIZER_POOL_SIZE     (_AC(1,UL) << 33)
 void * memalloc(unsigned long size);
+void * zmemalloc(unsigned long size);
 void print_pool_info(void);
 bool in_pool(unsigned long va);
 #endif /* __memalloc.h_H_ */

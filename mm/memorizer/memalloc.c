@@ -87,5 +87,10 @@ void * memalloc(unsigned long size)
 void print_pool_info(void)
 {
 	pr_info("Mempool begin: 0x%p, end: 0x%p, size:%llu GB\n", pool_base,
-		pool_end, (pool_end-pool_base)>>30); }
+		pool_end, (pool_end-pool_base)>>30);
+}
 
+bool in_pool(unsigned long va)
+{
+	return pool_base < va && va < pool_end;
+}

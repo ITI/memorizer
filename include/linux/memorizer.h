@@ -70,6 +70,7 @@ enum AllocType {
     MEM_KMEM_CACHE_ND,
     MEM_ALLOC_PAGES,
     MEM_INDUCED,
+    MEM_MEMORIZER,
     MEM_USER,
     MEM_BUG,
     /* TODO: Legacy type, fix in tracking code to not use */

@@ -717,11 +717,17 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
  * already operating with interrupts off and preemption disabled, and thus we
  * cannot sleep.
  */
-static inline int find_and_update_kobj_access(uintptr_t src_va_ptr, 
-        uintptr_t va_ptr, pid_t pid, size_t access_type, size_t size) 
+static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
+        uintptr_t va_ptr, pid_t pid, size_t access_type, size_t size)
 {
         struct memorizer_kobj *kobj = NULL;
         struct access_from_counts *afc = NULL;
+
+	if(in_pool(va_ptr))
+	{
+		track_access(MEM_MEMORIZER);
+		return;
+	}
 
         /* Get the kernel object associated with this VA */
         kobj = lt_get_kobj(va_ptr);

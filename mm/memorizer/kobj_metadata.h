@@ -79,6 +79,8 @@ static char * alloc_type_str (enum AllocType AT)
         return "ALLOC_PAGES";
     case MEM_INDUCED:
         return "INDUCED_ALLOC";
+    case MEM_MEMORIZER:
+        return "MEMORIZER";
     case MEM_USER:
         return "USER";
     case MEM_BUG:
@@ -91,8 +93,8 @@ static char * alloc_type_str (enum AllocType AT)
     }
 };
 
-/** 
- * struct memorizer_kobj - metadata for kernel objects 
+/**
+ * struct memorizer_kobj - metadata for kernel objects
  * @rb_node:		the red-black tree relations
  * @alloc_ip:		instruction that allocated the object
  * @va_ptr:		Virtual address of the beginning of the object

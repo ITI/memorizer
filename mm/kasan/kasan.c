@@ -380,7 +380,6 @@ u8 detect_access_kind(void * p){
     return shadow_val;
 }
 
-
 enum AllocType kasan_obj_type(const void *p, unsigned int size)
 {
     /* If we are below the Kernel address space */

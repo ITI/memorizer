@@ -64,6 +64,7 @@ enum AllocType {
     MEM_STACK_PAGE,
     MEM_HEAP,
     MEM_GLOBAL,
+    MEM_GLOBAL_UNKNOWN,
     MEM_KMALLOC,
     MEM_KMALLOC_ND,
     MEM_KMEM_CACHE,

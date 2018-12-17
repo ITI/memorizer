@@ -380,6 +380,7 @@ u8 detect_access_kind(void * p){
     return shadow_val;
 }
 
+
 enum AllocType kasan_obj_type(const void *p, unsigned int size)
 {
     /* If we are below the Kernel address space */
@@ -409,8 +410,23 @@ enum AllocType kasan_obj_type(const void *p, unsigned int size)
             case KASAN_STACK_RIGHT:
             case KASAN_STACK_PARTIAL:
                 return MEM_STACK_PAGE;
-            default: 
-                return MEM_NONE;
+            default:
+	      
+	      /* There are some global objects that are not registered by KASAN.
+		 We can use the section that the address is in to classify it
+		 as an unknown global. We'll count anything in rodata, data or bss.
+		 Very strangely, only a few of the section starts and ends are defined
+		 constants. I wish they were all defined...
+		 For now, taking the beginning of rodata to the end of bss as unknown
+		 global. There are some other sections in there, but we shouldn't
+		 be getting data accesses to them. In the future we could split these
+		 down more finely if we want to. 
+	      */
+	      if (p >= __start_rodata && p <= __bss_start + 0x01fea000){
+		return MEM_GLOBAL_UNKNOWN;
+	      }
+	      
+	      return MEM_NONE;
         }
     }
 }

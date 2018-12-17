@@ -743,6 +743,8 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
                         kobj = general_kobjs[AT];
                         if(AT == MEM_STACK_PAGE)
                                 track_access(AT);
+			else if(AT == MEM_GLOBAL_UNKNOWN)
+			  	track_access(AT);
                         else
                                 track_untracked_access(AT);
                 }

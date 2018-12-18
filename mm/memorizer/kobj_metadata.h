@@ -67,8 +67,6 @@ static char * alloc_type_str (enum AllocType AT)
         return "GEN_HEAP";
     case MEM_GLOBAL:
         return "GLOBAL";
-    case MEM_GLOBAL_UNKNOWN:
-        return "GLOBAL_UNKNOWN";	
     case MEM_KMALLOC:
         return "KMALLOC";
     case MEM_KMALLOC_ND:
@@ -87,6 +85,8 @@ static char * alloc_type_str (enum AllocType AT)
         return "USER";
     case MEM_BUG:
         return "BUG";
+    case MEM_UNKNOWN_GLOBAL:
+        return "UNKNOWN_GLOBAL";	
     case MEM_NONE:
         return "NONE";
     default:

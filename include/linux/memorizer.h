@@ -64,7 +64,6 @@ enum AllocType {
     MEM_STACK_PAGE,
     MEM_HEAP,
     MEM_GLOBAL,
-    MEM_GLOBAL_UNKNOWN,
     MEM_KMALLOC,
     MEM_KMALLOC_ND,
     MEM_KMEM_CACHE,
@@ -74,6 +73,7 @@ enum AllocType {
     MEM_MEMORIZER,
     MEM_USER,
     MEM_BUG,
+    MEM_UNKNOWN_GLOBAL,    
     /* TODO: Legacy type, fix in tracking code to not use */
     MEM_NONE,
     NumAllocTypes

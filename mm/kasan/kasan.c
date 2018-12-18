@@ -345,7 +345,7 @@ bool kasan_obj_alive(const void *p, unsigned int size)
    is larger than a page. This might make it unsuitable for heap
    objects, but for stacks and globals it should be very accurate.
    Now deprecated, see new implementation below.*/
-u8 detect_access_kind_old(void * p){
+u8 detect_access_kind(void * p){
 
     /* get shadow info for access address */
     u8 shadow_val = *(u8 *)kasan_mem_to_shadow(p);
@@ -381,7 +381,8 @@ u8 detect_access_kind_old(void * p){
     return shadow_val;
 }
 
-u8 detect_access_kind(void * p){
+// Another variant of this logic. Still debugging.
+u8 detect_access_kind_alt(void * p){
 
   // Calculate page-aligned address
   void * p_aligned = (unsigned long) p & (~((1 << PAGE_SHIFT) - 1));

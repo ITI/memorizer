@@ -343,8 +343,9 @@ bool kasan_obj_alive(const void *p, unsigned int size)
    shadow value type that it finds. See kasan.h for the possible
    values. With the current design, it will return 0x00 if the obj
    is larger than a page. This might make it unsuitable for heap
-   objects, but for stacks and globals it should be very accurate.*/
-u8 detect_access_kind(void * p){
+   objects, but for stacks and globals it should be very accurate.
+   Now deprecated, see new implementation below.*/
+u8 detect_access_kind_old(void * p){
 
     /* get shadow info for access address */
     u8 shadow_val = *(u8 *)kasan_mem_to_shadow(p);
@@ -365,19 +366,48 @@ u8 detect_access_kind(void * p){
     long search_size = (long) (p_aligned + PAGE_SIZE - p);
     
     // Search forwards
-    while (!shadow_val && first_poisoned_addr < p + search_size) {
+    while (shadow_val < KASAN_SHADOW_SCALE && first_poisoned_addr < p + search_size) {
         first_poisoned_addr += KASAN_SHADOW_SCALE_SIZE;
         shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
     }
 
     // If no hit, search backwards too. Stay higher than p_aligned
     first_poisoned_addr = p;
-    while (!shadow_val && first_poisoned_addr > (p_aligned + KASAN_SHADOW_SCALE_SIZE)) {
+    while (shadow_val < KASAN_SHADOW_SCALE && first_poisoned_addr > (p_aligned + KASAN_SHADOW_SCALE_SIZE)) {
         first_poisoned_addr -= KASAN_SHADOW_SCALE_SIZE;
         shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
     }
 
     return shadow_val;
+}
+
+u8 detect_access_kind(void * p){
+
+  // Calculate page-aligned address
+  void * p_aligned = (void *) p & (~((1 << PAGE_SHIFT) - 1));
+
+  // Initialize shadow pointer and current shadow value
+  u8* shadow_ptr = kasan_mem_to_shadow(p_aligned);
+  u8 shadow_val = *shadow_ptr;
+
+  // Set maximum search distance
+  u8* search_max = kasan_mem_to_shadow(p_aligned + 2*PAGE_SIZE);
+  
+  /* Search until we (1) find a valid shadow type identifier, (2)
+     exceed the max search distance, or (3) would go beyond end of
+     shadow space.
+     Note that shadow values that are nonzero but less than
+     KASAN_SHADOW_SCALE encode a partial red zone, and you need
+     to look at the next byte to get the kind. */
+  
+  while (shadow_val < KASAN_SHADOW_SCALE_SIZE &&
+	 shadow_ptr < search_max &&
+	 shadow_ptr < (void *)KASAN_SHADOW_END){
+    shadow_ptr++;
+    shadow_val = *shadow_ptr;
+  }
+  
+  return shadow_val;
 }
 
 enum AllocType kasan_obj_type(const void *p, unsigned int size)
@@ -422,7 +452,7 @@ enum AllocType kasan_obj_type(const void *p, unsigned int size)
 		 down more finely if we want to. 
 	      */
 	      if (p >= __start_rodata && p <= __bss_start + 0x01fea000){
-		return MEM_GLOBAL_UNKNOWN;
+		return MEM_UNKNOWN_GLOBAL;
 	      }
 	      
 	      return MEM_NONE;

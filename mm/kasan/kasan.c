@@ -366,14 +366,14 @@ u8 detect_access_kind_old(void * p){
     long search_size = (long) (p_aligned + PAGE_SIZE - p);
     
     // Search forwards
-    while (shadow_val < KASAN_SHADOW_SCALE && first_poisoned_addr < p + search_size) {
+    while (shadow_val < KASAN_SHADOW_SCALE_SIZE && first_poisoned_addr < p + search_size) {
         first_poisoned_addr += KASAN_SHADOW_SCALE_SIZE;
         shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
     }
 
     // If no hit, search backwards too. Stay higher than p_aligned
     first_poisoned_addr = p;
-    while (shadow_val < KASAN_SHADOW_SCALE && first_poisoned_addr > (p_aligned + KASAN_SHADOW_SCALE_SIZE)) {
+    while (shadow_val < KASAN_SHADOW_SCALE_SIZE && first_poisoned_addr > (p_aligned + KASAN_SHADOW_SCALE_SIZE)) {
         first_poisoned_addr -= KASAN_SHADOW_SCALE_SIZE;
         shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
     }
@@ -384,14 +384,14 @@ u8 detect_access_kind_old(void * p){
 u8 detect_access_kind(void * p){
 
   // Calculate page-aligned address
-  void * p_aligned = (void *) p & (~((1 << PAGE_SHIFT) - 1));
+  void * p_aligned = (unsigned long) p & (~((1 << PAGE_SHIFT) - 1));
 
   // Initialize shadow pointer and current shadow value
   u8* shadow_ptr = kasan_mem_to_shadow(p_aligned);
   u8 shadow_val = *shadow_ptr;
 
   // Set maximum search distance
-  u8* search_max = kasan_mem_to_shadow(p_aligned + 2*PAGE_SIZE);
+  u8* search_max = kasan_mem_to_shadow(p_aligned + 1*PAGE_SIZE);
   
   /* Search until we (1) find a valid shadow type identifier, (2)
      exceed the max search distance, or (3) would go beyond end of

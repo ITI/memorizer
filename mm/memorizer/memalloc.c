@@ -68,7 +68,7 @@ static int __init early_memalloc_size(char *arg)
 }
 early_param("memalloc_size", early_memalloc_size);
 
-void memorizer_alloc_init(void)
+void __init memorizer_alloc_init(void)
 {
 	pool_base = alloc_bootmem(memalloc_size);
 	pool_end = pool_base + memalloc_size;

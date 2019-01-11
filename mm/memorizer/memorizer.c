@@ -725,7 +725,7 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 
 	if(in_pool(va_ptr))
 	{
-		track_access(MEM_MEMORIZER);
+		track_access(MEM_MEMORIZER,size);
 		return;
 	}
 
@@ -736,21 +736,21 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
                 if(is_induced_obj(va_ptr))
                 {
                         kobj = general_kobjs[MEM_INDUCED];
-                        track_access(MEM_INDUCED);
+                        track_access(MEM_INDUCED,size);
                 }
                 else{
                         enum AllocType AT = kasan_obj_type(va_ptr,size);
                         kobj = general_kobjs[AT];
                         if(AT == MEM_STACK_PAGE)
-                                track_access(AT);
+                                track_access(AT,size);
                         else
-                                track_untracked_access(AT);
+                                track_untracked_access(AT,size);
                 }
         }
         else
         {
                 /* track access by type of object accessed */
-                track_access(kobj->alloc_type);
+                track_access(kobj->alloc_type,size);
         }
 
         /* Grab the object lock here */
@@ -1309,7 +1309,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
          * kobj */
         kobj = lt_remove_kobj(kobj_ptr);
 
-        /* 
+        /*
          *   * If this is null it means we are freeing something we did
          *   not insert
          *       * into our tree and we have a missed alloc track,
@@ -1323,7 +1323,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
                 kobj->free_ip = call_site;
                 write_unlock_irqrestore(&kobj->rwlock, flags);
                 track_free();
-		//TODO add free function here 
+		//TODO add free function here
         }
         else
                 track_untracked_obj_free();
@@ -1334,7 +1334,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
  * @call_site:	Call site requesting the original free
  * @ptr:	Address of the object to be freed
  *
- * Algorithm: 
+ * Algorithm:
  *	1) find the object in the rbtree
  *	2) add the object to the memorizer process kobj queue
  *	3) remove the object from the rbtree
@@ -1393,7 +1393,7 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 			*buff_fill = 1;
 			buff_write_end = buff_start;
 		}
-	
+
 
 		local_irq_restore(flags);
 	}
@@ -1492,7 +1492,7 @@ out:
                 {
                         curBuff = (curBuff + 1)%NB;
                         switchBuffer();
-                }		
+                }
 
                 local_irq_save(flags);
                 mke.event_type = Memorizer_Mem_Alloc;
@@ -1564,7 +1564,7 @@ void memorizer_kmalloc_node(unsigned long call_site, const void *ptr, size_t
 
 void memorizer_kfree(unsigned long call_site, const void *ptr)
 {
-	/* 
+	/*
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
@@ -1614,7 +1614,7 @@ void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
 
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 {
-	/* 
+	/*
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
@@ -1637,7 +1637,7 @@ void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 			  int order)
 {
-	/* 
+	/*
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
@@ -1652,7 +1652,7 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
  *
  * Thread should have allocated and this stack should be in the table
  */
-void memorizer_stack_page_alloc(struct task_struct *task) 
+void memorizer_stack_page_alloc(struct task_struct *task)
 {
         /* get the object */
         struct memorizer_kobj * stack_kobj = lt_get_kobj(task->stack);
@@ -1661,7 +1661,7 @@ void memorizer_stack_page_alloc(struct task_struct *task)
         {
                 void *base = task_stack_page(task);
                 __memorizer_kmalloc(_RET_IP_, base, THREAD_SIZE, THREAD_SIZE,
-                                0, MEM_STACK_PAGE); 
+                                0, MEM_STACK_PAGE);
         }
         else
         {
@@ -1983,26 +1983,26 @@ struct event_list_wq_data {
     struct memorizer_kernel_event data[num_entries_perwq];
 };
 
-#define num_queues 2 
+#define num_queues 2
 size_t wq_index = 0;
 size_t wq_selector = 0;
 size_t wq_process_me = 0;
 struct event_list_wq_data mem_events_wq_data[num_queues];
 
-/* 
+/*
  * parse_events() - take the event list @data and parse to object cmap
  *
  * Note this function makes no assumptions about the calling context. This
  * function is not an external entry point, and therefore expects it's caller
  * to manage "in_memorizer" as well as any other global memorizer based locking
- * required. 
+ * required.
  */
 static void
 parse_events(struct event_list_wq_data * data)
 {
     unsigned long i, flags;
     bool old_access, old_enabled;
-    
+
     // Saving the old config before disabling the memorizer for aggregation
     old_enabled = memorizer_enabled;
     old_access = memorizer_log_access;

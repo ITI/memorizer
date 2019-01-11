@@ -63,11 +63,14 @@
 /* syntactic sugar to reduce line length below */
 static __always_inline int64_t geta(atomic64_t * a) { return atomic64_read(a); }
 static __always_inline void inca(atomic64_t * a) { atomic64_inc(a); }
+static __always_inline void adda(uint64_t i, atomic64_t * a){atomic64_add(i,a);}
 
 /* stats data structure accounting for each type of alloc */
 static atomic64_t untracked_refs[NumAllocTypes];
 static atomic64_t tracked_refs[NumAllocTypes];
 static atomic64_t tracked_allocs[NumAllocTypes];
+static atomic64_t untracked_bytes_accessed[NumAllocTypes];
+static atomic64_t tracked_bytes_accessed[NumAllocTypes];
 
 /* Lookup Table */
 static atomic64_t num_l3 = ATOMIC_INIT(0);
@@ -88,38 +91,44 @@ static atomic64_t num_stack_accesses = ATOMIC_INIT(0);
 static atomic64_t num_accesses_while_disabled = ATOMIC_INIT(0);
 static atomic64_t num_untracked_obj_access = ATOMIC_INIT(0);
 
-void __always_inline 
-track_access(enum AllocType AT) 
+void __always_inline
+track_access(enum AllocType AT, uint64_t size)
 {
-    inca(&tracked_kobj_accesses); 
+    inca(&tracked_kobj_accesses);
     if(AT<NumAllocTypes)
-        inca(&tracked_refs[AT]); 
+    {
+        inca(&tracked_refs[AT]);
+        adda(size, &tracked_bytes_accessed[AT]);
+    }
 }
 
-void __always_inline 
-track_induced_access(void) 
+void __always_inline
+track_induced_access(void)
 {
     inca(&num_induced_accesses);
 }
 
-void __always_inline 
+void __always_inline
 track_stack_access(void)
 {
     inca(&num_stack_accesses);
 }
 
 void __always_inline
-track_disabled_access(void) 
+track_disabled_access(void)
 {
     inca(&num_accesses_while_disabled);
 }
 
-void __always_inline 
-track_untracked_access(enum AllocType AT) 
-{ 
+void __always_inline
+track_untracked_access(enum AllocType AT, uint64_t size)
+{
     inca(&num_untracked_obj_access);
     if(AT<NumAllocTypes)
-        inca(&untracked_refs[AT]); 
+    {
+        inca(&untracked_refs[AT]);
+        adda(size, &untracked_bytes_accessed[AT]);
+    }
 }
 
 /* General object info */
@@ -204,6 +213,31 @@ static size_t _percent_refs_hit(void)
                 (_total_untracked_refs()+_total_tracked_refs()) : 0;
 }
 
+static int64_t _total_tracked_bytes(void)
+{
+        int i;
+        int64_t total = 0;
+        for(i=0;i<NumAllocTypes;i++)
+                total += geta(&tracked_bytes_accessed[i]);
+        return total;
+}
+
+static int64_t _total_untracked_bytes(void)
+{
+        int64_t i;
+        int64_t total = 0;
+        for(i=0;i<NumAllocTypes;i++)
+                total += geta(&untracked_bytes_accessed[i]);
+        return total;
+}
+
+static size_t _percent_bytes_hit(void)
+{
+        return (_total_tracked_bytes() || _total_untracked_bytes()) ?
+                100*_total_tracked_bytes() /
+                (_total_untracked_bytes()+_total_tracked_bytes()) : 0;
+}
+
 static int64_t _total_tracked(void)
 {
         int64_t i;
@@ -240,19 +274,36 @@ void print_stats(size_t pr_level)
         printk(KERN_CRIT "    ---------------------------\n");
         printk(KERN_CRIT "  Total Obs:    %16llu\n", _total_accesses());
 
+	/* Print out the access counts */
         printk(KERN_CRIT "------- Per Object Access Count (hit/miss) -------\n");
         for(i=0;i<NumAllocTypes;i++)
         {
                 printk(KERN_CRIT "   %-15s: %16lld, %16lld\n",
                                 alloc_type_str(i), geta(&tracked_refs[i]),
-                                geta(&untracked_refs[i]));
-        }
+				geta(&untracked_refs[i]));
+	}
 
         printk(KERN_CRIT "    ---------------------------\n");
         printk(KERN_CRIT "   %-15s: %16lld, %16lld --- %d%% hit rate\n", "Total",
                         _total_tracked_refs(), _total_untracked_refs(),
                         _percent_refs_hit());
 
+	/* Print out the byte counts using simple total bytes accessed */
+	printk(KERN_CRIT "------- Per Object Bytes Accessed (hit/miss) -------\n");
+        for(i=0;i<NumAllocTypes;i++)
+        {
+                printk(KERN_CRIT "   %-15s: %16lld, %16lld\n",
+				alloc_type_str(i),
+				geta(&tracked_bytes_accessed[i]),
+				geta(&untracked_bytes_accessed[i]));
+	}
+
+        printk(KERN_CRIT "    ---------------------------\n");
+        printk(KERN_CRIT "   %-15s: %16lld, %16lld --- %d%% hit rate\n", "Total",
+                        _total_tracked_bytes(), _total_untracked_bytes(),
+                        _percent_bytes_hit());
+
+	/* Print aggregate memory alloc stats for mem types */
         printk(KERN_CRIT "------- Tracked Memory Allocations -------\n");
         for(i=0;i<NumAllocTypes;i++)
         {
@@ -264,6 +315,8 @@ void print_stats(size_t pr_level)
         printk(KERN_CRIT "  Frees:        %16lld\n", geta(&stats_frees));
         printk(KERN_CRIT "  Live Now:     %16lld\n", _live_objs());
 
+	/* Print out info on missing allocations */
+	/* -- TODO: depracated and can probably remove */
         printk(KERN_CRIT "------- Missing Allocs -------\n");
         printk(KERN_CRIT "  Mem disabled: %16lld\n", geta(&num_allocs_while_disabled));
         printk(KERN_CRIT "  Allocs(InMem):%16lld\n", geta(&num_induced_allocs));
@@ -288,57 +341,72 @@ void print_stats(size_t pr_level)
 
 int seq_print_stats(struct seq_file *seq)
 {
-    int i;
-    seq_printf(seq,"------- Memory Accesses -------\n");
-    seq_printf(seq,"  Tracked:      %16lld\n", geta(&tracked_kobj_accesses));
-    seq_printf(seq,"  Missing:      %16lld\n", geta(&num_untracked_obj_access));
-    seq_printf(seq,"  Induced:      %16lld\n", geta(&num_induced_accesses));
-    seq_printf(seq,"  Disabled:     %16lld\n", geta(&num_accesses_while_disabled));
-    seq_printf(seq,"    ---------------------------\n");
-    seq_printf(seq,"  Total Obs:    %16lld\n", _total_accesses());
+	int i;
+	seq_printf(seq,"------- Memory Accesses -------\n");
+	seq_printf(seq,"  Tracked:      %16lld\n", geta(&tracked_kobj_accesses));
+	seq_printf(seq,"  Missing:      %16lld\n", geta(&num_untracked_obj_access));
+	seq_printf(seq,"  Induced:      %16lld\n", geta(&num_induced_accesses));
+	seq_printf(seq,"  Disabled:     %16lld\n", geta(&num_accesses_while_disabled));
+	seq_printf(seq,"    ---------------------------\n");
+	seq_printf(seq,"  Total Obs:    %16lld\n", _total_accesses());
 
-    seq_printf(seq,"------- Per Object Access Count (hit/miss) -------\n");
-    for(i=0;i<NumAllocTypes;i++)
-    {
-        seq_printf(seq,"   %-15s: %16lld, %16lld\n",
-                alloc_type_str(i), geta(&tracked_refs[i]),
-                geta(&untracked_refs[i]));
-    }
+	seq_printf(seq,"------- Per Object Access Count (hit/miss) -------\n");
+	for(i=0;i<NumAllocTypes;i++)
+	{
+		seq_printf(seq,"   %-15s: %16lld, %16lld\n",
+			   alloc_type_str(i), geta(&tracked_refs[i]),
+			   geta(&untracked_refs[i]));
+	}
 
-    seq_printf(seq,"    ---------------------------\n");
-    seq_printf(seq,"   %-15s: %16lld, %16lld --- %d%% hit rate\n", "Total",
-            _total_tracked_refs(), _total_untracked_refs(),
-            _percent_refs_hit());
+	seq_printf(seq,"    ---------------------------\n");
+	seq_printf(seq,"   %-15s: %16lld, %16lld --- %d%% hit rate\n", "Total",
+		   _total_tracked_refs(), _total_untracked_refs(),
+		   _percent_refs_hit());
 
-    seq_printf(seq,"------- Tracked Memory Allocations -------\n");
-    for(i=0;i<NumAllocTypes;i++)
-    {
-        seq_printf(seq,"   %-15s: %16lld\n",
-                alloc_type_str(i), geta(&tracked_allocs[i]));
-    }
-    seq_printf(seq,"        ------\n");
-    seq_printf(seq,"  Total:        %16lld\n", _total_tracked());
-    seq_printf(seq,"  Frees:        %16lld\n", geta(&stats_frees));
-    seq_printf(seq,"  Live Now:     %16lld\n", _live_objs());
+	/* Print out the byte counts using simple total bytes accessed */
+	seq_printf(seq,"------- Per Object Bytes Accessed (hit/miss) -------\n");
+	for(i=0;i<NumAllocTypes;i++)
+	{
+		seq_printf(seq,"   %-15s: %16lld, %16lld\n",
+			   alloc_type_str(i),
+			   geta(&tracked_bytes_accessed[i]),
+			   geta(&untracked_bytes_accessed[i]));
+	}
 
-    seq_printf(seq,"------- Missing Allocs -------\n");
-    seq_printf(seq,"  Mem disabled: %16lld\n", geta(&num_allocs_while_disabled));
-    seq_printf(seq,"  Allocs(InMem):%16lld\n", geta(&num_induced_allocs));
-    seq_printf(seq,"  Frees(InMem): %16lld\n", geta(&num_induced_frees));
-    seq_printf(seq,"  Frees(NoObj): %16lld\n", geta(&stats_untracked_obj_frees));
-    seq_printf(seq,"  kobj fails:   %16lld\n", geta(&failed_kobj_allocs));
+	seq_printf(seq,"    ---------------------------\n");
+	seq_printf(seq,"   %-15s: %16lld, %16lld --- %d%% hit rate\n", "Total",
+		   _total_tracked_bytes(), _total_untracked_bytes(),
+		   _percent_bytes_hit());
 
-    seq_printf(seq,"------- Internal Allocs -------\n");
-    /* TODO: right now if we don't drain inline then this is total tracked */
-    seq_printf(seq,"  Live KOBJs: %10lld * %d B = %6lld MB\n",
-            _total_tracked()-geta(&stats_kobj_frees),
-            sizeof(struct memorizer_kobj),
-            (_total_tracked()-geta(&stats_kobj_frees)) * sizeof(struct memorizer_kobj) >> 20 );
+	seq_printf(seq,"------- Tracked Memory Allocations -------\n");
+	for(i=0;i<NumAllocTypes;i++)
+	{
+		seq_printf(seq,"   %-15s: %16lld\n",
+			   alloc_type_str(i), geta(&tracked_allocs[i]));
+	}
+	seq_printf(seq,"        ------\n");
+	seq_printf(seq,"  Total:        %16lld\n", _total_tracked());
+	seq_printf(seq,"  Frees:        %16lld\n", geta(&stats_frees));
+	seq_printf(seq,"  Live Now:     %16lld\n", _live_objs());
 
-    seq_printf(seq,"  Total Edges: %10lld * %d B = %6lld MB\n",
-            geta(&num_access_counts), sizeof(struct access_from_counts),
-            geta(&num_access_counts) * sizeof(struct access_from_counts)>>20);
-    lt_pr_stats_seq(seq);
-    return 0;
+	seq_printf(seq,"------- Missing Allocs -------\n");
+	seq_printf(seq,"  Mem disabled: %16lld\n", geta(&num_allocs_while_disabled));
+	seq_printf(seq,"  Allocs(InMem):%16lld\n", geta(&num_induced_allocs));
+	seq_printf(seq,"  Frees(InMem): %16lld\n", geta(&num_induced_frees));
+	seq_printf(seq,"  Frees(NoObj): %16lld\n", geta(&stats_untracked_obj_frees));
+	seq_printf(seq,"  kobj fails:   %16lld\n", geta(&failed_kobj_allocs));
+
+	seq_printf(seq,"------- Internal Allocs -------\n");
+	/* TODO: right now if we don't drain inline then this is total tracked */
+	seq_printf(seq,"  Live KOBJs: %10lld * %d B = %6lld MB\n",
+		   _total_tracked()-geta(&stats_kobj_frees),
+		   sizeof(struct memorizer_kobj),
+		   (_total_tracked()-geta(&stats_kobj_frees)) * sizeof(struct memorizer_kobj) >> 20 );
+
+	seq_printf(seq,"  Total Edges: %10lld * %d B = %6lld MB\n",
+		   geta(&num_access_counts), sizeof(struct access_from_counts),
+		   geta(&num_access_counts) * sizeof(struct access_from_counts)>>20);
+	lt_pr_stats_seq(seq);
+	return 0;
 }
 #endif /* CONFIG_MEMORIZER_STATS */

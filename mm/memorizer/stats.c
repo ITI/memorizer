@@ -71,6 +71,7 @@ static atomic64_t tracked_refs[NumAllocTypes];
 static atomic64_t tracked_allocs[NumAllocTypes];
 static atomic64_t untracked_bytes_accessed[NumAllocTypes];
 static atomic64_t tracked_bytes_accessed[NumAllocTypes];
+static uint64_t bytes_accessed_overflows = 0;
 
 /* Lookup Table */
 static atomic64_t num_l3 = ATOMIC_INIT(0);
@@ -99,6 +100,8 @@ track_access(enum AllocType AT, uint64_t size)
     {
         inca(&tracked_refs[AT]);
         adda(size, &tracked_bytes_accessed[AT]);
+	if(geta(&tracked_bytes_accessed[AT]) < 0)
+		bytes_accessed_overflows = 0;
     }
 }
 
@@ -128,6 +131,8 @@ track_untracked_access(enum AllocType AT, uint64_t size)
     {
         inca(&untracked_refs[AT]);
         adda(size, &untracked_bytes_accessed[AT]);
+	if(geta(&untracked_bytes_accessed[AT]) < 0)
+		bytes_accessed_overflows = 0;
     }
 }
 
@@ -302,6 +307,8 @@ void print_stats(size_t pr_level)
         printk(KERN_CRIT "   %-15s: %16lld, %16lld --- %d%% hit rate\n", "Total",
                         _total_tracked_bytes(), _total_untracked_bytes(),
                         _percent_bytes_hit());
+	printk(KERN_CRIT "    ****** We had %d overflows on byte counters.\n",
+	       bytes_accessed_overflows);
 
 	/* Print aggregate memory alloc stats for mem types */
         printk(KERN_CRIT "------- Tracked Memory Allocations -------\n");
@@ -377,6 +384,8 @@ int seq_print_stats(struct seq_file *seq)
 	seq_printf(seq,"   %-15s: %16lld, %16lld --- %d%% hit rate\n", "Total",
 		   _total_tracked_bytes(), _total_untracked_bytes(),
 		   _percent_bytes_hit());
+	seq_printf(seq,"    ****** We had %d overflows on byte counters.\n",
+	       bytes_accessed_overflows);
 
 	seq_printf(seq,"------- Tracked Memory Allocations -------\n");
 	for(i=0;i<NumAllocTypes;i++)

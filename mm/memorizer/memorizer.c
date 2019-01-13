@@ -834,7 +834,7 @@ static inline void set_comm_and_pid(struct memorizer_mem_access *ma)
  * @to: the PC virtual address of the called function entry point
  *
  */
-void __always_inline 
+void __always_inline
 memorizer_call(uintptr_t to, uintptr_t from)
 {
         unsigned long flags;
@@ -1254,7 +1254,7 @@ static struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj
 
 /**
  * search_kobj_from_rbtree() - lookup the kobj from the tree
- * @kobj_ptr:	The ptr to find the active for 
+ * @kobj_ptr:	The ptr to find the active for
  * @rbtree:	The rbtree to lookup in
  *
  * This function searches for the memorizer_kobj associated with the passed in
@@ -1290,7 +1290,7 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
  * @call_site:	Call site requesting the original free
  * @ptr:	Address of the object to be freed
  *
- * Algorithm: 
+ * Algorithm:
  *	1) find the object in the rbtree
  *	2) add the object to the memorizer process kobj queue
  *	3) remove the object from the rbtree
@@ -1573,6 +1573,11 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	}
 
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
+}
+
+void __init memorizer_memblock_alloc(phys_addr_t base, phys_addr_t size)
+{
+        track_alloc(MEM_MEMBLOCK);
 }
 
 const char * l1str = "lt_l1_tbl";

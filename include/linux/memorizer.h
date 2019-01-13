@@ -1,11 +1,11 @@
 /*===-- LICENSE ------------------------------------------------------------===
- * 
- * University of Illinois/NCSA Open Source License 
+ *
+ * University of Illinois/NCSA Open Source License
  *
  * Copyright (C) 2015, The Board of Trustees of the University of Illinois.
- * All rights reserved. 
+ * All rights reserved.
  *
- * Developed by: 
+ * Developed by:
  *
  *    Research Group of Professor Vikram Adve in the Department of Computer
  *    Science The University of Illinois at Urbana-Champaign
@@ -18,17 +18,17 @@
  * with the Software without restriction, including without limitation the
  * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
  * sell copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions: 
+ * furnished to do so, subject to the following conditions:
  *
  * Redistributions of source code must retain the above copyright notice, this
- * list of conditions and the following disclaimers. 
+ * list of conditions and the following disclaimers.
  *
  * Redistributions in binary form must reproduce the above copyright notice,
  * this list of conditions and the following disclaimers in the documentation
  * and/or other materials provided with the distribution.  Neither the names of
  * Nathan Dautenhahn or the University of Illinois, nor the names of its
  * contributors may be used to endorse or promote products derived from this
- * Software without specific prior written permission. 
+ * Software without specific prior written permission.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -36,13 +36,13 @@
  * CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH
- * THE SOFTWARE. 
+ * THE SOFTWARE.
  *
  *===------------------------------------------------------------------------===
  *
  *       Filename:  memorizer.h
  *
- *    Description:  Memorizer records data for kernel object lifetime analysis. 
+ *    Description:  Memorizer records data for kernel object lifetime analysis.
  *
  *===------------------------------------------------------------------------===
  */
@@ -56,8 +56,8 @@
 #define FILTER_KASAN 1
 #endif
 
-/** 
- * struct memorizer_kobj - metadata for kernel objects 
+/**
+ * struct memorizer_kobj - metadata for kernel objects
  */
 enum AllocType {
     MEM_STACK=0,
@@ -70,6 +70,7 @@ enum AllocType {
     MEM_KMEM_CACHE_ND,
     MEM_ALLOC_PAGES,
     MEM_INDUCED,
+    MEM_MEMBLOCK,
     MEM_MEMORIZER,
     MEM_USER,
     MEM_BUG,
@@ -121,6 +122,7 @@ void memorizer_fork(struct task_struct *p, long nr);
 void switchBuffer(void);
 void memorizer_print_stats(void);
 void memorizer_stack_page_alloc(struct task_struct * task);
+void memorizer_memblock_alloc(phys_addr_t base, phys_addr_t size);
 
 /* Temporary Debug and test code */
 int __memorizer_get_opsx(void);
@@ -149,6 +151,7 @@ static inline void memorizer_fork(struct task_struct *p, long nr) {}
 static inline void switchBuffer(void) {}
 static inline void memorizer_print_stats(void) {}
 static inline void memorizer_stack_page_alloc(struct task_struct * task){}
+static inline void memorizer_memblock_alloc(phys_addr_t base, pys_addr_t size){}
 
 #endif /* CONFIG_MEMORIZER */
 

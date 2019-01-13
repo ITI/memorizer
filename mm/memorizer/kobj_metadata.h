@@ -79,6 +79,8 @@ static char * alloc_type_str (enum AllocType AT)
         return "ALLOC_PAGES";
     case MEM_INDUCED:
         return "INDUCED_ALLOC";
+    case MEM_MEMBLOCK:
+        return "MEMBLOCK";
     case MEM_MEMORIZER:
         return "MEMORIZER";
     case MEM_USER:

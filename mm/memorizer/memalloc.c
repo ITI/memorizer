@@ -52,9 +52,9 @@
 
 #include "memalloc.h"
 
-uintptr_t pool_base;
-uintptr_t pool_end;
-uintptr_t pool_next_avail_byte;
+uintptr_t pool_base = 0;
+uintptr_t pool_end = 0;
+uintptr_t pool_next_avail_byte = 0;
 unsigned long memalloc_size = MEMORIZER_POOL_SIZE;
 
 /* function to let the size be specified as a boot parameter */
@@ -71,6 +71,8 @@ early_param("memalloc_size", early_memalloc_size);
 void __init memorizer_alloc_init(void)
 {
 	pool_base = alloc_bootmem(memalloc_size);
+	if(!pool_base)
+		panic("No memorizer pool");
 	pool_end = pool_base + memalloc_size;
 	pool_next_avail_byte = pool_base;
 }
@@ -78,6 +80,8 @@ void __init memorizer_alloc_init(void)
 void * memalloc(unsigned long size)
 {
 	void * va = pool_next_avail_byte;
+	if(!pool_next_avail_byte)
+		return 0;
 	if(pool_next_avail_byte + size > pool_end)
 		panic("Memorizer ran out of internal heap");
 	pool_next_avail_byte += size;

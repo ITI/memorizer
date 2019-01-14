@@ -2051,84 +2051,82 @@ struct event_list_wq_data mem_events_wq_data[num_queues];
 static void
 parse_events(struct event_list_wq_data * data)
 {
-    unsigned long i, flags;
-    bool old_access, old_enabled;
+	unsigned long i, flags;
+	bool old_access, old_enabled;
 
-    // Saving the old config before disabling the memorizer for aggregation
-    old_enabled = memorizer_enabled;
-    old_access = memorizer_log_access;
+	// Saving the old config before disabling the memorizer for aggregation
+	old_enabled = memorizer_enabled;
+	old_access = memorizer_log_access;
 
-    // Disabling the memorizer for aggregation
-    memorizer_enabled = false;
-    memorizer_log_access = false;
+	// Disabling the memorizer for aggregation
+	memorizer_enabled = false;
+	memorizer_log_access = false;
 
-    //spin_lock_irqsave(&aggregator_spinlock,flags);
-    gfp_t gfp_flags = GFP_ATOMIC;
-    struct memorizer_kobj *kobj;
-    struct memorizer_kernel_event *mke;
+	//spin_lock_irqsave(&aggregator_spinlock,flags);
+	gfp_t gfp_flags = GFP_ATOMIC;
+	struct memorizer_kobj *kobj;
+	struct memorizer_kernel_event *mke;
 
-    pr_info("processing workqueue %d\n", wq_selector);
+	pr_info("processing workqueue %d\n", wq_selector);
 
-    /* Process the event queue */
-    for(i = 0; i<num_entries_perwq; i++)
-    {
-        mke = &data->data[i];
+	/* Process the event queue */
+	for(i = 0; i<num_entries_perwq; i++)
+	{
+		mke = &data->data[i];
 #ifdef DEBUG > 5
-        if(i % (int)(num_entries_perwq*.5) == 0)
-            pr_cont("\rQueue Processing: %d/%d", i,num_entries_perwq);
+		if(i % (int)(num_entries_perwq*.5) == 0)
+			pr_cont("\rQueue Processing: %d/%d", i,num_entries_perwq);
 #endif
 
-        switch(mke->event_type)
-        {
-        case Memorizer_READ: find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr,
-					     (uintptr_t) mke->data.et.va_ptr,(pid_t)mke->pid, 
-					     (size_t) mke->event_type, mke->data.et.event_size);
-			     			break;
-        case Memorizer_WRITE:find_and_update_kobj_access((uintptr_t) mke->data.et.src_va_ptr,
-					     (uintptr_t) mke->data.et.va_ptr,(pid_t)mke->pid, 
-					     (size_t) mke->event_type,mke->data.et.event_size);
-			     			break;
-        case Memorizer_Mem_Alloc:
-		kobj = memalloc(sizeof(struct memorizer_kobj));
-            if(!kobj){ 
-                pr_err("Cannot allocate a memorizer_kobj structure\n"); 
-            }
-            init_kobj(kobj, (uintptr_t) mke->data.et.src_va_ptr,
-                    (uintptr_t) mke->data.et.va_ptr, mke->data.et.event_size, 
-                    MEM_NONE); 
-            /* Grab the writer lock for the object_list */
-            // We are single threaded here don't need to lock
-            //write_lock_irqsave(&object_list_spinlock, flags);
-            lt_insert_kobj(kobj);
-            list_add_tail(&kobj->object_list, &object_list);
-            //write_unlock_irqrestore(&object_list_spinlock, flags);
-            break;
-        case Memorizer_Mem_Free:
-            __memorizer_free_kobj((uintptr_t) mke->data.et.src_va_ptr,
-                    (uintptr_t) mke->data.et.va_ptr);
-            break;
-        case Memorizer_Fork:
-	    // Add in the code to Handle Forks
-	    // Push the data as a struct into the pid_table
-	    
-            break;
-        case Memorizer_NULL:
-            break;
-        //default:
-                //pr_info("Handling default case for event dequeue");
-        }
-        mke->event_type = Memorizer_NULL;
-    }
-    //spin_lock_irqrestore(&aggregator_spinlock, flags);
+		switch(mke->event_type)
+		{
+		case Memorizer_READ:
+		case Memorizer_WRITE:
+			find_and_update_kobj_access(
+				(uintptr_t) mke->data.et.src_va_ptr,
+				(uintptr_t) mke->data.et.va_ptr,(pid_t)mke->pid,
+				(size_t) mke->event_type, mke->data.et.event_size);
+			break;
+		case Memorizer_Mem_Alloc:
+			kobj = memalloc(sizeof(struct memorizer_kobj));
+			if(!kobj){
+			     pr_err("Cannot allocate a memorizer_kobj structure\n");
+			}
+			init_kobj(kobj, (uintptr_t) mke->data.et.src_va_ptr,
+				  (uintptr_t) mke->data.et.va_ptr,
+				  mke->data.et.event_size, MEM_NONE);
+			/* Grab the writer lock for the object_list */
+			// We are single threaded here don't need to lock
+			//write_lock_irqsave(&object_list_spinlock, flags);
+			lt_insert_kobj(kobj);
+			list_add_tail(&kobj->object_list, &object_list);
+			//write_unlock_irqrestore(&object_list_spinlock, flags);
+			break;
+		case Memorizer_Mem_Free:
+			__memorizer_free_kobj((uintptr_t) mke->data.et.src_va_ptr,
+				(uintptr_t) mke->data.et.va_ptr);
+			break;
+		case Memorizer_Fork:
+			// Add in the code to Handle Forks
+			// Push the data as a struct into the pid_table
+			break;
+		case Memorizer_NULL:
+			break;
+			//default:
+			//pr_info("Handling default case for event dequeue");
+		}
+		mke->event_type = Memorizer_NULL;
+	}
+	//spin_lock_irqrestore(&aggregator_spinlock, flags);
 
-    //pr_info("Finished aggregating event queue.\n");
+	//pr_info("Finished aggregating event queue.\n");
 
-    // Restoring the old configuration after aggregation
-    memorizer_enabled = old_enabled;
-    memorizer_log_access = old_access;
-    
-    // set first entry to Memorizer_NULL for queue selection check */
-    //data->data[0].event_type = Memorizer_NULL;
+	// Restoring the old configuration after aggregation
+	memorizer_enabled = old_enabled;
+	memorizer_log_access = old_access;
+
+	// set first entry to Memorizer_NULL for queue selection check */
+	//data->data[0].event_type = Memorizer_NULL;
 }
 
 struct workqueue_struct *wq;

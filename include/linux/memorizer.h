@@ -70,6 +70,7 @@ enum AllocType {
     MEM_KMEM_CACHE_ND,
     MEM_ALLOC_PAGES,
     MEM_INDUCED,
+    MEM_BOOTMEM,
     MEM_MEMBLOCK,
     MEM_MEMORIZER,
     MEM_USER,
@@ -118,10 +119,13 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr);
 void memorizer_register_global(const void *ptr, size_t size);
 void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
         size);
+void memorizer_alloc(unsigned long call_site, const void *ptr, size_t size,
+		     enum AllocType AT);
 void memorizer_fork(struct task_struct *p, long nr);
 void switchBuffer(void);
 void memorizer_print_stats(void);
 void memorizer_stack_page_alloc(struct task_struct * task);
+void memorizer_alloc_bootmem(unsigned long call_site, void * v, uint64_t size);
 void memorizer_memblock_alloc(phys_addr_t base, phys_addr_t size);
 
 /* Temporary Debug and test code */
@@ -147,10 +151,13 @@ static inline void memorizer_kmem_cache_alloc(unsigned long call_site, const voi
 static inline void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int node) {}
 static inline void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr) {}
 static inline void memorizer_register_global(const void *ptr, size_t size) {}
+static inline void memorizer_alloc(unsigned long call_site, const void *ptr,
+				   size_t size, enum AllocType AT){}
 static inline void memorizer_fork(struct task_struct *p, long nr) {}
 static inline void switchBuffer(void) {}
 static inline void memorizer_print_stats(void) {}
 static inline void memorizer_stack_page_alloc(struct task_struct * task){}
+static inline void memorizer_alloc_bootmem(unsigned long call_site, void * v, uint64_t size){}
 static inline void memorizer_memblock_alloc(phys_addr_t base, pys_addr_t size){}
 
 #endif /* CONFIG_MEMORIZER */

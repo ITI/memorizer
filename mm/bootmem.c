@@ -17,6 +17,7 @@
 #include <linux/bug.h>
 #include <linux/io.h>
 #include <linux/bootmem.h>
+#include <linux/memorizer.h>
 
 #include "internal.h"
 
@@ -589,6 +590,7 @@ find_block:
 		 * are never reported as leaks.
 		 */
 		kmemleak_alloc(region, size, 0, 0);
+		memorizer_alloc_bootmem(_RET_IP_, region, size);
 		return region;
 	}
 

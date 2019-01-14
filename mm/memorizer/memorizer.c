@@ -1621,7 +1621,7 @@ void memorizer_memblock_free(phys_addr_t base, phys_addr_t size)
 
 void memorizer_alloc_bootmem(unsigned long call_site, void * v, uint64_t size)
 {
-        //track_alloc(MEM_BOOTMEM);
+        track_alloc(MEM_BOOTMEM);
 	__memorizer_kmalloc(call_site, v, size, size, 0, MEM_BOOTMEM);
 	return;
 }
@@ -1730,6 +1730,12 @@ void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
 void memorizer_register_global(const void *ptr, size_t size)
 {
 	__memorizer_kmalloc(0, ptr, size, size, 0, MEM_GLOBAL);
+}
+
+void memorizer_alloc(unsigned long call_site, const void *ptr, size_t size,
+		     enum AllocType AT)
+{
+	//__memorizer_kmalloc(call_site, ptr, size, size, 0, AT);
 }
 
 //==-- Memorizer Data Export ----------------------------------------------==//

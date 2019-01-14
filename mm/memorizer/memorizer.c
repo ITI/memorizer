@@ -105,6 +105,7 @@
 #include <linux/mm.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
+#include <asm/page_64.h>
 #include <linux/rbtree.h>
 #include <linux/rwlock.h>
 #include <linux/seq_file.h>
@@ -127,7 +128,7 @@
 #include <linux/mempool.h>
 
 #include "kobj_metadata.h"
-#include "event_structs.h" 
+#include "event_structs.h"
 #include "FunctionHashTable.h"
 #include "memorizer.h"
 #include "stats.h"
@@ -146,6 +147,9 @@
 static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 							   struct rb_root *
 							   kobj_rbtree_root);
+static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
+				       uint64_t bytes_req, uint64_t bytes_alloc,
+				       gfp_t gfp_flags, enum AllocType AT);
 void __always_inline wq_push(uintptr_t addr, size_t size, enum AccessType
         access_type, uintptr_t ip, char * tsk_name);
 static inline struct memorizer_kernel_event * wq_top(void);
@@ -369,6 +373,29 @@ DEFINE_RWLOCK(object_list_spinlock);
 /* System wide Spinlock for the aggregating thread so nothing else interrupts */
 DEFINE_RWLOCK(aggregator_spinlock);
 
+//--- MEMBLOCK Allocator Tracking ---//
+/* This is somewhat challenging because these blocks are allocated on physical
+ * addresses. So we need to transition them.
+ */
+typedef struct {
+	uintptr_t loc;
+	uint64_t size;
+} memblock_alloc_t;
+memblock_alloc_t memblock_events[10000];
+size_t memblock_events_top = 0;
+bool in_memblocks(uintptr_t va_ptr)
+{
+	int i;
+	uintptr_t pa = __pa(va_ptr);
+	for(i=0;i<memblock_events_top;i++)
+	{
+		uintptr_t base = memblock_events[i].loc;
+		uintptr_t end = memblock_events[i].loc + memblock_events[i].loc;
+		if(pa > base && pa < end)
+			return true;
+	}
+	return false;
+}
 
 //int test_and_set_bit(unsigned long nr, volatile unsigned long *addr);
 volatile unsigned long inmem;
@@ -738,6 +765,11 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
                         kobj = general_kobjs[MEM_INDUCED];
                         track_access(MEM_INDUCED,size);
                 }
+		else if(in_memblocks(va_ptr))
+		{
+			kobj = general_kobjs[MEM_MEMBLOCK];
+			track_access(MEM_MEMBLOCK,size);
+		}
                 else{
                         enum AllocType AT = kasan_obj_type(va_ptr,size);
                         kobj = general_kobjs[AT];
@@ -1212,7 +1244,7 @@ static void clear_printed_objects(void)
  * Standard rb tree insert. The key is the range. So if the object is allocated
  * < than the active node's region then traverse left, if greater than traverse
  * right, and if not that means we have an overlap and have a problem in
- * overlapping allocations. 
+ * overlapping allocations.
  */
 static struct memorizer_kobj * unlocked_insert_kobj_rbtree(struct memorizer_kobj
 							   *kobj, struct rb_root
@@ -1371,7 +1403,7 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		{
 			curBuff = (curBuff + 1)%NB;
 			switchBuffer();
-		}		
+		}
 
 
 
@@ -1382,7 +1414,7 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		mke.src_va_ptr = call_site;
 		mke.event_ip = kobj_ptr;
 		mke.event_jiffies = jiffies;
-	
+
 		mke_ptr = (struct memorizer_kernel_free *)buff_write_end;
 		*mke_ptr = mke;
 		buff_write_end = buff_write_end + sizeof(struct memorizer_kernel_free);
@@ -1415,13 +1447,13 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
  * Track the allocation and add the object to the set of active object tree.
  */
 static void inline __memorizer_kmalloc(unsigned long call_site, const void
-        *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, enum AllocType AT)
+        *ptr, uint64_t bytes_req, uint64_t bytes_alloc, gfp_t gfp_flags, enum AllocType AT)
 {
 
         unsigned long flags;
         struct memorizer_kobj *kobj;
 
-        if(unlikely(ptr==NULL) || unlikely(IS_ERR(ptr)))
+        if(unlikely(ptr==NULL))
                 return;
 
         if(unlikely(!memorizer_enabled)) {
@@ -1577,7 +1609,21 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 
 void __init memorizer_memblock_alloc(phys_addr_t base, phys_addr_t size)
 {
-        track_alloc(MEM_MEMBLOCK);
+	track_alloc(MEM_MEMBLOCK);
+	memblock_alloc_t * evt = &memblock_events[memblock_events_top++];
+	evt->loc = base;
+	evt->size = size;
+}
+
+void __init memorizer_memblock_free(phys_addr_t base, phys_addr_t size)
+{
+}
+
+void memorizer_alloc_bootmem(unsigned long call_site, void * v, uint64_t size)
+{
+        //track_alloc(MEM_BOOTMEM);
+	__memorizer_kmalloc(call_site, v, size, size, 0, MEM_BOOTMEM);
+	return;
 }
 
 const char * l1str = "lt_l1_tbl";
@@ -1702,7 +1748,7 @@ extern struct list_head *seq_list_next(void *v, struct list_head *head, loff_t
  * location having processed a subset of the list already. The problem with this
  * is that without having __memorizer_enter() it will add objects to the list
  * between the calls to show and next opening the potential for an infinite
- * loop. It also adds elements in between start and stop operations. 
+ * loop. It also adds elements in between start and stop operations.
  *
  * For some reason the start is called every time after a *stop*, which allows
  * more entries to be added to the list thus requiring the extra sequence_done
@@ -2337,6 +2383,7 @@ void __init memorizer_init(void)
 	func_hash_tbl_init();
 	cfgtbl = create_function_hashtable();
 
+	/* Create default catch all objects for types of allocated memory */
 	for(i=0;i<NumAllocTypes;i++)
 	{
 		general_kobjs[i] = memalloc(sizeof(struct memorizer_kobj));
@@ -2389,12 +2436,12 @@ static int memorizer_late_init(void)
 	if (!dentry)
 		pr_warning("Failed to create debugfs kmap file\n");
 
-    /* stats interface */
+	/* stats interface */
 	dentry = debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
 				     NULL, &show_stats_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs show stats\n");
-    
+
 	dentry = debugfs_create_file("clear_dead_objs", S_IWUGO, dentryMemDir,
 				     NULL, &clear_dead_objs_fops);
 	if (!dentry)
@@ -2404,8 +2451,8 @@ static int memorizer_late_init(void)
 				     NULL, &clear_printed_list_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs clear_printed_list\n");
-	
-    dentry = debugfs_create_file("cfgmap", S_IRUGO|S_IWUGO, dentryMemDir,
+
+	dentry = debugfs_create_file("cfgmap", S_IRUGO|S_IWUGO, dentryMemDir,
 				     NULL, &cfgmap_fops);
 	if (!dentry)
 		pr_warning("Failed to create debugfs cfgmap\n");
@@ -2419,8 +2466,8 @@ static int memorizer_late_init(void)
 				     dentryMemDir, &memorizer_log_access);
 	if (!dentry)
 		pr_warning("Failed to create debugfs memorizer_log_access\n");
-	
-    dentry = debugfs_create_bool("cfg_log_on", S_IRUGO|S_IWUGO,
+
+	dentry = debugfs_create_bool("cfg_log_on", S_IRUGO|S_IWUGO,
 				     dentryMemDir, &cfg_log_on);
 	if (!dentry)
 		pr_warning("Failed to create debugfs cfg_log_on\n");
@@ -2429,7 +2476,7 @@ static int memorizer_late_init(void)
 				     dentryMemDir, &print_live_obj);
 	if (!dentry)
 		pr_warning("Failed to create debugfs print_live_obj\n");
-	
+
 	dentry = debugfs_create_file("drain_active_work_queue", S_IWUGO, dentryMemDir,
 				     NULL, &drain_active_work_queue_fops);
 	if (!dentry)

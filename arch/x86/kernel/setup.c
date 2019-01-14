@@ -1206,12 +1206,11 @@ void __init setup_arch(char **cmdline_p)
 #ifdef CONFIG_KVM_GUEST
 	kvmclock_init();
 #endif
+	memorizer_init();
 
 	x86_init.paging.pagetable_init();
 
 	kasan_init();
-
-	memorizer_init();
 
 #ifdef CONFIG_X86_32
 	/* sync back kernel address range */

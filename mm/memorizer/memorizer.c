@@ -381,7 +381,7 @@ typedef struct {
 	uintptr_t loc;
 	uint64_t size;
 } memblock_alloc_t;
-memblock_alloc_t memblock_events[10000];
+memblock_alloc_t memblock_events[100000];
 size_t memblock_events_top = 0;
 bool in_memblocks(uintptr_t va_ptr)
 {
@@ -747,8 +747,8 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
 static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
         uintptr_t va_ptr, pid_t pid, size_t access_type, size_t size)
 {
-        struct memorizer_kobj *kobj = NULL;
-        struct access_from_counts *afc = NULL;
+	struct memorizer_kobj *kobj = NULL;
+	struct access_from_counts *afc = NULL;
 
 	if(in_pool(va_ptr))
 	{
@@ -756,47 +756,47 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 		return;
 	}
 
-        /* Get the kernel object associated with this VA */
-        kobj = lt_get_kobj(va_ptr);
+	/* Get the kernel object associated with this VA */
+	kobj = lt_get_kobj(va_ptr);
 
-        if(!kobj){
-                if(is_induced_obj(va_ptr))
-                {
-                        kobj = general_kobjs[MEM_INDUCED];
-                        track_access(MEM_INDUCED,size);
-                }
+	if(!kobj){
+		if(is_induced_obj(va_ptr))
+		{
+			kobj = general_kobjs[MEM_INDUCED];
+			track_access(MEM_INDUCED,size);
+		}
 		else if(in_memblocks(va_ptr))
 		{
 			kobj = general_kobjs[MEM_MEMBLOCK];
 			track_access(MEM_MEMBLOCK,size);
 		}
-                else{
-                        enum AllocType AT = kasan_obj_type(va_ptr,size);
-                        kobj = general_kobjs[AT];
-                        if(AT == MEM_STACK_PAGE)
-                                track_access(AT,size);
-                        else
-                                track_untracked_access(AT,size);
-                }
-        }
-        else
-        {
-                /* track access by type of object accessed */
-                track_access(kobj->alloc_type,size);
-        }
+		else{
+			enum AllocType AT = kasan_obj_type(va_ptr,size);
+			kobj = general_kobjs[AT];
+			if(AT == MEM_STACK_PAGE)
+				track_access(AT,size);
+			else
+				track_untracked_access(AT,size);
+		}
+	}
+	else
+	{
+		/* track access by type of object accessed */
+		track_access(kobj->alloc_type,size);
+	}
 
-        /* Grab the object lock here */
-        write_lock(&kobj->rwlock);
+	/* Grab the object lock here */
+	write_lock(&kobj->rwlock);
 
-        /* Search access queue to the entry associated with src_ip */
-        afc = unlckd_insert_get_access_counts(src_va_ptr, pid, kobj);
+	/* Search access queue to the entry associated with src_ip */
+	afc = unlckd_insert_get_access_counts(src_va_ptr, pid, kobj);
 
-        /* increment the counter associated with the access type */
-        if(afc)
-                access_type ? ++(afc->writes) : ++(afc->reads);
+	/* increment the counter associated with the access type */
+	if(afc)
+		access_type ? ++(afc->writes) : ++(afc->reads);
 
-        write_unlock(&kobj->rwlock);
-        return afc ? 0 : -1;
+	write_unlock(&kobj->rwlock);
+	return afc ? 0 : -1;
 }
 
 /**
@@ -1607,7 +1607,7 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 }
 
-void __init memorizer_memblock_alloc(phys_addr_t base, phys_addr_t size)
+void memorizer_memblock_alloc(phys_addr_t base, phys_addr_t size)
 {
 	track_alloc(MEM_MEMBLOCK);
 	memblock_alloc_t * evt = &memblock_events[memblock_events_top++];
@@ -1615,7 +1615,7 @@ void __init memorizer_memblock_alloc(phys_addr_t base, phys_addr_t size)
 	evt->size = size;
 }
 
-void __init memorizer_memblock_free(phys_addr_t base, phys_addr_t size)
+void memorizer_memblock_free(phys_addr_t base, phys_addr_t size)
 {
 }
 
@@ -2420,12 +2420,10 @@ void __init memorizer_init(void)
  */
 static int memorizer_late_init(void)
 {
-    wq = create_workqueue("wq_memorizer_events");
+	wq = create_workqueue("wq_memorizer_events");
 
 	unsigned long flags;
 	struct dentry *dentry, *dentryMemDir;
-
-	__memorizer_enter();
 
 	dentryMemDir = debugfs_create_dir("memorizer", NULL);
 	if (!dentryMemDir)
@@ -2487,8 +2485,6 @@ static int memorizer_late_init(void)
 	pr_info("Size of memorizer_kernel_event:%d\n",sizeof(struct memorizer_kernel_event));
 	print_pool_info();
 	print_stats(KERN_INFO);
-	
-	__memorizer_exit();
 
 	return 0;
 }

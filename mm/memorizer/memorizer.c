@@ -341,6 +341,17 @@ static int __init early_cfg_log_boot(char *arg){
 }
 early_param("cfg_log_boot", early_cfg_log_boot);
 
+static bool track_calling_context = false;
+static int __init track_cc(char *arg){
+    if(!arg)
+        return 0;
+    if(strcmp(arg,"yes") == 0) {
+        pr_info("Enabling boot accessing logging\n");
+        track_calling_context = true;
+    }
+}
+early_param("mem_track_cc", track_cc);
+
 /* flag enable/disable printing of live objects */
 static bool print_live_obj = true;
 static bool test_obj = false;
@@ -399,6 +410,8 @@ bool in_memblocks(uintptr_t va_ptr)
 
 //int test_and_set_bit(unsigned long nr, volatile unsigned long *addr);
 volatile unsigned long inmem;
+
+uintptr_t cur_caller = 0;
 
 /**
  * __memorizer_enter() - increment recursion counter for entry into memorizer
@@ -675,8 +688,10 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 {
 	INIT_LIST_HEAD(&(afc->list));
 	afc->ip = ip;
-        afc->writes = 0;
-        afc->reads = 0;
+	afc->writes = 0;
+	afc->reads = 0;
+	if(track_calling_context)
+		afc->caller = cur_caller;
 }
 
 /**
@@ -711,21 +726,34 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
 				memorizer_kobj *kobj)
 {
 	struct list_head * listptr;
-        struct access_from_counts *entry;
-        struct access_from_counts * afc = NULL;
-        list_for_each(listptr, &(kobj->access_counts)){
-                entry = list_entry(listptr, struct access_from_counts, list);
-                if(src_ip == entry->ip){
-                        return entry;
-                } else if(src_ip < entry->ip){
-                        break;
-                }
-        }
-        /* allocate the new one and initialize the count none in list */
-        afc = alloc_and_init_access_counts(src_ip, pid);
-        if(afc)
-                list_add_tail(&(afc->list), listptr);
-        return afc;
+	struct access_from_counts *entry;
+	struct access_from_counts * afc = NULL;
+	list_for_each(listptr, &(kobj->access_counts)){
+		entry = list_entry(listptr, struct access_from_counts, list);
+		if(src_ip == entry->ip){
+			if(kobj->alloc_type == MEM_NONE)
+			{
+				if(entry->caller == cur_caller)
+				{
+					return entry;
+				}
+				else
+				{
+					break;
+				}
+			}
+			else
+				return entry;
+
+		} else if(src_ip < entry->ip){
+			break;
+		}
+	}
+	/* allocate the new one and initialize the count none in list */
+	afc = alloc_and_init_access_counts(src_ip, pid);
+	if(afc)
+		list_add_tail(&(afc->list), listptr);
+	return afc;
 }
 
 /**
@@ -876,8 +904,10 @@ memorizer_call(uintptr_t to, uintptr_t from)
         //        return;
         if(__memorizer_enter())
                 return;
+	if(track_calling_context)
+		cur_caller = from;
         local_irq_save(flags);
-#if INLINE_EVENT_PARSE 
+#if INLINE_EVENT_PARSE
         cfg_update_counts(cfgtbl, from, to);
 #else
         //trace_printk("%p->%p,%d,%d\n",ip,addr,size,write);
@@ -1819,10 +1849,17 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list)
 	{
-		seq_printf(seq, "  %p,%llu,%llu\n",
-			   (void *) afc->ip, 
-			   (unsigned long long) afc->writes,
-			   (unsigned long long) afc->reads);
+
+		if(kobj->alloc_type == MEM_NONE && track_calling_context)
+			seq_printf(seq, "  from:%p,caller:%p,%llu,%llu\n",
+				   (void *) afc->ip, afc->caller,
+				   (unsigned long long) afc->writes,
+				   (unsigned long long) afc->reads);
+		else
+			seq_printf(seq, "  %p,%llu,%llu\n",
+				   (void *) afc->ip,
+				   (unsigned long long) afc->writes,
+				   (unsigned long long) afc->reads);
 	}
 
 	read_unlock(&kobj->rwlock);

@@ -692,6 +692,8 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 	afc->reads = 0;
 	if(track_calling_context)
 		afc->caller = cur_caller;
+	else
+		afc->caller = NULL;
 }
 
 /**
@@ -734,13 +736,9 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
 			if(kobj->alloc_type == MEM_NONE)
 			{
 				if(entry->caller == cur_caller)
-				{
 					return entry;
-				}
-				else
-				{
+				else if(cur_caller < entry->caller)
 					break;
-				}
 			}
 			else
 				return entry;
@@ -1849,12 +1847,13 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list)
 	{
-
 		if(kobj->alloc_type == MEM_NONE && track_calling_context)
+		{
 			seq_printf(seq, "  from:%p,caller:%p,%llu,%llu\n",
 				   (void *) afc->ip, afc->caller,
 				   (unsigned long long) afc->writes,
 				   (unsigned long long) afc->reads);
+		}
 		else
 			seq_printf(seq, "  %p,%llu,%llu\n",
 				   (void *) afc->ip,

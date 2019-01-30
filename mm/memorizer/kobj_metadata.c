@@ -148,7 +148,7 @@ struct pages_pool l2_tbl_reserve =
 
 /**
  * tbl_get_l1_entry() --- get the l1 entry
- * @va:	The virtual address to lookup
+ * @addr:	The address to lookup
  *
  * Typical table walk starting from top to bottom.
  *
@@ -157,20 +157,20 @@ struct pages_pool l2_tbl_reserve =
  * lookup and setting this returns a double pointer so access to both the entry
  * and the object in the entry can easily be obtained.
  */
-static struct memorizer_kobj **tbl_get_l1_entry(uint64_t va)
+static struct memorizer_kobj **tbl_get_l1_entry(uint64_t addr)
 {
 	struct memorizer_kobj **l1e;
 	struct lt_l1_tbl **l2e;
 	struct lt_l2_tbl **l3e;
 
 	/* Do the lookup starting from the top */
-	l3e = lt_l3_entry(&kobj_l3_tbl, va);
+	l3e = lt_l3_entry(&kobj_l3_tbl, addr);
 	if(!*l3e)
 		return NULL;
-	l2e = lt_l2_entry(*l3e, va);
+	l2e = lt_l2_entry(*l3e, addr);
 	if(!*l2e)
 		return NULL;
-	l1e = lt_l1_entry(*l2e, va);
+	l1e = lt_l1_entry(*l2e, addr);
 	if(!*l1e)
 		return NULL;
 	return l1e;
@@ -236,16 +236,16 @@ static struct lt_l2_tbl * l2_alloc(void)
 /**
  * l2_entry_may_alloc() - get the l2 entry and alloc if needed
  * @l2_tbl:	pointer to the l2 table to look into
- * @va:		Pointer of the va to index into the table
+ * @addr:		Pointer of the addr to index into the table
  *
  * Check if the l1 table exists, if not allocate.
  */
 static struct lt_l1_tbl **l2_entry_may_alloc(struct lt_l2_tbl *l2_tbl, uintptr_t
-					     va)
+					     addr)
 {
 	unsigned long flags;
 	struct lt_l1_tbl **l2e;
-	l2e = lt_l2_entry(l2_tbl, va);
+	l2e = lt_l2_entry(l2_tbl, addr);
 	if(unlikely(!*l2e))
 		*l2e = l1_alloc();
 	return l2e;
@@ -253,15 +253,15 @@ static struct lt_l1_tbl **l2_entry_may_alloc(struct lt_l2_tbl *l2_tbl, uintptr_t
 
 /**
  * l3_entry_may_alloc() - get the l3 entry and alloc if needed
- * @va:		Pointer of the va to index into the table
+ * @addr:		Pointer of the addr to index into the table
  *
  * Check if the l2 table exists, if not allocate.
  */
-static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t va)
+static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t addr)
 {
 	unsigned long flags;
 	struct lt_l2_tbl **l3e;
-	l3e = lt_l3_entry(&kobj_l3_tbl, va);
+	l3e = lt_l3_entry(&kobj_l3_tbl, addr);
 	if(unlikely(!*l3e))
 		*l3e = l2_alloc();
 	return l3e;
@@ -276,9 +276,9 @@ static bool is_tracked_obj(uintptr_t l1entry)
 		MEM_INDUCED;
 }
 
-bool is_induced_obj(uintptr_t va)
+bool is_induced_obj(uintptr_t addr)
 {
-        struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
+        struct memorizer_kobj **l1e = tbl_get_l1_entry(addr);
         if(!l1e)
             return false;
         return ((uint64_t) *l1e >> ALLOC_CODE_SHIFT) == (uint64_t) MEM_INDUCED;
@@ -286,24 +286,24 @@ bool is_induced_obj(uintptr_t va)
 
 /**
  * lt_remove_kobj() --- remove object from the table
- * @va: pointer to the beginning of the object
+ * @addr: pointer to the beginning of the object
  *
  * This code assumes that it will only ever get a remove from the beginning of
  * the kobj. TODO: check the beginning of the kobj to make sure.
  *
  * Return: the kobject at the location that was removed.
  */
-struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
+struct memorizer_kobj * lt_remove_kobj(uintptr_t addr)
 {
         struct memorizer_kobj **l1e, *kobj;
         uintptr_t obj_id, l1entry = 0;
 
         /*
-         * Get the l1 entry for the va, if there is not entry then we not only
+         * Get the l1 entry for the addr, if there is not entry then we not only
          * haven't tracked the object, but we also haven't allocated a l1 page
          * for the particular address
          */
-        l1e = tbl_get_l1_entry(va);
+        l1e = tbl_get_l1_entry(addr);
         if(!l1e)
                 return NULL;
 
@@ -326,7 +326,7 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
                 *l1e = 0;
 
                 /* move l1e to the next entry */
-                l1e = tbl_get_l1_entry(++va);
+                l1e = tbl_get_l1_entry(++addr);
 
                 /*
                  * we might get an object that ends at the end of a table and
@@ -338,9 +338,9 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t va)
         return kobj;
 }
 
-inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
+inline struct memorizer_kobj * lt_get_kobj(uintptr_t addr)
 {
-        struct memorizer_kobj **l1e = tbl_get_l1_entry(va);
+        struct memorizer_kobj **l1e = tbl_get_l1_entry(addr);
         if(l1e && is_tracked_obj((uintptr_t)*l1e))
                 return *l1e;
         return NULL;
@@ -348,8 +348,8 @@ inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
 
 /*
  * handle_overalpping_insert() -- hanlde the overlapping insert case
- * @va:		the virtual address that is currently not vacant
- * @l1e:	the l1 entry pointer for the va
+ * @addr:		the virtual address that is currently not vacant
+ * @l1e:	the l1 entry pointer for the addr
  *
  * There is some missing free's currently, it isn't clear what is causing them;
  * however, if we assume objects are allocated before use then the most recent
@@ -357,10 +357,10 @@ inline struct memorizer_kobj * lt_get_kobj(uintptr_t va)
  * previous entry and set up its free times with a special code denoting it was
  * evicted from the table in an erroneous fasion.
  */
-static void handle_overlapping_insert(uintptr_t va)
+static void handle_overlapping_insert(uintptr_t addr)
 {
     unsigned long flags;
-    struct memorizer_kobj *obj = lt_get_kobj(va);
+    struct memorizer_kobj *obj = lt_get_kobj(addr);
 
     if(!obj)
         return;
@@ -383,49 +383,49 @@ static void handle_overlapping_insert(uintptr_t va)
  * entry mapping for the virtual address to the kobj pointer. The function
  * starts by getting the l2 table from the global l3 table. If it doesn't exist
  * then allocates the table. The same goes for looking up the l1 table for the
- * given va. Once the particular l1 table is obtained for the start va of the
+ * given addr. Once the particular l1 table is obtained for the start addr of the
  * object, iterate through the table setting each entry of the object to the
  * given kobj pointer.
  */
-int __lt_insert(uintptr_t va_ptr, size_t size, uintptr_t metadata)
+int __lt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
 {
 	struct lt_l1_tbl **l2e;
 	struct lt_l2_tbl **l3e;
 	uint64_t l1_i = 0;
-	uintptr_t va = va_ptr;
-	uintptr_t kobjend = va_ptr + size;
+	uintptr_t addr = ptr;
+	uintptr_t kobjend = ptr + size;
 
-	while(va < kobjend)
+	while(addr < kobjend)
 	{
-		/* Pointer to the l3 entry for va and alloc if needed */
-		l3e = l3_entry_may_alloc(va);
+		/* Pointer to the l3 entry for addr and alloc if needed */
+		l3e = l3_entry_may_alloc(addr);
 
-		/* Pointer to the l2 entry for va and alloc if needed */
-		l2e = l2_entry_may_alloc(*l3e, va);
+		/* Pointer to the l2 entry for addr and alloc if needed */
+		l2e = l2_entry_may_alloc(*l3e, addr);
 
 		/*
-                 * Get the index for this va for boundary on this l1 table;
+                 * Get the index for this addr for boundary on this l1 table;
                  * however, TODO, this might not be needed as our table indices
                  * are page aligned and it might be unlikely allocations are
                  * page aligned and will not traverse the boundary of an l1
                  * table. Note that I have not tested this condition yet.
 		 */
-		l1_i = lt_l1_tbl_index(va);
+		l1_i = lt_l1_tbl_index(addr);
 
-		while(l1_i < LT_L1_ENTRIES && va < kobjend)
+		while(l1_i < LT_L1_ENTRIES && addr < kobjend)
 		{
-			/* get the pointer to the l1_entry for this va byte */
-			struct memorizer_kobj **l1e = lt_l1_entry(*l2e,va);
+			/* get the pointer to the l1_entry for this addr byte */
+			struct memorizer_kobj **l1e = lt_l1_entry(*l2e,addr);
 
 			/* If it is not null then we are double allocating */
 			if(*l1e)
-				handle_overlapping_insert(va);
+				handle_overlapping_insert(addr);
 
-			/* insert object pointer in the table for byte va */
+			/* insert object pointer in the table for byte addr */
 			*l1e = metadata;
 
                         /* Track end of the table and the object tracking */
-                        va += 1;
+                        addr += 1;
 			++l1_i;
 		}
 	}
@@ -440,11 +440,11 @@ int __lt_insert(uintptr_t va_ptr, size_t size, uintptr_t metadata)
  * way the free just finds all matching entries in the table.
  */
 size_t d = 0;
-int lt_insert_induced(void * va_ptr, size_t size)
+int lt_insert_induced(void * ptr, size_t size)
 {
     uintptr_t label = ((uintptr_t) MEM_INDUCED << ALLOC_CODE_SHIFT) |
         atomic_long_inc_return(&global_kobj_id);
-    __lt_insert(va_ptr, size, label);
+    __lt_insert(ptr, size, label);
     return 1;
 }
 

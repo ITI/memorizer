@@ -1462,10 +1462,39 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 }
 
 /**
- * free_kobj_kmem_cache() - free the object from the kmem_cache
- * @kobj:	The kernel object metadata to free
- * @kmemcache:	The cache to free from
+ * __create_kobj() - allocate and init kobj assuming locking and rentrance
+ *	protections already enabled.
+ * @call_site:  Address of the call site to the alloc
+ * @ptr:	Pointer to location of data structure in memory
+ * @size:	Size of the allocation
+ * @AT:		Type of allocation
  */
+static void inline __create_kobj(uintptr_t call_site, uintptr_t ptr, uint64_t
+				 size, enum AllocType AT)
+{
+        struct memorizer_kobj *kobj;
+
+        /* inline parsing */
+        kobj = memalloc(sizeof(struct memorizer_kobj));
+        if(!kobj){
+		track_failed_kobj_alloc();
+		return;
+	}
+
+        /* initialize all object metadata */
+        init_kobj(kobj, call_site, ptr, size, AT);
+
+        /* memorizer stats tracking */
+        track_alloc(AT);
+
+        /* mark object as live and link in lookup table */
+        lt_insert_kobj(kobj);
+
+        /* Grab the writer lock for the object_list and insert into object list */
+        write_lock(&object_list_spinlock);
+        list_add_tail(&kobj->object_list, &object_list);
+        write_unlock(&object_list_spinlock);
+}
 
 /**
  * memorizer_alloc() - record allocation event
@@ -1479,7 +1508,6 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 {
 
         unsigned long flags;
-        struct memorizer_kobj *kobj;
 
         if(unlikely(ptr==NULL))
                 return;
@@ -1517,30 +1545,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 #endif 
 
         local_irq_save(flags);
-
-        /* inline parsing */
-        kobj = memalloc(sizeof(struct memorizer_kobj));
-        if(!kobj){
-		//pr_crit("Cannot allocate a memorizer_kobj structure\n");
-		track_failed_kobj_alloc();
-		goto out;
-	}
-
-        /* initialize all object metadata */
-        init_kobj(kobj, (uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc, AT);
-
-        /* memorizer stats tracking */
-        track_alloc(AT);
-
-        /* mark object as live and link in lookup table */
-        lt_insert_kobj(kobj);
-
-        /* Grab the writer lock for the object_list and insert into object list */
-        write_lock(&object_list_spinlock);
-        list_add_tail(&kobj->object_list, &object_list);
-        write_unlock(&object_list_spinlock);
-
-out:
+        __create_kobj((uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc, AT);
         local_irq_restore(flags);
         __memorizer_exit();
 

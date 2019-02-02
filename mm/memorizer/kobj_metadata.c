@@ -450,7 +450,7 @@ int lt_insert_induced(void * ptr, size_t size)
 
 int lt_insert_kobj(struct memorizer_kobj *kobj)
 {
-        return __lt_insert(kobj->pa_ptr, kobj->size, kobj);
+        return __lt_insert(kobj->va_ptr, kobj->size, kobj);
 }
 
 void plt_insert(struct pid_obj pobj)

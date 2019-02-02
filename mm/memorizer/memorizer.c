@@ -789,7 +789,7 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 	}
 
 	/* Get the kernel object associated with this VA */
-	kobj = lt_get_kobj(__pa(va_ptr));
+	kobj = lt_get_kobj(va_ptr);
 
 	if(!kobj){
 		if(is_induced_obj(va_ptr))
@@ -1404,7 +1404,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 
         /* find and remove the kobj from the lookup table and return the
          * kobj */
-        kobj = lt_remove_kobj(__pa(kobj_ptr));
+        kobj = lt_remove_kobj(kobj_ptr);
 
         /*
          *   * If this is null it means we are freeing something we did
@@ -1560,7 +1560,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
         {
                 /* link in lookup table with dummy event */
                 local_irq_save(flags);
-                lt_insert_induced(__pa((uintptr_t)ptr),bytes_alloc);
+                lt_insert_induced((uintptr_t)ptr,bytes_alloc);
                 track_induced_alloc();
                 local_irq_restore(flags);
                 return;
@@ -1778,7 +1778,7 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 void memorizer_stack_page_alloc(struct task_struct *task)
 {
         /* get the object */
-        struct memorizer_kobj * stack_kobj = lt_get_kobj(__pa(task->stack));
+        struct memorizer_kobj * stack_kobj = lt_get_kobj(task->stack);
         /* if there then just mark it, but it appears to be filtered out */
         if(!stack_kobj)
         {

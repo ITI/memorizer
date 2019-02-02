@@ -2091,11 +2091,7 @@ static int create_buffers(void)
 /* number of entries at 2^5 / entry 2^25 ~~ 1 GB */
 //const size_t num_entries_perwq = 2^22;
 //#define num_entries_perwq (_AC(1,UL) << 26)
-#if INLINE_EVENT_PARSE == 0
-#define num_entries_perwq (_AC(1,UL) << 22)
-#else
-#define num_entries_perwq (_AC(1,UL) << 0)
-#endif
+#define num_entries_perwq (_AC(1,UL) << 20)
 
 struct event_list_wq_data {
     struct work_struct work;

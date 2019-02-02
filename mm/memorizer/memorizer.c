@@ -140,8 +140,11 @@
 #define MEMORIZER_DEBUG		1
 #define FIXME			0
 
-#define INLINE_EVENT_PARSE  1
-#define WORKQUEUES          0
+#define INLINE_EVENT_PARSE	1
+#define WORKQUEUES		0
+
+#define CALL_SITE_STRING	1
+#define TASK_STRING		1
 
 //==-- Prototype Declarations ---------------------------------------------==//
 static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
@@ -1135,11 +1138,15 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->alloc_type = AT;
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->object_list);
+
+#if CALL_SITE_STRING == 1
 	/* Some of the call sites are not tracked correctly so don't try */
 	if(call_site)
 		kallsyms_lookup((unsigned long) call_site, NULL, NULL,
 				//&(kobj->modsymb), kobj->funcstr);
 				NULL, kobj->funcstr);
+#endif
+#if TASK_STRING == 1
 	/* task information */
 	if (in_irq()) {
 		kobj->pid = 0;
@@ -1157,6 +1164,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 		 */
 		strncpy(kobj->comm, current->comm, sizeof(kobj->comm));
 	}
+#endif
 
 #if MEMORIZER_DEBUG >= 5
 	__print_memorizer_kobj(kobj, "Allocated and initalized kobj");

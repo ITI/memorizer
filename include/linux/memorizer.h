@@ -72,10 +72,12 @@ enum AllocType {
     MEM_INDUCED,
     MEM_BOOTMEM,
     MEM_MEMBLOCK,
+    MEM_UFO_MEMBLOCK,
     MEM_MEMORIZER,
     MEM_USER,
     MEM_BUG,
-    MEM_UNKNOWN_GLOBAL,    
+    MEM_UFO_GLOBAL,
+    MEM_UFO_NONE,
     /* TODO: Legacy type, fix in tracking code to not use */
     MEM_NONE,
     NumAllocTypes

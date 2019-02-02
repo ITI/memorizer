@@ -83,14 +83,18 @@ static char * alloc_type_str (enum AllocType AT)
         return "BOOTMEM";
     case MEM_MEMBLOCK:
         return "MEMBLOCK";
+    case MEM_UFO_MEMBLOCK:
+        return "UFO_MEMBLOCK";
     case MEM_MEMORIZER:
         return "MEMORIZER";
     case MEM_USER:
         return "USER";
     case MEM_BUG:
         return "BUG";
-    case MEM_UNKNOWN_GLOBAL:
-        return "UNKNOWN_GLOBAL";	
+    case MEM_UFO_GLOBAL:
+        return "UFO_GLOBAL";
+    case MEM_UFO_NONE:
+        return "UFO_NONE";
     case MEM_NONE:
         return "NONE";
     default:

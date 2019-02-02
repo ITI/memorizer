@@ -799,8 +799,8 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 		}
 		else if(in_memblocks(va_ptr))
 		{
-			kobj = __create_kobj(MEM_MEMBLOCK, va_ptr, size,
-					     MEM_MEMBLOCK);
+			kobj = __create_kobj(MEM_UFO_MEMBLOCK, va_ptr, size,
+					     MEM_UFO_MEMBLOCK);
 			if(!kobj)
 			{
 				kobj = general_kobjs[MEM_MEMBLOCK];
@@ -813,10 +813,23 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 		else{
 			enum AllocType AT = kasan_obj_type(va_ptr,size);
 			kobj = general_kobjs[AT];
-			if(AT == MEM_STACK_PAGE)
+			switch(AT){
+			case MEM_STACK_PAGE:
 				track_access(AT,size);
-			else
+				break;
+			case MEM_GLOBAL:
+				kobj = __create_kobj(MEM_UFO_GLOBAL, va_ptr,
+						     size, MEM_UFO_GLOBAL);
+				track_access(AT,size);
+				break;
+			case MEM_NONE:
+				kobj = __create_kobj(MEM_UFO_NONE, va_ptr,
+						     size, MEM_UFO_NONE);
+				track_access(MEM_UFO_NONE,size);
+				break;
+			default:
 				track_untracked_access(AT,size);
+			}
 		}
 	}
 	else

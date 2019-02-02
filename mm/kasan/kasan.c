@@ -453,7 +453,7 @@ enum AllocType kasan_obj_type(const void *p, unsigned int size)
 		 down more finely if we want to. 
 	      */
 	      if (p >= __start_rodata && p <= __bss_start + 0x01fea000){
-		return MEM_UNKNOWN_GLOBAL;
+		return MEM_GLOBAL;
 	      }
 	      
 	      return MEM_NONE;

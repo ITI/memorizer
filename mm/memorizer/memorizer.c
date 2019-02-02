@@ -153,6 +153,9 @@ static struct memorizer_kobj * unlocked_lookup_kobj_rbtree(uintptr_t kobj_ptr,
 static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 				       uint64_t bytes_req, uint64_t bytes_alloc,
 				       gfp_t gfp_flags, enum AllocType AT);
+static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site, uintptr_t
+						  ptr, uint64_t size, enum
+						  AllocType AT);
 void __always_inline wq_push(uintptr_t addr, size_t size, enum AccessType
         access_type, uintptr_t ip, char * tsk_name);
 static inline struct memorizer_kernel_event * wq_top(void);
@@ -796,8 +799,16 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 		}
 		else if(in_memblocks(va_ptr))
 		{
-			kobj = general_kobjs[MEM_MEMBLOCK];
-			track_access(MEM_MEMBLOCK,size);
+			kobj = __create_kobj(MEM_MEMBLOCK, va_ptr, size,
+					     MEM_MEMBLOCK);
+			if(!kobj)
+			{
+				kobj = general_kobjs[MEM_MEMBLOCK];
+				track_untracked_access(MEM_MEMBLOCK,size);
+			}
+			else {
+				track_access(MEM_MEMBLOCK,size);
+			}
 		}
 		else{
 			enum AllocType AT = kasan_obj_type(va_ptr,size);
@@ -1477,31 +1488,33 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
  * @size:	Size of the allocation
  * @AT:		Type of allocation
  */
-static void inline __create_kobj(uintptr_t call_site, uintptr_t ptr, uint64_t
-				 size, enum AllocType AT)
+static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site,
+						    uintptr_t ptr, uint64_t
+						    size, enum AllocType AT)
 {
-        struct memorizer_kobj *kobj;
+	struct memorizer_kobj *kobj;
 
-        /* inline parsing */
-        kobj = memalloc(sizeof(struct memorizer_kobj));
-        if(!kobj){
+	/* inline parsing */
+	kobj = memalloc(sizeof(struct memorizer_kobj));
+	if(!kobj){
 		track_failed_kobj_alloc();
-		return;
+		return NULL;
 	}
 
-        /* initialize all object metadata */
-        init_kobj(kobj, call_site, ptr, size, AT);
+	/* initialize all object metadata */
+	init_kobj(kobj, call_site, ptr, size, AT);
 
-        /* memorizer stats tracking */
-        track_alloc(AT);
+	/* memorizer stats tracking */
+	track_alloc(AT);
 
-        /* mark object as live and link in lookup table */
-        lt_insert_kobj(kobj);
+	/* mark object as live and link in lookup table */
+	lt_insert_kobj(kobj);
 
-        /* Grab the writer lock for the object_list and insert into object list */
-        write_lock(&object_list_spinlock);
-        list_add_tail(&kobj->object_list, &object_list);
-        write_unlock(&object_list_spinlock);
+	/* Grab the writer lock for the object_list and insert into object list */
+	write_lock(&object_list_spinlock);
+	list_add_tail(&kobj->object_list, &object_list);
+	write_unlock(&object_list_spinlock);
+	return kobj;
 }
 
 /**

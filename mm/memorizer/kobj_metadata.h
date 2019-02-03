@@ -79,6 +79,8 @@ static char * alloc_type_str (enum AllocType AT)
         return "KMEM_CACHE_ND";
     case MEM_ALLOC_PAGES:
         return "ALLOC_PAGES";
+    case MEM_VMALLOC:
+        return "VMALLOC";
     case MEM_INDUCED:
         return "INDUCED_ALLOC";
     case MEM_BOOTMEM:

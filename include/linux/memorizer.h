@@ -153,7 +153,7 @@ static inline void memorizer_kmalloc_node(unsigned long call_site, const void *p
 static inline void memorizer_kfree(unsigned long call_site, const void *ptr) {}
 static inline void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned int order, gfp_t gfp_flags) {}
 static inline void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned int order) {}
-static inline void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags) {}
+static inline void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t bytes_alloc, gfp_t gfp_flags) {}
 static inline void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int node) {}
 static inline void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr) {}
 static inline void memorizer_vmalloc_alloc(unsigned long call_site, const void *ptr, unsigned long size, gfp_t gfp_flags) {}
@@ -166,7 +166,7 @@ static inline void switchBuffer(void) {}
 static inline void memorizer_print_stats(void) {}
 static inline void memorizer_stack_page_alloc(struct task_struct * task){}
 static inline void memorizer_alloc_bootmem(unsigned long call_site, void * v, uint64_t size){}
-static inline void memorizer_memblock_alloc(phys_addr_t base, pys_addr_t size){}
+static inline void memorizer_memblock_alloc(unsigned long base, unsigned long size){}
 
 #endif /* CONFIG_MEMORIZER */
 

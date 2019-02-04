@@ -1544,6 +1544,11 @@ void vfree_atomic(const void *addr)
  */
 void vfree(const void *addr)
 {
+
+  	// Memorizer hook free. So far I haven't seen frees, so TODO check this.
+  	// In particular, I wasn't sure how to get caller, so I used the builtin below.
+	memorizer_vmalloc_free((unsigned long) addr, __builtin_return_address(0));
+	
 	BUG_ON(in_nmi());
 
 	kmemleak_free(addr);
@@ -1694,6 +1699,7 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 	void *addr;
 	unsigned long real_size = size;
 
+
 	size = PAGE_ALIGN(size);
 	if (!size || (size >> PAGE_SHIFT) > totalram_pages)
 		goto fail;
@@ -1706,6 +1712,9 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 	addr = __vmalloc_area_node(area, gfp_mask, prot, node);
 	if (!addr)
 		return NULL;
+
+	// Memorizer hooking here
+	memorizer_vmalloc_alloc((unsigned long) caller, addr, size, gfp_mask);
 
 	/*
 	 * In this function, newly allocated vm_struct has VM_UNINITIALIZED

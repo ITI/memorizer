@@ -1715,6 +1715,22 @@ bool is_memorizer_cache_alloc(char * cache_str)
         return false;
 }
 
+
+void memorizer_vmalloc_alloc(unsigned long call_site, const void *ptr,
+                unsigned long size, gfp_t gfp_flags)
+{
+        if (unlikely(ptr == NULL))
+                return;
+	__memorizer_kmalloc(call_site, ptr, size, size,
+			    gfp_flags, MEM_VMALLOC);
+}
+
+void memorizer_vmalloc_free(unsigned long call_site, const void *ptr)
+{
+  	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
+}
+
+
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
                 struct kmem_cache *s, gfp_t gfp_flags)
 {

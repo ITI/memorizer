@@ -3,7 +3,7 @@
 #include <linux/types.h>
 
 #ifdef CONFIG_KASAN
-size_t kasan_obj_type(const void *p, unsigned int size);
+enum AllocType kasan_obj_type(const void *p, unsigned int size);
 void kasan_check_read(const void *p, unsigned int size);
 void kasan_check_write(const void *p, unsigned int size);
 #else

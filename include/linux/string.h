@@ -20,12 +20,48 @@ extern void *memdup_user_nul(const void __user *, size_t);
 #ifndef __HAVE_ARCH_STRCPY
 extern char * strcpy(char *,const char *);
 #endif
+
+// strncpy()
 #ifndef __HAVE_ARCH_STRNCPY
+#ifdef CONFIG_INLINE_LIBS
+__attribute__((always_inline)) char * strncpy(char *,const char *, __kernel_size_t);
+extern inline char *strncpy(char *dest, const char *src, size_t count)
+{
+	char *tmp = dest;
+
+	while (count) {
+		if ((*tmp = *src) != 0)
+			src++;
+		tmp++;
+		count--;
+	}
+	return dest;
+}
+#else
 extern char * strncpy(char *,const char *, __kernel_size_t);
 #endif
+#endif
+
+// strlcpy
 #ifndef __HAVE_ARCH_STRLCPY
+#ifdef CONFIG_INLINE_LIBS
+__attribute__((always_inline)) size_t strlcpy(char *, const char *, size_t);
+extern inline size_t strlcpy(char *dest, const char *src, size_t size)
+{
+	size_t ret = strlen(src);
+
+	if (size) {
+		size_t len = (ret >= size) ? size - 1 : ret;
+		memcpy(dest, src, len);
+		dest[len] = '\0';
+	}
+	return ret;
+}
+#else
 size_t strlcpy(char *, const char *, size_t);
 #endif
+#endif
+
 #ifndef __HAVE_ARCH_STRSCPY
 ssize_t __must_check strscpy(char *, const char *, size_t);
 #endif
@@ -38,9 +74,31 @@ extern char * strncat(char *, const char *, __kernel_size_t);
 #ifndef __HAVE_ARCH_STRLCAT
 extern size_t strlcat(char *, const char *, __kernel_size_t);
 #endif
+
+// strcmp()
 #ifndef __HAVE_ARCH_STRCMP
+#ifdef CONFIG_INLINE_LIBS
+__attribute__((always_inline)) int strcmp(const char *,const char *);
+extern inline int strcmp(const char *cs, const char *ct)
+{
+	unsigned char c1, c2;
+
+	while (1) {
+		c1 = *cs++;
+		c2 = *ct++;
+		if (c1 != c2)
+			return c1 < c2 ? -1 : 1;
+		if (!c1)
+			break;
+	}
+	return 0;
+}
+#else
 extern int strcmp(const char *,const char *);
 #endif
+#endif
+
+
 #ifndef __HAVE_ARCH_STRNCMP
 extern int strncmp(const char *,const char *,__kernel_size_t);
 #endif
@@ -50,9 +108,24 @@ extern int strcasecmp(const char *s1, const char *s2);
 #ifndef __HAVE_ARCH_STRNCASECMP
 extern int strncasecmp(const char *s1, const char *s2, size_t n);
 #endif
+
+// strchr()
 #ifndef __HAVE_ARCH_STRCHR
+#ifdef CONFIG_INLINE_LIBS
+__attribute__((always_inline)) char * strchr(const char *,int);
+extern inline char *strchr(const char *s, int c)
+{
+  for (; *s != (char)c; ++s)
+    if (*s == '\0')
+      return NULL;
+  return (char *)s;
+}
+#else
 extern char * strchr(const char *,int);
 #endif
+#endif
+
+
 #ifndef __HAVE_ARCH_STRCHRNUL
 extern char * strchrnul(const char *,int);
 #endif
@@ -71,15 +144,53 @@ static inline __must_check char *strstrip(char *str)
 	return strim(str);
 }
 
+
+// strstr()
 #ifndef __HAVE_ARCH_STRSTR
+#ifdef CONFIG_INLINE_LIBS
+__attribute__((always_inline)) char * strstr(const char *, const char *);
+extern inline char *strstr(const char *s1, const char *s2)
+{
+	size_t l1, l2;
+
+	l2 = strlen(s2);
+	if (!l2)
+		return (char *)s1;
+	l1 = strlen(s1);
+	while (l1 >= l2) {
+		l1--;
+		if (!memcmp(s1, s2, l2))
+			return (char *)s1;
+		s1++;
+	}
+	return NULL;
+}
+#else
 extern char * strstr(const char *, const char *);
 #endif
+#endif
+
+
 #ifndef __HAVE_ARCH_STRNSTR
 extern char * strnstr(const char *, const char *, size_t);
 #endif
+
+// strlen()
 #ifndef __HAVE_ARCH_STRLEN
+#ifdef CONFIG_INLINE_LIBS
+__attribute__((always_inline)) __kernel_size_t strlen(const char *);
+extern inline size_t strlen(const char *s)
+{
+  const char *sc;
+  for (sc = s; *sc != '\0'; ++sc){}
+  return sc - s;
+}
+#else
 extern __kernel_size_t strlen(const char *);
 #endif
+#endif
+
+
 #ifndef __HAVE_ARCH_STRNLEN
 extern __kernel_size_t strnlen(const char *,__kernel_size_t);
 #endif
@@ -108,9 +219,26 @@ extern void * memmove(void *,const void *,__kernel_size_t);
 #ifndef __HAVE_ARCH_MEMSCAN
 extern void * memscan(void *,int,__kernel_size_t);
 #endif
+
+// memcmp()
 #ifndef __HAVE_ARCH_MEMCMP
+#ifdef CONFIG_INLINE_LIBS
+__attribute__((always_inline)) int memcmp(const void *,const void *,__kernel_size_t);
+extern inline int memcmp(const void *cs, const void *ct, size_t count)
+{
+	const unsigned char *su1, *su2;
+	int res = 0;
+
+	for (su1 = cs, su2 = ct; 0 < count; ++su1, ++su2, count--)
+		if ((res = *su1 - *su2) != 0)
+			break;
+	return res;
+}
+#else
 extern int memcmp(const void *,const void *,__kernel_size_t);
 #endif
+#endif
+
 #ifndef __HAVE_ARCH_MEMCHR
 extern void * memchr(const void *,int,__kernel_size_t);
 #endif

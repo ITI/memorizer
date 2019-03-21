@@ -49,6 +49,7 @@ EXPORT_SYMBOL_GPL(copy_from_user_nmi);
  * Returns number of bytes that could not be copied.
  * On success, this will be zero.
  */
+#ifndef CONFIG_INLINE_LIBS
 unsigned long _copy_to_user(void __user *to, const void *from, unsigned n)
 {
 	if (access_ok(VERIFY_WRITE, to, n))
@@ -56,7 +57,7 @@ unsigned long _copy_to_user(void __user *to, const void *from, unsigned n)
 	return n;
 }
 EXPORT_SYMBOL(_copy_to_user);
-
+#endif
 /**
  * copy_from_user: - Copy a block of data from user space.
  * @to:   Destination address, in kernel space.

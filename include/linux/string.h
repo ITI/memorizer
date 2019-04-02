@@ -52,7 +52,11 @@ extern inline size_t strlcpy(char *dest, const char *src, size_t size)
 
 	if (size) {
 		size_t len = (ret >= size) ? size - 1 : ret;
-		memcpy(dest, src, len);
+		//memcpy(dest, src, len);
+		int i;
+		for (i = 0; i < len; i++){
+		  dest[i] = src[i];
+		}
 		dest[len] = '\0';
 	}
 	return ret;

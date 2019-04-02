@@ -2,7 +2,9 @@
 #define BOOT_STRING_H
 
 /* Undef any of these macros coming from string_32.h. */
+#ifdef CONFIG_INLINE_LIBS
 #undef memcpy
+#endif
 #undef memset
 #undef memcmp
 

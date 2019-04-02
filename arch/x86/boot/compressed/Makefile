@@ -39,7 +39,9 @@ KBUILD_AFLAGS  := $(KBUILD_CFLAGS) -D__ASSEMBLY__
 GCOV_PROFILE := n
 UBSAN_SANITIZE :=n
 
-LDFLAGS := -m elf_$(UTS_MACHINE)
+# Memorizer: added allowing multiple definitions so that inlining libs works with
+# the compressed vmlinux too. There's probably a better way...
+LDFLAGS := -m elf_$(UTS_MACHINE) --allow-multiple-definition
 # Compressed kernel should be built as PIE since it may be loaded at any
 # address by the bootloader.
 ifeq ($(CONFIG_X86_32),y)

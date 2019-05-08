@@ -417,6 +417,8 @@ bool in_memblocks(uintptr_t va_ptr)
 //int test_and_set_bit(unsigned long nr, volatile unsigned long *addr);
 volatile unsigned long inmem;
 
+volatile unsigned long in_getfreepages;
+
 uintptr_t cur_caller = 0;
 
 /**
@@ -446,6 +448,7 @@ static __always_inline bool in_memorizer(void)
 {
     return test_bit(0,&inmem);
 }
+
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
@@ -1767,10 +1770,31 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
 			   int order, gfp_t gfp_flags)
 {
+
+  if (test_bit(0,&in_getfreepages)){
+    return;
+  }
     __memorizer_kmalloc(call_site, page_address(page),
             (uintptr_t) PAGE_SIZE * (2 << order),
             (uintptr_t) PAGE_SIZE * (2 << order),
             gfp_flags, MEM_ALLOC_PAGES);
+
+}
+
+void memorizer_start_getfreepages(){
+  test_and_set_bit_lock(0,&in_getfreepages);
+}
+
+void memorizer_alloc_getfreepages(unsigned long call_site, struct page *page, unsigned
+			   int order, gfp_t gfp_flags)
+{
+
+    __memorizer_kmalloc(call_site, page_address(page),
+            (uintptr_t) PAGE_SIZE * (2 << order),
+            (uintptr_t) PAGE_SIZE * (2 << order),
+            gfp_flags, MEM_ALLOC_PAGES);
+
+    clear_bit_unlock(0,&in_getfreepages);
 }
 
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned

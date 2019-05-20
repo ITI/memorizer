@@ -310,6 +310,8 @@ void kasan_report(unsigned long addr, size_t size,
 
 	kasan_report_error(&info);
 }
+// Nick temporarily exporting the report function
+// EXPORT_SYMBOL(kasan_report);
 
 
 #define DEFINE_ASAN_REPORT_LOAD(size)                     \

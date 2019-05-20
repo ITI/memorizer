@@ -135,6 +135,7 @@
 #include "util.h"
 #include "memalloc.h"
 #include "../slab.h"
+//#include "../kasan/kasan.h"
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
@@ -821,6 +822,10 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 				track_access(AT,size);
 				break;
 			case MEM_HEAP:
+			  // Temporarily added by Nick. Trying to dump info for untracked heap objs.
+			  // Don't have accessing IP easily on hand, just attributing to kasan_report
+			  // kasan_report((unsigned long) va_ptr, size, 1, &kasan_report);
+
 				kobj = __create_kobj(MEM_UFO_HEAP, va_ptr,
 						     size, MEM_UFO_HEAP);
 				track_access(MEM_UFO_HEAP,size);

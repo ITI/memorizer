@@ -135,7 +135,7 @@
 #include "util.h"
 #include "memalloc.h"
 #include "../slab.h"
-//#include "../kasan/kasan.h"
+#include "../kasan/kasan.h"
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
@@ -780,6 +780,9 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
  * already operating with interrupts off and preemption disabled, and thus we
  * cannot sleep.
  */
+
+static int reports_shown = 0;
+
 static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
         uintptr_t va_ptr, pid_t pid, size_t access_type, size_t size)
 {
@@ -816,15 +819,19 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 		}
 		else{
 			enum AllocType AT = kasan_obj_type(va_ptr,size);
-			kobj = general_kobjs[AT];
+			kobj =  general_kobjs[AT];
 			switch(AT){
 			case MEM_STACK_PAGE:
 				track_access(AT,size);
 				break;
 			case MEM_HEAP:
+
 			  // Temporarily added by Nick. Trying to dump info for untracked heap objs.
 			  // Don't have accessing IP easily on hand, just attributing to kasan_report
-			  // kasan_report((unsigned long) va_ptr, size, 1, &kasan_report);
+			  if (reports_shown < 80){
+			    kasan_report((unsigned long) va_ptr, size, 1, &kasan_report);
+			    reports_shown++;
+			  }
 
 				kobj = __create_kobj(MEM_UFO_HEAP, va_ptr,
 						     size, MEM_UFO_HEAP);
@@ -1739,14 +1746,32 @@ void memorizer_vmalloc_free(unsigned long call_site, const void *ptr)
 }
 
 
+static int filps_allocated = 0;
+
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
                 struct kmem_cache *s, gfp_t gfp_flags)
 {
         if (unlikely(ptr == NULL))
                 return;
-        if(!is_memorizer_cache_alloc(s->name))
-                __memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
-                                gfp_flags, MEM_KMEM_CACHE);
+
+	if(!memstrcmp("filp",s->name)){
+	  filps_allocated += 1;
+	  if (memorizer_log_access || filps_allocated % 500 == 0){
+	    pr_info("Memorizer side, allocating a filp! id=%d, s=%s, addr=%lx\n", filps_allocated, s->name, ptr);
+	  }
+	}
+
+        //if(!is_memorizer_cache_alloc(s->name))
+	__memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
+			    gfp_flags, MEM_KMEM_CACHE);
+
+	
+	if (memorizer_log_access){
+	  struct memorizer_kobj * kobj = lt_get_kobj(ptr);
+	  if (!kobj){
+	    pr_info("Could not find obj directly after adding! addr %lx cache %s\n", ptr, s -> name);
+	  }
+	}
 }
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
@@ -1768,6 +1793,11 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
 		return;
 	}
+
+	//if(!memstrcmp("filp",s->name) && memorizer_log_access){
+	//pr_info("\tMemorizer side, freeing a filp! addr=%lx\n",ptr);
+	//}
+
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 }
 

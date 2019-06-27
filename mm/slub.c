@@ -2725,6 +2725,11 @@ static __always_inline void *slab_alloc(struct kmem_cache *s,
 
 void *kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
 {
+
+  //if(strcmp("filp",s->name) == 0 && memorizer_log_access){
+    //	  pr_info("Slub side, allocating a filp! s=%s\n", s->name);
+  //	}
+
 	void *ret = slab_alloc(s, gfpflags, _RET_IP_);
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s->object_size,

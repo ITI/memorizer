@@ -1141,13 +1141,37 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
 
+/*
+ *
+ */
+static struct kmem_cache * get_slab_cache(const void *  addr)
+{
+	if ((addr >= (void *)PAGE_OFFSET) && (addr < high_memory))
+	{
+		struct page *page = virt_to_head_page(addr);
+		if (PageSlab(page)) {
+			return page->slab_cache;
+			//void *object;
+			//struct kmem_cache *cache = page->slab_cache;
+			//object = nearest_obj(cache, page, access_addr);
+			//pr_err("Object at %p, in cache %s size: %d\n", object,
+			       //cache->name, cache->object_size);
+		}
+		return NULL;
+	}
+	return NULL;
+}
+
 /**
  * init_kobj() - Initalize the metadata to track the recent allocation
  */
 static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
-		      uintptr_t ptr_to_kobj, size_t bytes_alloc, enum AllocType AT)
+		      uintptr_t ptr_to_kobj, size_t bytes_alloc,
+		      enum AllocType AT)
 {
 	rwlock_init(&kobj->rwlock);
+
+	struct kmem_cache * cache;
 
 	if(atomic_long_inc_and_test(&global_kobj_id_count)){
 		pr_warn("Global kernel object counter overlapped...");
@@ -1167,6 +1191,17 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->alloc_type = AT;
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->object_list);
+
+	/* get the slab name */
+	cache = get_slab_cache(kobj->va_ptr);
+	if(cache){
+		kobj->slabname = memalloc(strlen(cache->name)+1);
+		strncpy(kobj->slabname, cache->name, strlen(cache->name)+1);
+		kobj->slabname[strlen(cache->name)+1]='\0';
+	} else {
+		kobj->slabname = memalloc(strlen("no-slab"));
+		kobj->slabname = "no-slab";
+	}
 
 #if CALL_SITE_STRING == 1
 	/* Some of the call sites are not tracked correctly so don't try */
@@ -1899,10 +1934,11 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	}
 	kobj->printed = true;
 	/* Print object allocation info */
-	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s\n",
+	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s\n",
 		   (void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
 		   kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
-		   kobj->free_ip, alloc_type_str(kobj->alloc_type), kobj->comm);
+		   kobj->free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
+		   kobj->slabname);
 
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list)

@@ -103,6 +103,7 @@
 #include <linux/memorizer.h>
 #include <linux/module.h>
 #include <linux/mm.h>
+#include <linux/mm_types.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
 #include <asm/page_64.h>
@@ -161,6 +162,7 @@ void __always_inline wq_push(uintptr_t addr, size_t size, enum AccessType
 static inline struct memorizer_kernel_event * wq_top(void);
 void __drain_active_work_queue(void);
 void switch_to_next_work_queue(void);
+static struct memorizer_kobj * add_heap_UFO(uintptr_t va);
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
@@ -818,8 +820,7 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 				track_access(AT,size);
 				break;
 			case MEM_HEAP:
-				kobj = __create_kobj(MEM_UFO_HEAP, va_ptr,
-						     size, MEM_UFO_HEAP);
+				kobj = add_heap_UFO(va_ptr);
 				track_access(MEM_UFO_HEAP,size);
 				break;
 			case MEM_GLOBAL:
@@ -1144,7 +1145,7 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 /*
  *
  */
-static struct kmem_cache * get_slab_cache(const void *  addr)
+static struct kmem_cache * get_slab_cache(const void * addr)
 {
 	if ((addr >= (void *)PAGE_OFFSET) && (addr < high_memory))
 	{
@@ -1160,6 +1161,33 @@ static struct kmem_cache * get_slab_cache(const void *  addr)
 		return NULL;
 	}
 	return NULL;
+}
+
+/*
+ * If we miss lookup the object from the cache.  Note that the init_kobj will
+ * preset a string for the slab name. So these UFOs are aggregated in an
+ * intelligent and still useful way. We've missed the alloc (and thereofre the
+ * alloc site) but we've at least grouped them by type. Assume we get a page
+ * because we are in this case.
+ */
+static struct memorizer_kobj * add_heap_UFO(uintptr_t va)
+{
+	struct memorizer_kobj *kobj = NULL;
+	if ((va >= (void *)PAGE_OFFSET) && (va < high_memory))
+	{
+		struct page *page = virt_to_head_page(va);
+		if (PageSlab(page)) {
+			void *object;
+			struct kmem_cache *cache = page->slab_cache;
+			object = nearest_obj(cache, page, va);
+			//pr_err("Object at %p, in cache %s size: %d\n", object,
+			       //cache->name, cache->object_size);
+			kobj = __create_kobj(MEM_UFO_HEAP, object,
+					     cache->object_size,
+					     MEM_UFO_HEAP);
+		}
+	}
+	return kobj;
 }
 
 /**

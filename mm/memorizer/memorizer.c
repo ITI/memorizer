@@ -103,6 +103,7 @@
 #include <linux/memorizer.h>
 #include <linux/module.h>
 #include <linux/mm.h>
+#include <linux/mm_types.h>
 #include <linux/preempt.h>
 #include <linux/printk.h>
 #include <asm/page_64.h>
@@ -162,6 +163,7 @@ void __always_inline wq_push(uintptr_t addr, size_t size, enum AccessType
 static inline struct memorizer_kernel_event * wq_top(void);
 void __drain_active_work_queue(void);
 void switch_to_next_work_queue(void);
+static struct memorizer_kobj * add_heap_UFO(uintptr_t va);
 //==-- Data types and structs for building maps ---------------------------==//
 
 /* Size of the memory access recording worklist arrays */
@@ -826,6 +828,7 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 				break;
 			case MEM_HEAP:
 
+
 			  // Temporarily added by Nick. Trying to dump info for untracked heap objs.
 			  // Don't have accessing IP easily on hand, just attributing to kasan_report
 			  if (reports_shown < 80){
@@ -833,8 +836,11 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 			    reports_shown++;
 			  }
 
-				kobj = __create_kobj(MEM_UFO_HEAP, va_ptr,
-						     size, MEM_UFO_HEAP);
+			  //kobj = __create_kobj(MEM_UFO_HEAP, va_ptr,
+			  //		     size, MEM_UFO_HEAP);
+
+				kobj = add_heap_UFO(va_ptr);
+				
 				track_access(MEM_UFO_HEAP,size);
 				break;
 			case MEM_GLOBAL:
@@ -1156,13 +1162,64 @@ void __always_inline memorizer_fork(struct task_struct *p, long nr){
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
 
+/*
+ *
+ */
+static struct kmem_cache * get_slab_cache(const void * addr)
+{
+	if ((addr >= (void *)PAGE_OFFSET) && (addr < high_memory))
+	{
+		struct page *page = virt_to_head_page(addr);
+		if (PageSlab(page)) {
+			return page->slab_cache;
+			//void *object;
+			//struct kmem_cache *cache = page->slab_cache;
+			//object = nearest_obj(cache, page, access_addr);
+			//pr_err("Object at %p, in cache %s size: %d\n", object,
+			       //cache->name, cache->object_size);
+		}
+		return NULL;
+	}
+	return NULL;
+}
+
+/*
+ * If we miss lookup the object from the cache.  Note that the init_kobj will
+ * preset a string for the slab name. So these UFOs are aggregated in an
+ * intelligent and still useful way. We've missed the alloc (and thereofre the
+ * alloc site) but we've at least grouped them by type. Assume we get a page
+ * because we are in this case.
+ */
+static struct memorizer_kobj * add_heap_UFO(uintptr_t va)
+{
+	struct memorizer_kobj *kobj = NULL;
+	if ((va >= (void *)PAGE_OFFSET) && (va < high_memory))
+	{
+		struct page *page = virt_to_head_page(va);
+		if (PageSlab(page)) {
+			void *object;
+			struct kmem_cache *cache = page->slab_cache;
+			object = nearest_obj(cache, page, va);
+			//pr_err("Object at %p, in cache %s size: %d\n", object,
+			       //cache->name, cache->object_size);
+			kobj = __create_kobj(MEM_UFO_HEAP, object,
+					     cache->object_size,
+					     MEM_UFO_HEAP);
+		}
+	}
+	return kobj;
+}
+
 /**
  * init_kobj() - Initalize the metadata to track the recent allocation
  */
 static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
-		      uintptr_t ptr_to_kobj, size_t bytes_alloc, enum AllocType AT)
+		      uintptr_t ptr_to_kobj, size_t bytes_alloc,
+		      enum AllocType AT)
 {
 	rwlock_init(&kobj->rwlock);
+
+	struct kmem_cache * cache;
 
 	if(atomic_long_inc_and_test(&global_kobj_id_count)){
 		pr_warn("Global kernel object counter overlapped...");
@@ -1182,6 +1239,17 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->alloc_type = AT;
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->object_list);
+
+	/* get the slab name */
+	cache = get_slab_cache(kobj->va_ptr);
+	if(cache){
+		kobj->slabname = memalloc(strlen(cache->name)+1);
+		strncpy(kobj->slabname, cache->name, strlen(cache->name)+1);
+		kobj->slabname[strlen(cache->name)+1]='\0';
+	} else {
+		kobj->slabname = memalloc(strlen("no-slab"));
+		kobj->slabname = "no-slab";
+	}
 
 #if CALL_SITE_STRING == 1
 	/* Some of the call sites are not tracked correctly so don't try */
@@ -1958,10 +2026,11 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	}
 	kobj->printed = true;
 	/* Print object allocation info */
-	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s\n",
+	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s\n",
 		   (void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
 		   kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
-		   kobj->free_ip, alloc_type_str(kobj->alloc_type), kobj->comm);
+		   kobj->free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
+		   kobj->slabname);
 
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list)

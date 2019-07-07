@@ -276,6 +276,18 @@ static bool is_tracked_obj(uintptr_t l1entry)
 		MEM_INDUCED;
 }
 
+/**
+ * is_induced_obj() -
+ *
+ * Args:
+ *   @addr: the virtual address to check
+ *
+ * Description:
+ *	Return the code that is stored in the upper 5 bits of the pointer value.
+ *	This is stored when we detect that we've had an induced allocation. A
+ *	normally tracked allocation will have the value 0 and thus evaluate to
+ *	false.
+ */
 bool is_induced_obj(uintptr_t addr)
 {
         struct memorizer_kobj **l1e = tbl_get_l1_entry(addr);

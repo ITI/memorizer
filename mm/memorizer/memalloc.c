@@ -83,7 +83,7 @@ void * memalloc(unsigned long size)
 	if(!pool_next_avail_byte)
 		return 0;
 	if(pool_next_avail_byte + size > pool_end)
-		panic("Memorizer ran out of internal heap");
+		panic("Memorizer ran out of internal heap: add more with kernel boot flag (# is read as GB): memalloc_size=60");
 	pool_next_avail_byte += size;
 	return va;
 }

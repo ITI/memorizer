@@ -123,8 +123,8 @@ static char * alloc_type_str (enum AllocType AT)
  * This data structure captures the details of allocated objects
  */
 struct memorizer_kobj {
-	struct rb_node	rb_node;
-    enum AllocType  alloc_type;
+	struct rb_node	    rb_node;
+	enum AllocType      alloc_type;
 	rwlock_t	    rwlock;
 	long		    obj_id;
 	uintptr_t	    alloc_ip;
@@ -132,15 +132,16 @@ struct memorizer_kobj {
 	uintptr_t	    va_ptr;
 	uintptr_t	    pa_ptr;
 	size_t		    size;
-	unsigned long	alloc_jiffies;
-	unsigned long	free_jiffies;
+	unsigned long	    alloc_jiffies;
+	unsigned long	    free_jiffies;
 	pid_t		    pid;
 	char		    comm[TASK_COMM_LEN];
 	char		    funcstr[KSYM_NAME_LEN];
 	bool		    printed;
 	//char		    *modsymb[KSYM_NAME_LEN];
-	struct list_head	object_list;
-	struct list_head	access_counts;
+	char		    *slabname;
+	struct list_head    object_list;
+	struct list_head    access_counts;
 };
 
 /**

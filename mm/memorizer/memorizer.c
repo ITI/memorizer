@@ -827,18 +827,14 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 				track_access(AT,size);
 				break;
 			case MEM_HEAP:
-
-
-			  // Temporarily added by Nick. Trying to dump info for untracked heap objs.
-			  // Don't have accessing IP easily on hand, just attributing to kasan_report
-			  if (reports_shown < 80){
-			    kasan_report((unsigned long) va_ptr, size, 1, &kasan_report);
-			    reports_shown++;
-			  }
-
-			  //kobj = __create_kobj(MEM_UFO_HEAP, va_ptr,
-			  //		     size, MEM_UFO_HEAP);
-
+#if 1
+				// Temporarily added by Nick. Trying to dump info for untracked heap objs.
+				// Don't have accessing IP easily on hand, just attributing to kasan_report
+				if (reports_shown < 5){
+					kasan_report((unsigned long) va_ptr, size, 1, &kasan_report);
+					reports_shown++;
+				}
+#endif
 				kobj = add_heap_UFO(va_ptr);
 				
 				track_access(MEM_UFO_HEAP,size);
@@ -1810,7 +1806,7 @@ void memorizer_vmalloc_alloc(unsigned long call_site, const void *ptr,
 
 void memorizer_vmalloc_free(unsigned long call_site, const void *ptr)
 {
-  	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
+	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 }
 
 
@@ -1821,6 +1817,7 @@ void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
 {
         if (unlikely(ptr == NULL))
                 return;
+#if 0
 
 	if(!memstrcmp("filp",s->name)){
 	  filps_allocated += 1;
@@ -1828,18 +1825,21 @@ void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
 	    pr_info("Memorizer side, allocating a filp! id=%d, s=%s, addr=%lx\n", filps_allocated, s->name, ptr);
 	  }
 	}
+#endif
 
         //if(!is_memorizer_cache_alloc(s->name))
-	__memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
+	__memorizer_kmalloc(call_site, ptr, s->object_size, s->object_size,
 			    gfp_flags, MEM_KMEM_CACHE);
 
-	
+
+#if 0
 	if (memorizer_log_access){
 	  struct memorizer_kobj * kobj = lt_get_kobj(ptr);
 	  if (!kobj){
 	    pr_info("Could not find obj directly after adding! addr %lx cache %s\n", ptr, s -> name);
 	  }
 	}
+#endif
 }
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
@@ -1848,8 +1848,9 @@ void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
         if (unlikely(ptr == NULL))
                 return;
         if(!is_memorizer_cache_alloc(s->name))
-                __memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
-                                gfp_flags, MEM_KMEM_CACHE_ND);
+		__memorizer_kmalloc(call_site, ptr, s->object_size,
+				    s->object_size, gfp_flags,
+				    MEM_KMEM_CACHE_ND);
 }
 
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)

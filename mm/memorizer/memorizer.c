@@ -1240,10 +1240,9 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	cache = get_slab_cache(kobj->va_ptr);
 	if(cache){
 		kobj->slabname = memalloc(strlen(cache->name)+1);
-		strncpy(kobj->slabname, cache->name, strlen(cache->name)+1);
-		kobj->slabname[strlen(cache->name)+1]='\0';
+		strncpy(kobj->slabname, cache->name, strlen(cache->name));
+		kobj->slabname[strlen(cache->name)]='\0';
 	} else {
-		kobj->slabname = memalloc(strlen("no-slab"));
 		kobj->slabname = "no-slab";
 	}
 

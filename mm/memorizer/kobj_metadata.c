@@ -327,8 +327,7 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t addr)
         }
         else
         {
-                kobj = NULL;
-		return;
+		return NULL;
         }
 
 	if(kobj)

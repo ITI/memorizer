@@ -93,6 +93,9 @@ enum MEMORIZER_CODES {
     MEM_KASAN_N = 0x5, /* for KASAN with no ret ip */
 };
 
+// Special value to indicate the alloc_ip of preallocated objects
+#define MEMORIZER_PREALLOCED 0xfeedbeef
+
 /* Init and Misc */
 void __init memorizer_init(void);
 int memorizer_init_from_driver(void);
@@ -123,6 +126,7 @@ void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
         struct kmem_cache *s, gfp_t gfp_flags); 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
         struct kmem_cache *s, gfp_t gfp_flags, int node); 
+bool memorizer_kmem_cache_set_alloc(unsigned long call_site, const void *ptr);
 
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr);
 void memorizer_vmalloc_alloc(unsigned long call_site, const void *ptr, unsigned long size, gfp_t gfp_flags);
@@ -160,6 +164,7 @@ static inline void memorizer_alloc_pages(unsigned long call_site, struct page *p
 static inline void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned int order) {}
 static inline void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr, size_t bytes_alloc, gfp_t gfp_flags) {}
 static inline void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr, size_t bytes_req, size_t bytes_alloc, gfp_t gfp_flags, int node) {}
+static inline bool memorizer_kmem_cache_set_alloc(unsigned long call_site, const void *ptr){}
 static inline void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr) {}
 static inline void memorizer_vmalloc_alloc(unsigned long call_site, const void *ptr, unsigned long size, gfp_t gfp_flags) {}
 static inline void memorizer_vmalloc_free(unsigned long call_site, const void *ptr) {}

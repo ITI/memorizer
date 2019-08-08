@@ -1809,6 +1809,22 @@ void memorizer_vmalloc_free(unsigned long call_site, const void *ptr)
 }
 
 
+// Update the allocation site of a kmem_cache object, only if has current special
+// value of MEMORIZER_PREALLOCED.
+bool memorizer_kmem_cache_set_alloc(unsigned long call_site, const void * ptr){
+  
+  struct memorizer_kobj * kobj = lt_get_kobj(ptr);
+
+  if (kobj == NULL){
+    return false;
+  } else {
+    if (kobj -> alloc_ip == MEMORIZER_PREALLOCED){
+      kobj -> alloc_ip = call_site;
+    }
+    return true;
+  }
+}
+
 static int filps_allocated = 0;
 
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,

@@ -3895,7 +3895,10 @@ EXPORT_SYMBOL(__get_free_pages);
 
 unsigned long get_zeroed_page(gfp_t gfp_mask)
 {
-	return __get_free_pages(gfp_mask | __GFP_ZERO, 0);
+  // Memorizer hook here to attribute alloc to this caller
+  unsigned long ret = __get_free_pages(gfp_mask | __GFP_ZERO, 0);
+  memorizer_alloc_pages(_RET_IP_, (void *) ret, 0, gfp_mask);
+  return ret;
 }
 EXPORT_SYMBOL(get_zeroed_page);
 
@@ -4069,7 +4072,13 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
 	unsigned long addr;
 
 	addr = __get_free_pages(gfp_mask, order);
-	return make_alloc_exact(addr, order, size);
+	void * ret = make_alloc_exact(addr, order, size);
+	
+	// Memorizer hook here to attribute alloc to this caller
+	// Special Memorizer hook for exact page allocation
+	memorizer_alloc_pages_exact(_RET_IP_, ret, size, gfp_mask);
+	
+	return ret;
 }
 EXPORT_SYMBOL(alloc_pages_exact);
 

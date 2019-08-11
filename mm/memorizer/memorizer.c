@@ -128,6 +128,8 @@
 #include <linux/kasan-checks.h>
 #include <linux/mempool.h>
 
+#include<asm/fixmap.h>
+
 #include "kobj_metadata.h"
 #include "event_structs.h"
 #include "FunctionHashTable.h"
@@ -137,6 +139,8 @@
 #include "memalloc.h"
 #include "../slab.h"
 #include "../kasan/kasan.h"
+
+
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
@@ -808,7 +812,8 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 		}
 		else if(in_memblocks(va_ptr))
 		{
-			kobj = __create_kobj(MEM_UFO_MEMBLOCK, va_ptr, size,
+		        // Instead of creating kobjs for every 8 bytes of memblock, create for every 64
+			kobj = __create_kobj(MEM_UFO_MEMBLOCK, va_ptr, 64,
 					     MEM_UFO_MEMBLOCK);
 			if(!kobj)
 			{
@@ -828,8 +833,8 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 				break;
 			case MEM_HEAP:
 #if 1
-				// Temporarily added by Nick. Trying to dump info for untracked heap objs.
-				// Don't have accessing IP easily on hand, just attributing to kasan_report
+				// Debugging feature to print a KASAN report for missed heap accesses.
+			        // Only prints up to 5 reports.
 				if (reports_shown < 5){
 					kasan_report((unsigned long) va_ptr, size, 1, &kasan_report);
 					reports_shown++;
@@ -1825,36 +1830,16 @@ bool memorizer_kmem_cache_set_alloc(unsigned long call_site, const void * ptr){
   }
 }
 
-static int filps_allocated = 0;
-
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
                 struct kmem_cache *s, gfp_t gfp_flags)
 {
         if (unlikely(ptr == NULL))
                 return;
-#if 0
-
-	if(!memstrcmp("filp",s->name)){
-	  filps_allocated += 1;
-	  if (memorizer_log_access || filps_allocated % 500 == 0){
-	    pr_info("Memorizer side, allocating a filp! id=%d, s=%s, addr=%lx\n", filps_allocated, s->name, ptr);
-	  }
-	}
-#endif
 
         //if(!is_memorizer_cache_alloc(s->name))
-	__memorizer_kmalloc(call_site, ptr, s->object_size, s->object_size,
+	__memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
 			    gfp_flags, MEM_KMEM_CACHE);
 
-
-#if 0
-	if (memorizer_log_access){
-	  struct memorizer_kobj * kobj = lt_get_kobj(ptr);
-	  if (!kobj){
-	    pr_info("Could not find obj directly after adding! addr %lx cache %s\n", ptr, s -> name);
-	  }
-	}
-#endif
 }
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
@@ -1864,7 +1849,7 @@ void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
                 return;
         if(!is_memorizer_cache_alloc(s->name))
 		__memorizer_kmalloc(call_site, ptr, s->object_size,
-				    s->object_size, gfp_flags,
+				    s->size, gfp_flags,
 				    MEM_KMEM_CACHE_ND);
 }
 
@@ -1878,10 +1863,6 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 		return;
 	}
 
-	//if(!memstrcmp("filp",s->name) && memorizer_log_access){
-	//pr_info("\tMemorizer side, freeing a filp! addr=%lx\n",ptr);
-	//}
-
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 }
 
@@ -1894,11 +1875,29 @@ void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
     return;
   }
     __memorizer_kmalloc(call_site, page_address(page),
-            (uintptr_t) PAGE_SIZE * (2 << order),
-            (uintptr_t) PAGE_SIZE * (2 << order),
+            (uintptr_t) PAGE_SIZE * (1 << order),
+            (uintptr_t) PAGE_SIZE * (1 << order),
             gfp_flags, MEM_ALLOC_PAGES);
 
 }
+
+/* This is a slight variation to memorizer_alloc_pages(). Alloc_pages() can only return
+ * a power-of-two number of pages, whereas alloc_pages_exact() can return
+ * any specific number of pages. We don't want Memorizer to track the gap
+ * between the two, so use this special memorizer hook for this case. */
+void memorizer_alloc_pages_exact(unsigned long call_site, void * ptr, unsigned
+			   int size, gfp_t gfp_flags)
+{
+
+  // Compute the actual number of bytes that will be allocated
+  unsigned long alloc_size = PAGE_ALIGN(size);
+
+  __memorizer_kmalloc(call_site, ptr,
+		      alloc_size, alloc_size,
+		      gfp_flags, MEM_ALLOC_PAGES);
+
+}
+
 
 void memorizer_start_getfreepages(){
   test_and_set_bit_lock(0,&in_getfreepages);
@@ -1909,8 +1908,8 @@ void memorizer_alloc_getfreepages(unsigned long call_site, struct page *page, un
 {
 
     __memorizer_kmalloc(call_site, page_address(page),
-            (uintptr_t) PAGE_SIZE * (2 << order),
-            (uintptr_t) PAGE_SIZE * (2 << order),
+            (uintptr_t) PAGE_SIZE * (1 << order),
+            (uintptr_t) PAGE_SIZE * (1 << order),
             gfp_flags, MEM_ALLOC_PAGES);
 
     clear_bit_unlock(0,&in_getfreepages);
@@ -2650,7 +2649,7 @@ void __init memorizer_init(void)
 		cfg_log_on = false;
 	}
 	print_live_obj = true;
-
+	
 	local_irq_restore(flags);
 	__memorizer_exit();
 }
@@ -2723,6 +2722,7 @@ static int memorizer_late_init(void)
 	pr_info("Memorizer initialized\n");
 	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
 	pr_info("Size of memorizer_kernel_event:%d\n",sizeof(struct memorizer_kernel_event));
+	pr_info("FIXADDR_START: %p,  FIXADDR_SIZE %p", FIXADDR_START, FIXADDR_SIZE);	
 	print_pool_info();
 	print_stats(KERN_INFO);
 

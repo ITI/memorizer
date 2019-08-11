@@ -1384,8 +1384,10 @@ static void setup_object(struct kmem_cache *s, struct page *page,
 				void *object)
 {
 
-        // Objects now get allocated inside setup_object before constructor is called.
-        memorizer_kmem_cache_alloc(MEMORIZER_PREALLOCED, object, s, last_flags);
+  /* This function is called when Slub allocates new objects for a cache.
+   * Memorizer preallocates objects here so any accesses from constructors
+   * are captured correctly. */ 
+  memorizer_kmem_cache_alloc(MEMORIZER_PREALLOCED, object, s, last_flags);
 	
 	setup_object_debug(s, page, object);
 	kasan_init_slab_obj(s, object);
@@ -1567,7 +1569,7 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 			goto out;
 		stat(s, ORDER_FALLBACK);
 	}
-
+	
 	if (kmemcheck_enabled &&
 	    !(s->flags & (SLAB_NOTRACK | DEBUG_DEFAULT_FLAGS))) {
 		int pages = 1 << oo_order(oo);
@@ -1599,7 +1601,7 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 
 	kasan_poison_slab(page);
 
-	// For Memorizer, let's not shuffle slab. This pushes all set_object to the loop below
+	// For Memorizer, let's not shuffle slab. This way there's only one place where setup_object() is called.
 	// shuffle = shuffle_freelist(s, page);
 	shuffle = false;
 
@@ -3750,8 +3752,12 @@ void *__kmalloc(size_t size, gfp_t flags)
 	struct kmem_cache *s;
 	void *ret;
 
-	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))
-		return kmalloc_large(size, flags);
+	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE)){
+	  unsigned int order = get_order(size);
+	  void * ret = kmalloc_large(size, flags);
+	  memorizer_kmalloc(_RET_IP_, ret, PAGE_SIZE << order, PAGE_SIZE << order, flags);
+	  return ret;
+	}
 
 	s = kmalloc_slab(size, flags);
 

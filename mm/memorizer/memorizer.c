@@ -415,7 +415,7 @@ bool in_memblocks(uintptr_t va_ptr)
 	{
 		uintptr_t base = memblock_events[i].loc;
 		uintptr_t end = memblock_events[i].loc + memblock_events[i].loc;
-		if(pa > base && pa < end)
+		if(pa >= base && pa < end)
 			return true;
 	}
 	return false;

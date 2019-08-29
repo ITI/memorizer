@@ -85,6 +85,13 @@ enum AllocType {
     NumAllocTypes
 };
 
+/* Storage for global metadata table. Used for offline processing of globals */
+extern char * global_table_text;
+extern char * global_table_ptr;
+
+/* Special value to indicate the alloc_ip of preallocated objects */
+#define MEMORIZER_PREALLOCED 0xfeedbeef
+
 #ifdef CONFIG_MEMORIZER /*----------- !CONFIG_MEMORIZER -------------------- */
 
 /* Special codes */
@@ -92,9 +99,6 @@ enum MEMORIZER_CODES {
     /* Assume this is the compiler but don't know */
     MEM_KASAN_N = 0x5, /* for KASAN with no ret ip */
 };
-
-// Special value to indicate the alloc_ip of preallocated objects
-#define MEMORIZER_PREALLOCED 0xfeedbeef
 
 /* Init and Misc */
 void __init memorizer_init(void);

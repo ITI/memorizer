@@ -1379,9 +1379,16 @@ static inline void slab_free_freelist_hook(struct kmem_cache *s,
 #endif
 }
 
+static gfp_t last_flags = 0;
 static void setup_object(struct kmem_cache *s, struct page *page,
 				void *object)
 {
+
+  /* This function is called when Slub allocates new objects for a cache.
+   * Memorizer preallocates objects here so any accesses from constructors
+   * are captured correctly. */ 
+  memorizer_kmem_cache_alloc(MEMORIZER_PREALLOCED, object, s, last_flags);
+	
 	setup_object_debug(s, page, object);
 	kasan_init_slab_obj(s, object);
 	if (unlikely(s->ctor)) {
@@ -1543,6 +1550,9 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 	 * so we fall-back to the minimum order allocation.
 	 */
 	alloc_gfp = (flags | __GFP_NOWARN | __GFP_NORETRY) & ~__GFP_NOFAIL;
+
+	last_flags = alloc_gfp;
+	
 	if ((alloc_gfp & __GFP_DIRECT_RECLAIM) && oo_order(oo) > oo_order(s->min))
 		alloc_gfp = (alloc_gfp | __GFP_NOMEMALLOC) & ~(__GFP_RECLAIM|__GFP_NOFAIL);
 
@@ -1559,7 +1569,7 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 			goto out;
 		stat(s, ORDER_FALLBACK);
 	}
-
+	
 	if (kmemcheck_enabled &&
 	    !(s->flags & (SLAB_NOTRACK | DEBUG_DEFAULT_FLAGS))) {
 		int pages = 1 << oo_order(oo);
@@ -1591,7 +1601,9 @@ static struct page *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 
 	kasan_poison_slab(page);
 
-	shuffle = shuffle_freelist(s, page);
+	// For Memorizer, let's not shuffle slab. This way there's only one place where setup_object() is called.
+	// shuffle = shuffle_freelist(s, page);
+	shuffle = false;
 
 	if (!shuffle) {
 		for_each_object_idx(p, idx, s, start, page->objects) {
@@ -2725,11 +2737,15 @@ static __always_inline void *slab_alloc(struct kmem_cache *s,
 
 void *kmem_cache_alloc(struct kmem_cache *s, gfp_t gfpflags)
 {
+
 	void *ret = slab_alloc(s, gfpflags, _RET_IP_);
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s->object_size,
 				s->size, gfpflags);
-	memorizer_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags);
+	
+	int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+	  memorizer_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags);
 
 	return ret;
 }
@@ -2740,7 +2756,9 @@ void *kmem_cache_alloc_trace(struct kmem_cache *s, gfp_t gfpflags, size_t size)
 {
 	void *ret = slab_alloc(s, gfpflags, _RET_IP_);
 	trace_kmalloc(_RET_IP_, ret, size, s->size, gfpflags);
-	memorizer_kmalloc(_RET_IP_, ret, size, s->size, gfpflags);
+	int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+	  memorizer_kmalloc(_RET_IP_, ret, size, s->size, gfpflags);
 	kasan_kmalloc(s, ret, size, gfpflags);
 	return ret;
 }
@@ -2754,7 +2772,9 @@ void *kmem_cache_alloc_node(struct kmem_cache *s, gfp_t gfpflags, int node)
 
 	trace_kmem_cache_alloc_node(_RET_IP_, ret,
 				    s->object_size, s->size, gfpflags, node);
-    memorizer_kmem_cache_alloc_node(_RET_IP_, ret, s, gfpflags, node);
+	int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+	  memorizer_kmem_cache_alloc_node(_RET_IP_, ret, s, gfpflags, node);
 
 	return ret;
 }
@@ -2769,8 +2789,9 @@ void *kmem_cache_alloc_node_trace(struct kmem_cache *s,
 
 	trace_kmalloc_node(_RET_IP_, ret,
 			   size, s->size, gfpflags, node);
-	memorizer_kmalloc_node(_RET_IP_, ret,
-			   size, s->size, gfpflags, node);
+	int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+	  memorizer_kmalloc_node(_RET_IP_, ret, size, s->size, gfpflags, node);
 	kasan_kmalloc(s, ret, size, gfpflags);
 	return ret;
 }
@@ -3731,8 +3752,12 @@ void *__kmalloc(size_t size, gfp_t flags)
 	struct kmem_cache *s;
 	void *ret;
 
-	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE))
-		return kmalloc_large(size, flags);
+	if (unlikely(size > KMALLOC_MAX_CACHE_SIZE)){
+	  unsigned int order = get_order(size);
+	  void * ret = kmalloc_large(size, flags);
+	  memorizer_kmalloc(_RET_IP_, ret, PAGE_SIZE << order, PAGE_SIZE << order, flags);
+	  return ret;
+	}
 
 	s = kmalloc_slab(size, flags);
 
@@ -3742,7 +3767,9 @@ void *__kmalloc(size_t size, gfp_t flags)
 	ret = slab_alloc(s, flags, _RET_IP_);
 
 	trace_kmalloc(_RET_IP_, ret, size, s->size, flags);
-	memorizer_kmalloc(_RET_IP_, ret, size, s->size, flags);
+	int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+	  memorizer_kmalloc(_RET_IP_, ret, size, s->size, flags);
 
 	kasan_kmalloc(s, ret, size, flags);
 
@@ -3776,9 +3803,12 @@ void *__kmalloc_node(size_t size, gfp_t flags, int node)
 		trace_kmalloc_node(_RET_IP_, ret,
 				   size, PAGE_SIZE << get_order(size),
 				   flags, node);
-		memorizer_kmalloc_node(_RET_IP_, ret,
-				   size, PAGE_SIZE << get_order(size),
-				   flags, node);
+		int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+		if (!update){
+		  memorizer_kmalloc_node(_RET_IP_, ret,
+					 size, PAGE_SIZE << get_order(size),
+					 flags, node);
+		}
 
 		return ret;
 	}
@@ -3791,7 +3821,10 @@ void *__kmalloc_node(size_t size, gfp_t flags, int node)
 	ret = slab_alloc_node(s, flags, node, _RET_IP_);
 
 	trace_kmalloc_node(_RET_IP_, ret, size, s->size, flags, node);
-	memorizer_kmalloc_node(_RET_IP_, ret, size, s->size, flags, node);
+	
+	int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+	  memorizer_kmalloc_node(_RET_IP_, ret, size, s->size, flags, node);
 
 	kasan_kmalloc(s, ret, size, flags);
 
@@ -4244,7 +4277,9 @@ void *__kmalloc_track_caller(size_t size, gfp_t gfpflags, unsigned long caller)
 
 	/* Honor the call site pointer we received. */
 	trace_kmalloc(caller, ret, size, s->size, gfpflags);
-	memorizer_kmalloc(caller, ret, size, s->size, gfpflags);
+	int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+	  memorizer_kmalloc(caller, ret, size, s->size, gfpflags);
 
 	return ret;
 }
@@ -4262,10 +4297,12 @@ void *__kmalloc_node_track_caller(size_t size, gfp_t gfpflags,
 		trace_kmalloc_node(caller, ret,
 				   size, PAGE_SIZE << get_order(size),
 				   gfpflags, node);
-		memorizer_kmalloc_node(caller, ret,
-				   size, PAGE_SIZE << get_order(size),
-				   gfpflags, node);
-
+		int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+		if (!update){
+		  memorizer_kmalloc_node(caller, ret,
+					 size, PAGE_SIZE << get_order(size),
+					 gfpflags, node);
+		}
 		return ret;
 	}
 
@@ -4278,7 +4315,9 @@ void *__kmalloc_node_track_caller(size_t size, gfp_t gfpflags,
 
 	/* Honor the call site pointer we received. */
 	trace_kmalloc_node(caller, ret, size, s->size, gfpflags, node);
-	memorizer_kmalloc_node(caller, ret, size, s->size, gfpflags, node);
+	int update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+	  memorizer_kmalloc_node(caller, ret, size, s->size, gfpflags, node);
 
 	return ret;
 }

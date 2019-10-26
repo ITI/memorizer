@@ -1322,6 +1322,7 @@ no_page:
 			gfp_mask &= ~__GFP_FS;
 
 		page = __page_cache_alloc(gfp_mask);
+		
 		if (!page)
 			return NULL;
 
@@ -1341,6 +1342,10 @@ no_page:
 				goto repeat;
 		}
 	}
+	
+	// This function allocates a single page. We can reuse the below
+	// Memorizer hook with order 0 to track 1 page.
+	memorizer_alloc_pages(_RET_IP_, page, 0, gfp_mask);
 
 	return page;
 }

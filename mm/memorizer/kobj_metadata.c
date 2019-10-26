@@ -308,7 +308,7 @@ bool is_induced_obj(uintptr_t addr)
 struct memorizer_kobj * lt_remove_kobj(uintptr_t addr)
 {
         struct memorizer_kobj **l1e, *kobj;
-        uintptr_t obj_id, l1entry = 0;
+        uintptr_t obj_id, nextobj, l1entry = 0;
 
         /*
          * Get the l1 entry for the addr, if there is not entry then we not only
@@ -327,12 +327,15 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t addr)
         }
         else
         {
-                kobj = NULL;
+		return NULL;
         }
 
+	if(kobj)
+		nextobj = kobj->va_ptr + kobj->size;
+
         /* For each byte in the object set the l1 entry to NULL */
-        obj_id = *l1e;
-        while(obj_id==*l1e)
+        //obj_id = *l1e;
+        while(nextobj>*l1e)
         {
                 /* *free* the byte by setting NULL */
                 *l1e = 0;

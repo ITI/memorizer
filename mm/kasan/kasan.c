@@ -859,6 +859,9 @@ static void register_global(struct kasan_global *global)
 		KASAN_GLOBAL_REDZONE);
 
 	memorizer_register_global(global->beg, global->size);
+	int written = sprintf(global_table_ptr, "%p %d %s %s\n", global -> beg,
+			      global -> size, global -> name, global -> module_name);
+	global_table_ptr += written;
 }
 
 void __asan_register_globals(struct kasan_global *globals, size_t size)
@@ -867,6 +870,7 @@ void __asan_register_globals(struct kasan_global *globals, size_t size)
 
 	for (i = 0; i < size; i++)
 		register_global(&globals[i]);
+
 }
 EXPORT_SYMBOL(__asan_register_globals);
 

@@ -128,6 +128,8 @@
 #include <linux/kasan-checks.h>
 #include <linux/mempool.h>
 
+#include<asm/fixmap.h>
+
 #include "kobj_metadata.h"
 #include "event_structs.h"
 #include "FunctionHashTable.h"
@@ -136,6 +138,9 @@
 #include "util.h"
 #include "memalloc.h"
 #include "../slab.h"
+#include "../kasan/kasan.h"
+
+
 
 //==-- Debugging and print information ------------------------------------==//
 #define MEMORIZER_DEBUG		1
@@ -202,6 +207,10 @@ static dev_t *dev1;
 static dev_t *dev2;
 static struct cdev *cd1;
 static struct cdev *cd2;
+
+#define global_table_text_size 1024 * 1024 * 10
+char * global_table_text;
+char * global_table_ptr;
 
 /**
  * struct memorizer_mem_access - structure to capture all memory related events
@@ -410,7 +419,7 @@ bool in_memblocks(uintptr_t va_ptr)
 	{
 		uintptr_t base = memblock_events[i].loc;
 		uintptr_t end = memblock_events[i].loc + memblock_events[i].loc;
-		if(pa > base && pa < end)
+		if(pa >= base && pa < end)
 			return true;
 	}
 	return false;
@@ -418,6 +427,8 @@ bool in_memblocks(uintptr_t va_ptr)
 
 //int test_and_set_bit(unsigned long nr, volatile unsigned long *addr);
 volatile unsigned long inmem;
+
+volatile unsigned long in_getfreepages;
 
 uintptr_t cur_caller = 0;
 
@@ -448,6 +459,7 @@ static __always_inline bool in_memorizer(void)
 {
     return test_bit(0,&inmem);
 }
+
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
@@ -778,6 +790,9 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
  * already operating with interrupts off and preemption disabled, and thus we
  * cannot sleep.
  */
+
+static int reports_shown = 0;
+
 static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
         uintptr_t va_ptr, pid_t pid, size_t access_type, size_t size)
 {
@@ -801,7 +816,8 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 		}
 		else if(in_memblocks(va_ptr))
 		{
-			kobj = __create_kobj(MEM_UFO_MEMBLOCK, va_ptr, size,
+		        // Instead of creating kobjs for every 8 bytes of memblock, create for every 64
+			kobj = __create_kobj(MEM_UFO_MEMBLOCK, va_ptr, 64,
 					     MEM_UFO_MEMBLOCK);
 			if(!kobj)
 			{
@@ -814,13 +830,22 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 		}
 		else{
 			enum AllocType AT = kasan_obj_type(va_ptr,size);
-			kobj = general_kobjs[AT];
+			kobj =  general_kobjs[AT];
 			switch(AT){
 			case MEM_STACK_PAGE:
 				track_access(AT,size);
 				break;
 			case MEM_HEAP:
+#if 1
+				// Debugging feature to print a KASAN report for missed heap accesses.
+			        // Only prints up to 5 reports.
+				if (reports_shown < 5){
+					kasan_report((unsigned long) va_ptr, size, 1, &kasan_report);
+					reports_shown++;
+				}
+#endif
 				kobj = add_heap_UFO(va_ptr);
+				
 				track_access(MEM_UFO_HEAP,size);
 				break;
 			case MEM_GLOBAL:
@@ -1224,10 +1249,9 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	cache = get_slab_cache(kobj->va_ptr);
 	if(cache){
 		kobj->slabname = memalloc(strlen(cache->name)+1);
-		strncpy(kobj->slabname, cache->name, strlen(cache->name)+1);
-		kobj->slabname[strlen(cache->name)+1]='\0';
+		strncpy(kobj->slabname, cache->name, strlen(cache->name));
+		kobj->slabname[strlen(cache->name)]='\0';
 	} else {
-		kobj->slabname = memalloc(strlen("no-slab"));
 		kobj->slabname = "no-slab";
 	}
 
@@ -1790,18 +1814,36 @@ void memorizer_vmalloc_alloc(unsigned long call_site, const void *ptr,
 
 void memorizer_vmalloc_free(unsigned long call_site, const void *ptr)
 {
-  	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
+	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 }
 
+
+// Update the allocation site of a kmem_cache object, only if has current special
+// value of MEMORIZER_PREALLOCED.
+bool memorizer_kmem_cache_set_alloc(unsigned long call_site, const void * ptr){
+  
+  struct memorizer_kobj * kobj = lt_get_kobj(ptr);
+
+  if (kobj == NULL){
+    return false;
+  } else {
+    if (kobj -> alloc_ip == MEMORIZER_PREALLOCED){
+      kobj -> alloc_ip = call_site;
+    }
+    return true;
+  }
+}
 
 void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
                 struct kmem_cache *s, gfp_t gfp_flags)
 {
         if (unlikely(ptr == NULL))
                 return;
-        if(!is_memorizer_cache_alloc(s->name))
-                __memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
-                                gfp_flags, MEM_KMEM_CACHE);
+
+        //if(!is_memorizer_cache_alloc(s->name))
+	__memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
+			    gfp_flags, MEM_KMEM_CACHE);
+
 }
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
@@ -1810,8 +1852,9 @@ void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
         if (unlikely(ptr == NULL))
                 return;
         if(!is_memorizer_cache_alloc(s->name))
-                __memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
-                                gfp_flags, MEM_KMEM_CACHE_ND);
+		__memorizer_kmalloc(call_site, ptr, s->object_size,
+				    s->size, gfp_flags,
+				    MEM_KMEM_CACHE_ND);
 }
 
 void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
@@ -1823,6 +1866,7 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 	if(unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled){
 		return;
 	}
+
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
 }
 
@@ -1830,10 +1874,49 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
 			   int order, gfp_t gfp_flags)
 {
+
+  if (test_bit(0,&in_getfreepages)){
+    return;
+  }
     __memorizer_kmalloc(call_site, page_address(page),
-            (uintptr_t) PAGE_SIZE * (2 << order),
-            (uintptr_t) PAGE_SIZE * (2 << order),
+            (uintptr_t) PAGE_SIZE * (1 << order),
+            (uintptr_t) PAGE_SIZE * (1 << order),
             gfp_flags, MEM_ALLOC_PAGES);
+
+}
+
+/* This is a slight variation to memorizer_alloc_pages(). Alloc_pages() can only return
+ * a power-of-two number of pages, whereas alloc_pages_exact() can return
+ * any specific number of pages. We don't want Memorizer to track the gap
+ * between the two, so use this special memorizer hook for this case. */
+void memorizer_alloc_pages_exact(unsigned long call_site, void * ptr, unsigned
+			   int size, gfp_t gfp_flags)
+{
+
+  // Compute the actual number of bytes that will be allocated
+  unsigned long alloc_size = PAGE_ALIGN(size);
+
+  __memorizer_kmalloc(call_site, ptr,
+		      alloc_size, alloc_size,
+		      gfp_flags, MEM_ALLOC_PAGES);
+
+}
+
+
+void memorizer_start_getfreepages(){
+  test_and_set_bit_lock(0,&in_getfreepages);
+}
+
+void memorizer_alloc_getfreepages(unsigned long call_site, struct page *page, unsigned
+			   int order, gfp_t gfp_flags)
+{
+
+    __memorizer_kmalloc(call_site, page_address(page),
+            (uintptr_t) PAGE_SIZE * (1 << order),
+            (uintptr_t) PAGE_SIZE * (1 << order),
+            gfp_flags, MEM_ALLOC_PAGES);
+
+    clear_bit_unlock(0,&in_getfreepages);
 }
 
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
@@ -2160,6 +2243,32 @@ static int show_stats_open(struct inode *inode, struct file *file)
 static const struct file_operations show_stats_fops = {
 	.owner		= THIS_MODULE,
 	.open		= show_stats_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+/* The debugging info generated by gcc doesn't quite include *everything*,
+ * even when using -g3 for most debugging info. As far as I can tell, the
+ * only things missing are some string constants, etc that are not very
+ * interesting. However, on the uSCOPE analysis side, we really want to map
+ * these back to files / folders for analysis. This interface lets you print
+ * the entire global table exactly as KASAN sees it, so that everything matches
+ * up and we get complete debug info for all globals. */
+static int globaltable_seq_show(struct seq_file *seq, void *v)
+{
+  seq_printf(seq, "%s\n", global_table_text);
+  return 0;
+}
+
+static int globaltable_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, &globaltable_seq_show, NULL);
+}
+
+static const struct file_operations globaltable_fops = {
+	.owner		= THIS_MODULE,
+	.open		= globaltable_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -2553,6 +2662,11 @@ void __init memorizer_init(void)
 		write_unlock(&object_list_spinlock);
 	}
 
+	/* Allocate memory for the global metadata table.
+	 * Not used by Memorizer, but used in processing globals offline. */
+	global_table_text = memalloc(global_table_text_size);
+	global_table_ptr = global_table_text;
+
 	local_irq_save(flags);
 	if(memorizer_enabled_boot){
 		memorizer_enabled = true;
@@ -2570,7 +2684,7 @@ void __init memorizer_init(void)
 		cfg_log_on = false;
 	}
 	print_live_obj = true;
-
+	
 	local_irq_restore(flags);
 	__memorizer_exit();
 }
@@ -2640,9 +2754,15 @@ static int memorizer_late_init(void)
 	if (!dentry)
 		pr_warning("Failed to create debugfs drain_active_work_queue\n");
 
+	dentry = debugfs_create_file("global_table", S_IRUGO, dentryMemDir,
+				     NULL, &globaltable_fops);
+	if (!dentry)
+		pr_warning("Failed to create debugfs show stats\n");	
+
 	pr_info("Memorizer initialized\n");
 	pr_info("Size of memorizer_kobj:%d\n",sizeof(struct memorizer_kobj));
 	pr_info("Size of memorizer_kernel_event:%d\n",sizeof(struct memorizer_kernel_event));
+	pr_info("FIXADDR_START: %p,  FIXADDR_SIZE %p", FIXADDR_START, FIXADDR_SIZE);	
 	print_pool_info();
 	print_stats(KERN_INFO);
 

@@ -2770,3 +2770,43 @@ static int memorizer_late_init(void)
 }
 late_initcall(memorizer_late_init);
 
+/**
+ * init_from_driver() - Initialize memorizer from a driver
+ *
+ * The primary focus of this funciton is to allow for very late enable and init
+ */
+int memorizer_init_from_driver(void)
+{
+        unsigned long flags;
+
+        __memorizer_enter();
+
+        pr_info("Running test from driver...");
+
+        local_irq_save(flags);
+
+        memorizer_enabled = true;
+        memorizer_log_access = true;
+       cfg_log_on = true;
+       local_irq_restore(flags);
+
+        print_stats(KERN_INFO);
+
+#if MEMORIZER_DEBUG >= 5
+        //read_lock_irqsave(&active_kobj_rbtree_spinlock, flags);
+
+        pr_info("The free'd Kobj list");
+        dump_object_list();
+
+        pr_info("The live kernel object tree now:");
+        __print_active_rb_tree(active_kobj_rbtree_root.rb_node);
+
+        //read_unlock_irqrestore(&active_kobj_rbtree_spinlock, flags);
+#endif
+
+        print_stats(KERN_INFO);
+
+        __memorizer_exit();
+        return 0;
+}
+EXPORT_SYMBOL(memorizer_init_from_driver);

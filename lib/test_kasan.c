@@ -443,7 +443,6 @@ static noinline void __init use_after_scope_test(void)
 
 static int __init kmalloc_tests_init(void)
 {
-#if 0
 	kmalloc_oob_right();
 	kmalloc_oob_left();
 	kmalloc_node_oob_right();
@@ -468,9 +467,6 @@ static int __init kmalloc_tests_init(void)
 	ksize_unpoisons_memory();
 	copy_user_test();
 	use_after_scope_test();
-#endif
-	memorizer_init_from_driver();
-	__memorizer_print_events(10);
 	/* error statement will unload the module for fast extra checking */
 	return -EAGAIN;
 }

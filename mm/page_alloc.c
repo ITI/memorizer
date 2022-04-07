@@ -75,6 +75,9 @@
 #include <asm/sections.h>
 #include <asm/tlbflush.h>
 #include <asm/div64.h>
+
+#include <linux/memorizer.h>
+
 #include "internal.h"
 #include "shuffle.h"
 #include "page_reporting.h"
@@ -1376,6 +1379,7 @@ static __always_inline bool free_pages_prepare(struct page *page,
 	arch_free_page(page, order);
 
 	debug_pagealloc_unmap_pages(page, 1 << order);
+	memorizer_free_pages(0, page, order);
 
 	return true;
 }
@@ -5402,6 +5406,8 @@ out:
 
 	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);
 
+	memorizer_alloc_pages(_RET_IP_, page, order, gfp);
+
 	return page;
 }
 EXPORT_SYMBOL(__alloc_pages);
@@ -5424,7 +5430,10 @@ EXPORT_SYMBOL(__get_free_pages);
 
 unsigned long get_zeroed_page(gfp_t gfp_mask)
 {
-	return __get_free_pages(gfp_mask | __GFP_ZERO, 0);
+	// Memorizer hook here to attribute alloc to this caller
+	unsigned long ret = __get_free_pages(gfp_mask | __GFP_ZERO, 0);
+	memorizer_alloc_pages(_RET_IP_, (void *) ret, 0, gfp_mask);
+	return ret;
 }
 EXPORT_SYMBOL(get_zeroed_page);
 
@@ -5622,7 +5631,13 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
 		gfp_mask &= ~__GFP_COMP;
 
 	addr = __get_free_pages(gfp_mask, order);
-	return make_alloc_exact(addr, order, size);
+	void * ret = make_alloc_exact(addr, order, size);
+
+	// Memorizer hook here to attribute alloc to this caller
+	// Special Memorizer hook for exact page allocation
+	memorizer_alloc_pages_exact(_RET_IP_, ret, size, gfp_mask);
+
+	return ret;
 }
 EXPORT_SYMBOL(alloc_pages_exact);
 

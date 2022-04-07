@@ -46,6 +46,8 @@
 #include <asm/tlbflush.h>
 #include "internal.h"
 
+#include <linux/memorizer.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/filemap.h>
 
@@ -1893,8 +1895,13 @@ struct page *pagecache_get_page(struct address_space *mapping, pgoff_t index,
 repeat:
 	page = mapping_get_entry(mapping, index);
 	if (xa_is_value(page)) {
-		if (fgp_flags & FGP_ENTRY)
+		if (fgp_flags & FGP_ENTRY) {
+			// This function allocates a single page. We can reuse the below
+			// Memorizer hook with order 0 to track 1 page.
+			memorizer_alloc_pages(_RET_IP_, page, 0, gfp_mask);
 			return page;
+		}
+			
 		page = NULL;
 	}
 	if (!page)
@@ -1963,6 +1970,10 @@ no_page:
 		if (page && (fgp_flags & FGP_FOR_MMAP))
 			unlock_page(page);
 	}
+
+	// This function allocates a single page. We can reuse the below
+	// Memorizer hook with order 0 to track 1 page.
+	memorizer_alloc_pages(_RET_IP_, page, 0, gfp_mask);
 
 	return page;
 }

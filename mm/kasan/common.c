@@ -361,6 +361,10 @@ static inline bool ____kasan_slab_free(struct kmem_cache *cache, void *object,
 
 	if ((IS_ENABLED(CONFIG_KASAN_GENERIC) && !quarantine))
 		return false;
+	
+#ifdef FILTER_KASAN
+    return false;
+#endif
 
 	if (kasan_stack_collection_enabled())
 		kasan_set_free_info(cache, object, tag);
@@ -504,6 +508,9 @@ static inline void *____kasan_kmalloc(struct kmem_cache *cache,
 				KASAN_GRANULE_SIZE);
 	kasan_poison((void *)redzone_start, redzone_end - redzone_start,
 			   KASAN_KMALLOC_REDZONE, false);
+#ifdef FILTER_KASAN
+    return;
+#endif
 
 	/*
 	 * Save alloc info (if possible) for kmalloc() allocations.

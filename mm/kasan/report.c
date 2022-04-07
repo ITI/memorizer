@@ -465,6 +465,9 @@ bool kasan_report(unsigned long addr, size_t size, bool is_write,
 	return ret;
 }
 
+// Nick temporarily exporting the report function
+// EXPORT_SYMBOL(kasan_report);
+
 #ifdef CONFIG_KASAN_INLINE
 /*
  * With CONFIG_KASAN_INLINE, accesses to bogus pointers (outside the high

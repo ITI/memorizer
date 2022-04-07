@@ -20,6 +20,8 @@
 #include <asm/sections.h>
 #include <linux/io.h>
 
+#include <linux/memorizer.h>
+
 #include "internal.h"
 
 #define INIT_MEMBLOCK_REGIONS			128
@@ -546,6 +548,7 @@ static void __init_memblock memblock_insert_region(struct memblock_type *type,
 	memblock_set_region_node(rgn, nid);
 	type->cnt++;
 	type->total_size += size;
+	memorizer_memblock_alloc(base,size);
 }
 
 /**

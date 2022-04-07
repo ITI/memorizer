@@ -51,6 +51,7 @@
 #include <asm/vsyscall.h>
 #include <linux/vmalloc.h>
 
+#include <linux/memorizer.h>
 /*
  * max_low_pfn_mapped: highest directly mapped pfn < 4 GB
  * max_pfn_mapped:     highest directly mapped pfn > 4 GB
@@ -1138,6 +1139,8 @@ void __init setup_arch(char **cmdline_p)
 
 	if (!early_xdbc_setup_hardware())
 		early_xdbc_register_console();
+
+	memorizer_init();
 
 	x86_init.paging.pagetable_init();
 

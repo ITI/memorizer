@@ -68,6 +68,10 @@ extern bool kasan_flag_async __ro_after_init;
 #define KASAN_GLOBAL_REDZONE    0xF9  /* redzone for global variable */
 #define KASAN_VMALLOC_INVALID   0xF8  /* unallocated space in vmapped page */
 
+// Memorizer-added exports from KASAN
+bool in_kernel_space(void * p);
+u8 detect_access_kind(void * p);
+
 /*
  * Stack redzone shadow values
  * (Those are compiler's ABI, don't change them)

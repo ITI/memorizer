@@ -41,6 +41,8 @@
 #include <asm/tlbflush.h>
 #include <asm/shmparam.h>
 
+#include <linux/memorizer.h>
+
 #include "internal.h"
 #include "pgalloc-track.h"
 
@@ -2688,6 +2690,10 @@ static void __vfree(const void *addr)
  */
 void vfree(const void *addr)
 {
+	// Memorizer hook free. So far I haven't seen frees, so TODO check this.
+	// In particular, I wasn't sure how to get caller, so I used the builtin below.
+	memorizer_vmalloc_free((unsigned long) addr, __builtin_return_address(0));
+
 	BUG_ON(in_nmi());
 
 	kmemleak_free(addr);
@@ -3023,6 +3029,9 @@ again:
 	addr = __vmalloc_area_node(area, gfp_mask, prot, shift, node);
 	if (!addr)
 		goto fail;
+
+	// Memorizer hooking here
+	memorizer_vmalloc_alloc((unsigned long) caller, addr, size, gfp_mask);
 
 	/*
 	 * In this function, newly allocated vm_struct has VM_UNINITIALIZED

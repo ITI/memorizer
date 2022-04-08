@@ -1,0 +1,5 @@
+CFLAGS_NSSAN := -fsanitize=kernel-namespace -mllvm -nssan-mapping-offset=0xdffffc0000000000 -mllvm -nssan-globals=1 -mllvm -nssan-instrumentation-with-call-threshold=0 --param nssan-instrument-allocas=1 -mllvm -nssan-stack=0
+
+CFLAGS_NSSAN_NOSANITIZE := -fno-builtin
+
+export CFLAGS_NSSAN CFLAGS_NSSAN_NOSANITIZE

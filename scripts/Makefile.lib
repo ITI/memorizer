@@ -162,6 +162,12 @@ _c_flags += $(if $(patsubst n%,, \
 endif
 endif
 
+ifeq ($(CONFIG_MEMORIZER_LLVM),y)
+_c_flags += $(if $(patsubst n%,, \
+		$(KASAN_SANITIZE_$(basetarget).o)$(KASAN_SANITIZE)y), \
+		$(CFLAGS_NSSAN), $(CFLAGS_NSSAN_NOSANITIZE))
+endif
+
 ifeq ($(CONFIG_UBSAN),y)
 _c_flags += $(if $(patsubst n%,, \
 		$(UBSAN_SANITIZE_$(basetarget).o)$(UBSAN_SANITIZE)$(CONFIG_UBSAN_SANITIZE_ALL)), \

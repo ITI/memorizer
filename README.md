@@ -10,7 +10,7 @@ This branch contains memorizer rebased on Linux v5.15.15. See the commit history
 
 ### Boot Test
 
-1. Install [system/mkosi](https://github.com/systemd/mkosi) v12 for root file system construction. Use the zipapp approach. Tweak PATH. DO NOT use apt-get since that version is outdated.
+1. Install [system/mkosi](https://github.com/systemd/mkosi) v12 for root file system construction. Use the zipapp approach. Tweak PATH. DO NOT use apt-get since that version in is outdated.
 
 2. Build root file system.
 ```

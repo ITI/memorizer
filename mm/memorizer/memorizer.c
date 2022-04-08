@@ -140,8 +140,10 @@
 #include "util.h"
 #include "memalloc.h"
 #include "../slab.h"
-#include "../kasan/kasan.h"
 
+#ifndef CONFIG_MEMORIZER_LLVM
+#include "../kasan/kasan.h"
+#endif
 
 
 //==-- Debugging and print information ------------------------------------==//
@@ -515,6 +517,7 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 				track_access(MEM_MEMBLOCK,size);
 			}
 		} else {
+#ifndef CONFIG_MEMORIZER_LLVM
 			enum AllocType AT = kasan_obj_type((void *)va_ptr,size);
 			kobj =  general_kobjs[AT];
 			switch(AT){
@@ -549,6 +552,9 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
                 default:
                     track_untracked_access(AT,size);
 			}
+#else
+			track_untracked_access(MEM_UFO_NONE,size);
+#endif // ifndef CONFIG_MEMORIZER_LLVM
 		}
 	} else {
 		track_access(kobj->alloc_type, size);
@@ -588,10 +594,12 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		return;
 	}
 
+#ifndef CONFIG_MEMORIZER_LLVM
 	if (current->kasan_depth > 0) {
 		track_induced_access();
 		return;
 	}
+#endif
 
 	if (__memorizer_enter()) {
 		track_induced_access();

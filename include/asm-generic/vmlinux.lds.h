@@ -1003,7 +1003,7 @@
  * https://bugs.llvm.org/show_bug.cgi?id=46478
  */
 #if defined(CONFIG_GCOV_KERNEL) || defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KCSAN) || \
-	defined(CONFIG_CFI_CLANG)
+	defined(CONFIG_CFI_CLANG) || defined(CONFIG_MEMORIZER_LLVM)
 # ifdef CONFIG_CONSTRUCTORS
 #  define SANITIZER_DISCARDS						\
 	*(.eh_frame)

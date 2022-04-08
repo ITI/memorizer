@@ -1038,6 +1038,7 @@ include-$(CONFIG_KCSAN)		+= scripts/Makefile.kcsan
 include-$(CONFIG_UBSAN)		+= scripts/Makefile.ubsan
 include-$(CONFIG_KCOV)		+= scripts/Makefile.kcov
 include-$(CONFIG_GCC_PLUGINS)	+= scripts/Makefile.gcc-plugins
+include-$(CONFIG_MEMORIZER_LLVM)	+= scripts/Makefile.nssan
 
 include $(addprefix $(srctree)/, $(include-y))
 

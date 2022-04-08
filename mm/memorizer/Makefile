@@ -9,3 +9,4 @@ CFLAGS_REMOVE_memorizer.o = -pg
 CFLAGS_memorizer.o := $(call cc-option, -fno-conserve-stack -fno-stack-protector)
 
 obj-y := memorizer.o kobj_metadata.o FunctionHashTable.o stats.o memalloc.o
+obj-$(CONFIG_MEMORIZER_LLVM) += runtime_for_llvm.o

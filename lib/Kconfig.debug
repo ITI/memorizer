@@ -964,7 +964,7 @@ source "lib/Kconfig.kfence"
 
 config MEMORIZER
 	bool "Memorizer: kernel object lifetime access tracing"
-	depends on KASAN
+	depends on KASAN || MEMORIZER_LLVM
         help
           Enables memory allocation and tracing tool that combines compiler
           instrumentation on all loads/stores with embedded hooks for
@@ -978,6 +978,12 @@ config MEMORIZER_STATS
 		  Enables the statistic summary including the number of accesses and
 		  number of shadow object allocated for Memorizer which will slow down the
 		  performance.
+
+config MEMORIZER_LLVM
+	bool "LLVM-based read/write and global variable instrumentation"
+	depends on !KASAN && CLANG_VERSION >= 130000
+		help
+		  Use LLVM 13 for read/write and global variable instrumentation. This flag enables the corresponding runtime, where the KASAN shadow-memory-based object type detection (kasan_obj_type(), detect_access_kind(), etc.) is unavailable. 
 
 endmenu # "Memory Debugging"
 

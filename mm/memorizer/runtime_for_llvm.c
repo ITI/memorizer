@@ -48,6 +48,7 @@ EXPORT_SYMBOL(__nssan_unregister_globals);
 #define DEFINE_ASAN_LOAD_STORE(size)					\
 	void __nssan_load##size(unsigned long addr)			\
 	{								\
+		memorizer_mem_access(addr, size, false, _RET_IP_);	\
 	}								\
 	EXPORT_SYMBOL(__nssan_load##size);				\
 	__alias(__nssan_load##size)					\

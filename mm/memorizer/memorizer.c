@@ -608,9 +608,17 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		return;
 	}
 
+	#ifndef CONFIG_MEMORIZER_LLVM
 	local_irq_save(flags);
 	find_and_update_kobj_access(ip,addr,-1,write,size);
 	local_irq_restore(flags);
+	#else
+	// TODO: local_irq_save() leads to boot failure. Need investigation.
+	// pr_alert("memorizer_mem_access()");
+	// local_irq_save(flags);
+	find_and_update_kobj_access(ip,addr,-1,write,size);
+	// local_irq_restore(flags);
+	#endif
 
 	__memorizer_exit();
 }

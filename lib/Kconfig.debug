@@ -981,9 +981,10 @@ config MEMORIZER_STATS
 
 config MEMORIZER_LLVM
 	bool "LLVM-based read/write and global variable instrumentation"
-	depends on !KASAN && CLANG_VERSION >= 130000
-		help
-		  Use LLVM 13 for read/write and global variable instrumentation. This flag enables the corresponding runtime, where the KASAN shadow-memory-based object type detection (kasan_obj_type(), detect_access_kind(), etc.) is unavailable. 
+	select CONSTRUCTORS
+	depends on !KASAN && $(cc-option, -fsanitize=kernel-namespace)
+	help
+		Use LLVM 13 for read/write and global variable instrumentation. This flag enables the corresponding runtime, where the KASAN shadow-memory-based object type detection (kasan_obj_type(), detect_access_kind(), etc.) is unavailable.
 
 endmenu # "Memory Debugging"
 

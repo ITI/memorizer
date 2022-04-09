@@ -553,7 +553,9 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
                     track_untracked_access(AT,size);
 			}
 #else
-			track_untracked_access(MEM_UFO_NONE,size);
+			enum AllocType AT = MEM_UFO_NONE;
+			kobj =  general_kobjs[AT];
+			track_untracked_access(AT,size);
 #endif // ifndef CONFIG_MEMORIZER_LLVM
 		}
 	} else {

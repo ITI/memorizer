@@ -2777,7 +2777,7 @@ void *kmem_cache_alloc_node(struct kmem_cache *s, gfp_t gfpflags, int node)
 				    s->object_size, s->size, gfpflags, node);
 	update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
 	if (!update)
-	  memorizer_kmem_cache_alloc_node(_RET_IP_, ret, 0, 0, gfpflags, node);
+	  memorizer_kmem_cache_alloc_node(_RET_IP_, ret, s, gfpflags, node);
 
 	return ret;
 }

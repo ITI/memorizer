@@ -1,0 +1,25 @@
+[Distribution]
+Distribution=ubuntu
+Release=focal
+
+[Output]
+Format=gpt_ext4
+Bootable=yes
+Output=rootfs.raw
+QCow2=no
+
+[Packages]
+Packages=
+         apt,apt-utils,
+         isc-dhcp-client,iproute2,wget,curl,
+         git,vim,build-essential,gcc-multilib,g++-multilib,
+	 openssh-client
+
+[Validation]
+Password=root
+
+[Partitions]
+RootSize=20G
+
+[Host]
+QemuHeadless=n

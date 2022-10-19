@@ -1,0 +1,5 @@
+echo '#!/bin/bash
+
+dhclient
+' >> /etc/rc.local
+chmod +x /etc/rc.local

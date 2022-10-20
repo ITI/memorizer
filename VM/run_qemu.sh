@@ -19,18 +19,19 @@
  # the kernel & rootfs from mkosi in a window
  #
  # Here are useful commands to copy-and-paste
- #  $ ./run_qemu.sh rootfs.raw -kernel ../arch/x86/boot/bzImage
+ #  $ ./run_qemu.sh rootfs.qcow2 -kernel ../arch/x86/boot/bzImage
  #
 
  set -ex
 
- R=${1:-"rootfs.raw"}
+ R=${1:-"rootfs.qcow2"}
  [[ $# > 0 ]] && shift
  
  qemu-system-x86_64 \
   -kernel rootfs.vmlinuz \
-  -append "earlyprintk memalloc=1 nokaslr root=/dev/sda2 memorizer_enabled_boot=no memorizer_enabled=no root=/dev/sda2" \
+  -append "print_live_obj=0 console=ttyS0 earlyprintk memalloc=1 nokaslr root=/dev/sda2 memorizer_enabled_boot=no memorizer_enabled=no root=/dev/sda2" \
   -initrd rootfs.initrd \
+  -nographic \
   -m 16G \
   --enable-kvm \
   -cpu host,pmu=off \

@@ -109,6 +109,7 @@ Instructions are TBD, but this script might help in the meanwhile:
     # Setup the test
     echo 1 > $M/clear_dead_objs
     echo 1 > $M/clear_printed_list
+    echo 0 > $M/print_live_obj
 
     # start the test
     echo function > $T/current_tracer

@@ -5,8 +5,8 @@ Release=focal
 [Output]
 Format=gpt_ext4
 Bootable=yes
-Output=rootfs.raw
-QCow2=no
+Output=rootfs.qcow2
+QCow2=yes
 
 [Packages]
 Packages=
@@ -22,4 +22,4 @@ Password=root
 RootSize=20G
 
 [Host]
-QemuHeadless=n
+QemuHeadless=yes

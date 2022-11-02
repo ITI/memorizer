@@ -700,6 +700,14 @@ config REF_TRACKER
 config SBITMAP
 	bool
 
+config INLINE_LIBS
+	bool "Force inlining of library functions (strlen, memcmp, etc)"
+	default y
+	help
+	  Forces gcc to inline calls to some library functions. This was
+	  added to Memorizer Linux so that these stateless lib functions do
+	  not need to exclusively live in one compartment.
+
 config PARMAN
 	tristate "parman" if COMPILE_TEST
 

@@ -173,3 +173,41 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
  )
 
 #endif /* _TOOLS_LINUX_LOG2_H */
+#if 0
+// TODO memorizer
+diff a/tools/include/linux/log2.h b/tools/include/linux/log2.h	(rejected hunks)
+@@ -12,12 +12,6 @@
+ #ifndef _TOOLS_LINUX_LOG2_H
+ #define _TOOLS_LINUX_LOG2_H
+ 
+-/*
+- * deal with unrepresentable constant logarithms
+- */
+-extern __attribute__((const, noreturn))
+-int ____ilog2_NaN(void);
+-
+ /*
+  * non-constant log of base 2 calculators
+  * - the arch may override these in asm/bitops.h if they can be implemented
+@@ -78,7 +72,7 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
+ #define ilog2(n)				\
+ (						\
+ 	__builtin_constant_p(n) ? (		\
+-		(n) < 1 ? ____ilog2_NaN() :	\
++		(n) < 2 ? 0 :			\
+ 		(n) & (1ULL << 63) ? 63 :	\
+ 		(n) & (1ULL << 62) ? 62 :	\
+ 		(n) & (1ULL << 61) ? 61 :	\
+@@ -141,10 +135,7 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
+ 		(n) & (1ULL <<  4) ?  4 :	\
+ 		(n) & (1ULL <<  3) ?  3 :	\
+ 		(n) & (1ULL <<  2) ?  2 :	\
+-		(n) & (1ULL <<  1) ?  1 :	\
+-		(n) & (1ULL <<  0) ?  0 :	\
+-		____ilog2_NaN()			\
+-				   ) :		\
++		1 ) :				\
+ 	(sizeof(n) <= 4) ?			\
+ 	__ilog2_u32(n) :			\
+ 	__ilog2_u64(n)				\
+#endif

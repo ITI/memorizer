@@ -661,3 +661,29 @@ do {									\
 
 #endif /* _ASM_X86_UACCESS_H */
 
+
+#if 0
+// TODO memorizer - rethink what needs to be done
+diff a/arch/x86/include/asm/uaccess.h b/arch/x86/include/asm/uaccess.h	(rejected hunks)
+@@ -677,8 +677,18 @@ extern struct movsl_mask {
+ 
+ unsigned long __must_check _copy_from_user(void *to, const void __user *from,
+ 					   unsigned n);
+-unsigned long __must_check _copy_to_user(void __user *to, const void *from,
+-					 unsigned n);
++
++#ifdef CONFIG_INLINE_LIBS
++__attribute__((always_inline)) static unsigned long __must_check _copy_to_user(void __user *to, const void *from, unsigned n);
++inline static unsigned long _copy_to_user(void __user *to, const void *from, unsigned n)
++{
++  if (access_ok(VERIFY_WRITE, to, n))
++    n = __copy_to_user(to, from, n);
++  return n;
++}
++#else
++unsigned long __must_check _copy_to_user(void __user *to, const void *from, unsigned n);
++#endif
+ 
+ extern void __compiletime_error("usercopy buffer size is too small")
+ __bad_copy_user(void);
+#endif

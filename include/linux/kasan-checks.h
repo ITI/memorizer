@@ -16,9 +16,13 @@
  * to validate access to an address.   Never use these in header files!
  */
 #if defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KASAN_SW_TAGS)
+enum AllocType kasan_obj_type(const void *p, unsigned int size);
 bool __kasan_check_read(const volatile void *p, unsigned int size);
 bool __kasan_check_write(const volatile void *p, unsigned int size);
 #else
++static inline void kasan_obj_type(const void *p, unsigned int size)
+{
+}
 static inline bool __kasan_check_read(const volatile void *p, unsigned int size)
 {
 	return true;

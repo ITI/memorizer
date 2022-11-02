@@ -696,6 +696,11 @@ CFLAGS_GCOV	+= -fno-tree-loop-im
 endif
 export CFLAGS_GCOV
 
+ifdef CONFIG_MEMORIZER
+KBUILD_CFLAGS += -finstrument-functions \
+		   -finstrument-functions-exclude-file-list=mm/memorizer/,kernel/locking/,mm/kasan/
+endif
+
 # The arch Makefiles can override CC_FLAGS_FTRACE. We may also append it later.
 ifdef CONFIG_FUNCTION_TRACER
   CC_FLAGS_FTRACE := -pg

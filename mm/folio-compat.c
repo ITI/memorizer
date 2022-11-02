@@ -105,6 +105,20 @@ struct page *pagecache_get_page(struct address_space *mapping, pgoff_t index,
 	if ((fgp_flags & FGP_HEAD) || !folio || xa_is_value(folio))
 		return &folio->page;
 	return folio_file_page(folio, index);
+#if 0
+// TODO
+diff a/mm/filemap.c b/mm/filemap.c	(rejected hunks)
+@@ -1341,6 +1341,9 @@ struct page *pagecache_get_page(struct address_space *mapping, pgoff_t offset,
+ 				goto repeat;
+ 		}
+ 	}
++	// This function allocates a single page. We can reuse the below
++	// Memorizer hook with order 0 to track 1 page.
++	memorizer_alloc_pages(_RET_IP_, page, 0, gfp_mask);
+ 
+ 	return page;
+ }
+#endif
 }
 EXPORT_SYMBOL(pagecache_get_page);
 

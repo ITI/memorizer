@@ -948,6 +948,7 @@ void *kmalloc_order_trace(size_t size, gfp_t flags, unsigned int order)
 {
 	void *ret = kmalloc_order(size, flags, order);
 	trace_kmalloc(_RET_IP_, ret, NULL, size, PAGE_SIZE << order, flags);
+	memorizer_kmalloc(_RET_IP_, ret, size, PAGE_SIZE << order, flags);
 	return ret;
 }
 EXPORT_SYMBOL(kmalloc_order_trace);

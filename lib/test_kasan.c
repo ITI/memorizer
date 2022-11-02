@@ -12,6 +12,7 @@
 #include <linux/mm.h>
 #include <linux/mman.h>
 #include <linux/module.h>
+#include <linux/kasan.h>
 #include <linux/printk.h>
 #include <linux/random.h>
 #include <linux/slab.h>

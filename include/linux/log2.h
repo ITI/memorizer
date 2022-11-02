@@ -67,44 +67,6 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
 	return 1UL << (fls_long(n) - 1);
 }
 
-#if 0
-// TODO memorizer -- do we need this?
-diff a/include/linux/log2.h b/include/linux/log2.h	(rejected hunks)
-@@ -15,12 +15,6 @@
- #include <linux/types.h>
- #include <linux/bitops.h>
- 
--/*
-- * deal with unrepresentable constant logarithms
-- */
--extern __attribute__((const, noreturn))
--int ____ilog2_NaN(void);
--
- /*
-  * non-constant log of base 2 calculators
-  * - the arch may override these in asm/bitops.h if they can be implemented
-@@ -85,7 +79,7 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
- #define ilog2(n)				\
- (						\
- 	__builtin_constant_p(n) ? (		\
--		(n) < 1 ? ____ilog2_NaN() :	\
-+		(n) < 2 ? 0 :			\
- 		(n) & (1ULL << 63) ? 63 :	\
- 		(n) & (1ULL << 62) ? 62 :	\
- 		(n) & (1ULL << 61) ? 61 :	\
-@@ -148,10 +142,7 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
- 		(n) & (1ULL <<  4) ?  4 :	\
- 		(n) & (1ULL <<  3) ?  3 :	\
- 		(n) & (1ULL <<  2) ?  2 :	\
--		(n) & (1ULL <<  1) ?  1 :	\
--		(n) & (1ULL <<  0) ?  0 :	\
--		____ilog2_NaN()			\
--				   ) :		\
-+		1 ) :				\
- 	(sizeof(n) <= 4) ?			\
- 	__ilog2_u32(n) :			\
- 	__ilog2_u64(n)				\
-#endif
 /**
  * const_ilog2 - log base 2 of 32-bit or a 64-bit constant unsigned value
  * @n: parameter
@@ -294,3 +256,44 @@ int __bits_per(unsigned long n)
 	__bits_per(n)				\
 )
 #endif /* _LINUX_LOG2_H */
+
+#if 0
+// TODO memorizer -- do we need this?
+diff a/include/linux/log2.h b/include/linux/log2.h	(rejected hunks)
+@@ -15,12 +15,6 @@
+ #include <linux/types.h>
+ #include <linux/bitops.h>
+ 
+-/*
+- * deal with unrepresentable constant logarithms
+- */
+-extern __attribute__((const, noreturn))
+-int ____ilog2_NaN(void);
+-
+ /*
+  * non-constant log of base 2 calculators
+  * - the arch may override these in asm/bitops.h if they can be implemented
+@@ -85,7 +79,7 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
+ #define ilog2(n)				\
+ (						\
+ 	__builtin_constant_p(n) ? (		\
+-		(n) < 1 ? ____ilog2_NaN() :	\
++		(n) < 2 ? 0 :			\
+ 		(n) & (1ULL << 63) ? 63 :	\
+ 		(n) & (1ULL << 62) ? 62 :	\
+ 		(n) & (1ULL << 61) ? 61 :	\
+@@ -148,10 +142,7 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
+ 		(n) & (1ULL <<  4) ?  4 :	\
+ 		(n) & (1ULL <<  3) ?  3 :	\
+ 		(n) & (1ULL <<  2) ?  2 :	\
+-		(n) & (1ULL <<  1) ?  1 :	\
+-		(n) & (1ULL <<  0) ?  0 :	\
+-		____ilog2_NaN()			\
+-				   ) :		\
++		1 ) :				\
+ 	(sizeof(n) <= 4) ?			\
+ 	__ilog2_u32(n) :			\
+ 	__ilog2_u64(n)				\
+
+TODO memorizer */
+#endif

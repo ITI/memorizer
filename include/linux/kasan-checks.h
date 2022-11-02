@@ -20,7 +20,7 @@ enum AllocType kasan_obj_type(const void *p, unsigned int size);
 bool __kasan_check_read(const volatile void *p, unsigned int size);
 bool __kasan_check_write(const volatile void *p, unsigned int size);
 #else
-+static inline void kasan_obj_type(const void *p, unsigned int size)
+static inline void kasan_obj_type(const void *p, unsigned int size)
 {
 }
 static inline bool __kasan_check_read(const volatile void *p, unsigned int size)

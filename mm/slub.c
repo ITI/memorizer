@@ -1811,7 +1811,7 @@ static void *setup_object(struct kmem_cache *s, void *object)
 	/* This function is called when Slub allocates new objects for a cache.
 	 * Memorizer preallocates objects here so any accesses from constructors
 	 * are captured correctly. */
-	memorizer_kmem_cache_alloc(MEMORIZER_PREALLOCED, object, s, last_flags);
+	memorizer_kmem_cache_alloc(MEMORIZER_PREALLOCED, object, s->size, last_flags);
 
 	setup_object_debug(s, object);
 	object = kasan_init_slab_obj(s, object);
@@ -3281,7 +3281,7 @@ void *__kmem_cache_alloc_lru(struct kmem_cache *s, struct list_lru *lru,
 
 	update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
 	if (!update)
-		memorizer_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags);
+		memorizer_kmem_cache_alloc(_RET_IP_, ret, s->object_size, gfpflags);
 
 	return ret;
 }

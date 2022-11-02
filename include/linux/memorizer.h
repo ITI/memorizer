@@ -60,7 +60,7 @@ enum AllocType {
     MEM_MEMBLOCK,
     MEM_UFO_MEMBLOCK,
     MEM_MEMORIZER,
-    MEM_USER,
+    MEM_MZ_USER,
     MEM_BUG,
     MEM_UFO_GLOBAL,
     MEM_UFO_NONE,

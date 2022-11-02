@@ -113,7 +113,7 @@ char * alloc_type_str(enum AllocType AT)
 			return "UFO_MEMBLOCK";
 		case MEM_MEMORIZER:
 			return "MEMORIZER";
-		case MEM_USER:
+		case MEM_MZ_USER:
 			return "USER";
 		case MEM_BUG:
 			return "BUG";

@@ -3203,7 +3203,7 @@ again:
 		goto fail;
 
 	// Memorizer hooking here
-	memorizer_vmalloc_alloc((unsigned long) caller, addr, size, gfp_mask);
+	memorizer_vmalloc_alloc((unsigned long) caller, area->addr, size, gfp_mask);
 	// TODO memorizer : do we need other calls?
 
 

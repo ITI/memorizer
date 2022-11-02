@@ -5573,7 +5573,7 @@ out:
 
 	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);
 
-	memorizer_alloc_pages(_RET_IP_, page, order, gfp_mask);
+	memorizer_alloc_pages(_RET_IP_, page, order, alloc_gfp);
 
 	return page;
 }
@@ -5822,6 +5822,7 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
 {
 	unsigned int order = get_order(size);
 	unsigned long addr;
+	void *ret;
 
 	if (WARN_ON_ONCE(gfp_mask & (__GFP_COMP | __GFP_HIGHMEM)))
 		gfp_mask &= ~(__GFP_COMP | __GFP_HIGHMEM);
@@ -5829,7 +5830,7 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
 	addr = __get_free_pages(gfp_mask, order);
 
 	// TODO: memorizer: var decl
-	void * ret = make_alloc_exact(addr, order, size);
+	ret = make_alloc_exact(addr, order, size);
 
 	// Memorizer hook here to attribute alloc to this caller
 	// Special Memorizer hook for exact page allocation

@@ -177,8 +177,8 @@ unsigned long __rounddown_pow_of_two(unsigned long n)
 // TODO memorizer
 diff a/tools/include/linux/log2.h b/tools/include/linux/log2.h	(rejected hunks)
 @@ -12,12 +12,6 @@
- #ifndef _TOOLS_LINUX_LOG2_H
- #define _TOOLS_LINUX_LOG2_H
+// #ifndef _TOOLS_LINUX_LOG2_H
+// #define _TOOLS_LINUX_LOG2_H
  
 -/*
 - * deal with unrepresentable constant logarithms
@@ -210,4 +210,5 @@ diff a/tools/include/linux/log2.h b/tools/include/linux/log2.h	(rejected hunks)
  	(sizeof(n) <= 4) ?			\
  	__ilog2_u32(n) :			\
  	__ilog2_u64(n)				\
+TODO memorizer */
 #endif

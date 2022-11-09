@@ -30,7 +30,8 @@
  *===------------------------------------------------------------------------===
  */
 
-#include <linux/bootmem.h>
+// #include <linux/bootmem.h>
+#include <linux/memblock.h>
 #include <linux/memorizer.h>
 
 #include "memalloc.h"
@@ -55,7 +56,8 @@ early_param("memalloc_size", early_memalloc_size);
 
 void __init memorizer_alloc_init(void)
 {
-	pool_base = (uintptr_t)alloc_bootmem(memalloc_size);
+	// pool_base = (uintptr_t)alloc_bootmem(memalloc_size);
+	pool_base = (uintptr_t)memblock_alloc(memalloc_size, SMP_CACHE_BYTES);
 	if (!pool_base)
 		panic("No memorizer pool");
 	pool_end = pool_base + memalloc_size;

@@ -97,10 +97,10 @@ $(vobjs): KBUILD_AFLAGS += -DBUILD_VDSO
 #
 # vDSO code runs in userspace and -pg doesn't help with profiling anyway.
 #
-CFLAGS_REMOVE_vclock_gettime.o = -pg
-CFLAGS_REMOVE_vdso32/vclock_gettime.o = -pg
-CFLAGS_REMOVE_vgetcpu.o = -pg
-CFLAGS_REMOVE_vsgx.o = -pg
+CFLAGS_REMOVE_vclock_gettime.o = -pg -finstrument-functions
+CFLAGS_REMOVE_vdso32/vclock_gettime.o = -pg -finstrument-functions
+CFLAGS_REMOVE_vgetcpu.o = -pg -finstrument-functions
+CFLAGS_REMOVE_vsgx.o = -pg -finstrument-functions
 
 #
 # X32 processes use x32 vDSO to access 64bit kernel data.

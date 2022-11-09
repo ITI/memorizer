@@ -357,6 +357,10 @@ static inline bool ____kasan_slab_free(struct kmem_cache *cache, void *object,
 		return true;
 	}
 
+#ifdef FILTER_KASAN
+	return false;
+#endif
+
 	kasan_poison(object, round_up(cache->object_size, KASAN_GRANULE_SIZE),
 			KASAN_SLAB_FREE, init);
 
@@ -508,6 +512,9 @@ static inline void *____kasan_kmalloc(struct kmem_cache *cache,
 	kasan_poison((void *)redzone_start, redzone_end - redzone_start,
 			   KASAN_SLAB_REDZONE, false);
 
+#ifdef FILTER_KASAN
+	return (void *)object;
+#endif
 	/*
 	 * Save alloc info (if possible) for kmalloc() allocations.
 	 * This also rewrites the alloc info when called from kasan_krealloc().

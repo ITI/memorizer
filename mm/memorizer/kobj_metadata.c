@@ -68,7 +68,7 @@ struct pages_pool {
 volatile unsigned long inlt;
 
 /**
- * __lt_enter() - increment recursion counter for entry into memorizer
+ * __klt_enter() - increment recursion counter for entry into memorizer
  *
  * The primary goal of this is to stop recursive handling of events. Memorizer
  * by design tracks two types of events: allocations and accesses. Effectively,
@@ -77,12 +77,12 @@ volatile unsigned long inlt;
  * track legitimate access of some types, but these are caused by memorizer and
  * we want to ignore them.
  */
-static inline int __lt_enter(void)
+static inline int __klt_enter(void)
 {
     return test_and_set_bit_lock(0,&inlt);
 }
 
-static __always_inline void __lt_exit(void)
+static __always_inline void __klt_exit(void)
 {
     return clear_bit_unlock (0,&inlt);
 }
@@ -374,7 +374,7 @@ static void handle_overlapping_insert(uintptr_t addr)
  * object, iterate through the table setting each entry of the object to the
  * given kobj pointer.
  */
-int __lt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
+static int __klt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
 {
 	struct lt_l1_tbl **l2e;
 	struct lt_l2_tbl **l3e;
@@ -429,13 +429,13 @@ int lt_insert_induced(void * ptr, size_t size)
 {
     uintptr_t label = ((uintptr_t) MEM_INDUCED << ALLOC_CODE_SHIFT) |
         atomic_long_inc_return(&global_kobj_id);
-    __lt_insert((uintptr_t)ptr, size, label);
+    __klt_insert((uintptr_t)ptr, size, label);
     return 1;
 }
 
 int lt_insert_kobj(struct memorizer_kobj *kobj)
 {
-        return __lt_insert(kobj->va_ptr, kobj->size, (uintptr_t)kobj);
+        return __klt_insert(kobj->va_ptr, kobj->size, (uintptr_t)kobj);
 }
 
 void plt_insert(struct pid_obj pobj)

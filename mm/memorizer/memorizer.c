@@ -126,7 +126,8 @@
 #include <linux/vmalloc.h>
 #include <linux/fs.h>
 #include <linux/sched.h>
-#include <linux/bootmem.h>
+#include <linux/sched/task_stack.h>
+// #include <linux/bootmem.h>
 #include <linux/kasan-checks.h>
 #include <linux/mempool.h>
 
@@ -685,7 +686,7 @@ static struct kmem_cache * get_slab_cache(const void * addr)
 	if ((addr >= (void *)PAGE_OFFSET) && (addr < high_memory)) {
 		struct page *page = virt_to_head_page(addr);
 		if (PageSlab(page)) {
-			return page->slab_cache;
+			return page_slab(page)->slab_cache;
 		}
 		return NULL;
 	}
@@ -706,8 +707,8 @@ static struct memorizer_kobj * add_heap_UFO(uintptr_t va)
 		struct page *page = virt_to_head_page((void *)va);
 		if (PageSlab(page)) {
 			void *object;
-			struct kmem_cache *cache = page->slab_cache;
-			object = nearest_obj(cache, page, (void *)va);
+			struct kmem_cache *cache = page_slab(page)->slab_cache;
+			object = nearest_obj(cache, virt_to_slab((void *)va), (void *)va);
 			//pr_err("Object at %p, in cache %s size: %d\n", object,
 			//cache->name, cache->object_size);
 			kobj = __create_kobj(MEM_UFO_HEAP, (uintptr_t)object,
@@ -1597,67 +1598,35 @@ void __init memorizer_init(void)
  */
 static int memorizer_late_init(void)
 {
-	struct dentry *dentry, *dentryMemDir;
+	struct dentry *dentryMemDir;
 
 	dentryMemDir = debugfs_create_dir("memorizer", NULL);
 	if (!dentryMemDir)
-		pr_warning("Failed to create debugfs memorizer dir\n");
+		pr_warn("Failed to create debugfs memorizer dir\n");
 
-	dentry = debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
+	debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
 			NULL, &kmap_fops);
-	if (!dentry)
-		pr_warning("Failed to create debugfs kmap file\n");
-
 	/* stats interface */
-	dentry = debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
+	debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
 			NULL, &show_stats_fops);
-	if (!dentry)
-		pr_warning("Failed to create debugfs show stats\n");
-
-	dentry = debugfs_create_file("clear_dead_objs", S_IWUGO, dentryMemDir,
+	debugfs_create_file("clear_dead_objs", S_IWUGO, dentryMemDir,
 			NULL, &clear_dead_objs_fops);
-	if (!dentry)
-		pr_warning("Failed to create debugfs clear_dead_objs\n");
-
-	dentry = debugfs_create_file("clear_printed_list", S_IWUGO, dentryMemDir,
+	debugfs_create_file("clear_printed_list", S_IWUGO, dentryMemDir,
 			NULL, &clear_printed_list_fops);
-	if (!dentry)
-		pr_warning("Failed to create debugfs clear_printed_list\n");
-
-	dentry = debugfs_create_file("cfgmap", S_IRUGO|S_IWUGO, dentryMemDir,
+	debugfs_create_file("cfgmap", S_IRUGO|S_IWUGO, dentryMemDir,
 			NULL, &cfgmap_fops);
-	if (!dentry)
-		pr_warning("Failed to create debugfs cfgmap\n");
-
-	dentry = debugfs_create_bool("memorizer_enabled", S_IRUGO|S_IWUGO,
+	debugfs_create_bool("memorizer_enabled", S_IRUGO|S_IWUGO,
 			dentryMemDir, &memorizer_enabled);
-	if (!dentry)
-		pr_warning("Failed to create debugfs memorizer_enabled\n");
-
-	dentry = debugfs_create_bool("memorizer_log_access", S_IRUGO|S_IWUGO,
+	debugfs_create_bool("memorizer_log_access", S_IRUGO|S_IWUGO,
 			dentryMemDir, &memorizer_log_access);
-	if (!dentry)
-		pr_warning("Failed to create debugfs memorizer_log_access\n");
-
-	dentry = debugfs_create_bool("cfg_log_on", S_IRUGO|S_IWUGO,
+	debugfs_create_bool("cfg_log_on", S_IRUGO|S_IWUGO,
 			dentryMemDir, &cfg_log_on);
-	if (!dentry)
-		pr_warning("Failed to create debugfs cfg_log_on\n");
-
-	dentry = debugfs_create_bool("stack_trace_on", S_IRUGO|S_IWUGO,
+	debugfs_create_bool("stack_trace_on", S_IRUGO|S_IWUGO,
 			dentryMemDir, &stack_trace_on);
-	if (!dentry)
-		pr_warning("Failed to create debugfs stack_trace_on\n");
-
-	dentry = debugfs_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
+	debugfs_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
 			dentryMemDir, &print_live_obj);
-	if (!dentry)
-		pr_warning("Failed to create debugfs print_live_obj\n");
-
-	dentry = debugfs_create_file("global_table", S_IRUGO, dentryMemDir,
+	debugfs_create_file("global_table", S_IRUGO, dentryMemDir,
 				     NULL, &globaltable_fops);
-	if (!dentry)
-		pr_warning("Failed to create debugfs show stats\n");
 
 	pr_info("Memorizer initialized\n");
 	pr_info("Size of memorizer_kobj:%d\n",(int)(sizeof(struct memorizer_kobj)));

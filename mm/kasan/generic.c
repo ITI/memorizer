@@ -169,6 +169,8 @@ static __always_inline bool check_region_inline(unsigned long addr,
 	if (unlikely(size == 0))
 		return true;
 
+	memorizer_mem_access(addr, size, write, ret_ip);
+
 	if (unlikely(addr + size < addr))
 		return !kasan_report(addr, size, write, ret_ip);
 
@@ -209,6 +211,7 @@ void kasan_cache_shutdown(struct kmem_cache *cache)
 
 static void register_global(struct kasan_global *global)
 {
+	int written;
 	size_t aligned_size = round_up(global->size, KASAN_GRANULE_SIZE);
 
 	kasan_unpoison(global->beg, global->size, false);
@@ -216,6 +219,11 @@ static void register_global(struct kasan_global *global)
 	kasan_poison(global->beg + aligned_size,
 		     global->size_with_redzone - aligned_size,
 		     KASAN_GLOBAL_REDZONE, false);
+
+	memorizer_register_global(global->beg, global->size);
+	written = sprintf(global_table_ptr, "%p %d %s %s\n", global -> beg,
+			      (int)(global -> size), (char *)(global -> name), (char *)(global -> module_name));
+	global_table_ptr += written;
 }
 
 void __asan_register_globals(struct kasan_global *globals, size_t size)
@@ -379,4 +387,15 @@ struct kasan_track *kasan_get_free_track(struct kmem_cache *cache,
 		return NULL;
 	/* Free meta must be present with KASAN_SLAB_FREETRACK. */
 	return &kasan_get_free_meta(cache, object)->free_track;
+}
+
+bool kasan_obj_alive(const void *p, unsigned int size)
+{
+	if (unlikely((void *)p <
+		kasan_shadow_to_mem((void *)KASAN_SHADOW_START))) {
+		return false;
+    }
+	if (likely(!memory_is_poisoned((unsigned long)p, size)))
+		return true;
+    return false;
 }

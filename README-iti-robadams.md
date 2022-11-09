@@ -1,11 +1,34 @@
 # How to build memorizer-v6 & run memorizer test in a VM
 
-This is Rob Adams builds and executes kernel, as of 2022-11-08. You can do it any way that works.
+This is how Rob Adams builds and executes a linux v6 memorizer kernel, as of 2022-11-08. 
+
+You can do this the easy way or the hard way. Or any other way that works.
 
 ## Easy way
 
-`cp`
-`sh doit1.sh`
+* Get a copy of the kernel and rootfs:
+```
+mkdir VM
+cd VM
+tar xf /data/robadams/tars/v6-kernel-rootfs.<version>.tgz
+```
+
+* Run the kernel:
+```
+cd v6-kernel-rootfs.<version>
+sh doit.sh
+```
+
+You will see Linux kernel boot messages for a while, then Linux user-mode boot messages, then a login prompt. Log in as `root`, password `root`.
+
+* Run the tests:
+
+  * `uname -a` should indicate a kernel name like `6.0-memorizer`.  
+  * Run your test, capture your data. _more to come_
+  * Copy your results to the outside world using `scp`. You can copy it anywhere you want. `10.0.2.2` is a QEMU alias for the machine on which QEMU is running, so my command looks like: `scp foo.bar robadams@10.0.2.2:/data/robadams/.`
+
+
+When you need to exit qemu's virtual machine, enter `CTRL-A` followed by `x`.
 
 ## Hard way
 
@@ -74,4 +97,4 @@ This is Rob Adams builds and executes kernel, as of 2022-11-08. You can do it an
 * Run some commands inside qemu's virtual machine
   * `uname -a` should indicate a kernel name like `6.0-memorizer`.  
   * Run your test, capture your data.
-  * Copy your results to the outside world: `scp datafile.txt 10.something`
+  * Copy your results to the outside world using `scp`. You can copy it anywhere you want. `10.0.2.2` is a QEMU alias for the machine on which QEMU is running, so my command looks like: `scp foo.bar robadams@10.0.2.2:/data/robadams/.`

@@ -1,0 +1,4 @@
+#!/bin/sh -ex
+env
+echo $SUDO_USER > $BUILDROOT/sudo_user
+ls -l $BUILDROOT/sudo_user

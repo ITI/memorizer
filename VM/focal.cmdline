@@ -1,0 +1,1 @@
+rhgb selinux=0 audit=0 maxcpus=1 split_lock_detect=off no_hash_pointers nokaslr loglevel=8 rw memalloc_size=4 rw root=LABEL=root

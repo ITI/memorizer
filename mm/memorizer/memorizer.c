@@ -1222,6 +1222,10 @@ void memorizer_alloc_getfreepages(unsigned long call_site, struct page *page, un
     clear_bit_unlock(0,&in_getfreepages);
 }
 
+void memorizer_end_getfreepages() {
+	clear_bit_unlock(0, &in_getfreepages);
+}
+
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 		int order)
 {
@@ -1266,11 +1270,6 @@ void memorizer_register_global(const void *ptr, size_t size)
 	__memorizer_kmalloc(0, ptr, size, size, 0, MEM_GLOBAL);
 }
 
-void memorizer_alloc(unsigned long call_site, const void *ptr, size_t size,
-		enum AllocType AT)
-{
-	//__memorizer_kmalloc(call_site, ptr, size, size, 0, AT);
-}
 
 //==-- Memorizer Data Export ----------------------------------------------==//
 static unsigned long seq_flags;

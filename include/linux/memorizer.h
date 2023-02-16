@@ -105,6 +105,7 @@ void memorizer_alloc_getfreepages(unsigned long call_site, struct page *page, un
         int order, gfp_t gfp_flags);
 
 void memorizer_start_getfreepages(void);
+void memorizer_end_getfreepages(void);
 
 void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
               int order);
@@ -121,8 +122,6 @@ void memorizer_vmalloc_free(unsigned long call_site, const void *ptr);
 void memorizer_register_global(const void *ptr, size_t size);
 void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
         size);
-void memorizer_alloc(unsigned long call_site, const void *ptr, size_t size,
-             enum AllocType AT);
 void memorizer_fork(struct task_struct *p, long nr);
 void memorizer_print_stats(void);
 void memorizer_stack_page_alloc(struct task_struct * task);
@@ -168,6 +167,7 @@ static inline void memorizer_alloc_getfreepages(unsigned long call_site, struct 
                         int order, gfp_t gfp_flags){}
 
 static inline void memorizer_start_getfreepages(void){}
+static inline void memorizer_end_getfreepages(void){}
 
 #endif /* CONFIG_MEMORIZER */
 

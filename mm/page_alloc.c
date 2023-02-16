@@ -5603,8 +5603,10 @@ unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order)
 	memorizer_start_getfreepages();
 
 	page = alloc_pages(gfp_mask & ~__GFP_HIGHMEM, order);
-	if (!page)
+	if (!page) {
+		memorizer_end_getfreepages();
 		return 0;
+	}
 
 	memorizer_alloc_getfreepages(_RET_IP_, page, order, gfp_mask);
 
@@ -5616,7 +5618,11 @@ unsigned long get_zeroed_page(gfp_t gfp_mask)
 {
 	// Memorizer hook here to attribute alloc to this caller
 	unsigned long ret = __get_free_pages(gfp_mask | __GFP_ZERO, 0);
+
+	// TODO robadams@illinois.edu
+	// But does this just lead to a bunch of '0xDEADBEEF'?
 	memorizer_alloc_pages(_RET_IP_, (void *) ret, 0, gfp_mask);
+
 	return ret;
 }
 EXPORT_SYMBOL(get_zeroed_page);
@@ -5834,6 +5840,9 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
 
 	// Memorizer hook here to attribute alloc to this caller
 	// Special Memorizer hook for exact page allocation
+
+	// TODO robadams@illinois.edu
+	// But does this lead to a bunch of 0xDEADBEEF?
 	memorizer_alloc_pages_exact(_RET_IP_, ret, size, gfp_mask);
 
 	return ret;

@@ -2764,9 +2764,10 @@ static void __vfree(const void *addr)
 void vfree(const void *addr)
 {
 
-	// Memorizer hook free. So far I haven't seen frees, so TODO check this.
-	// In particular, I wasn't sure how to get caller, so I used the builtin below.
-	memorizer_vmalloc_free((unsigned long) addr, __builtin_return_address(0));
+	// Memorizer hook free.
+	// TODO robadams@illinois.edu - do we call memorizer*free twice
+	// on the same address? Once here, and once in __vfree()?
+	memorizer_vmalloc_free(_RET_IP_,  addr);
 
 	BUG_ON(in_nmi());
 

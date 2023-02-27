@@ -2216,6 +2216,7 @@ static int cfgmap_seq_show(struct seq_file *seq, void *v)
             b = b -> next;
         }
     }  
+    return 0;
 }
 
 static int cfgmap_open(struct inode *inode, struct file *file)

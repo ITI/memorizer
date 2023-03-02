@@ -101,6 +101,12 @@ char * alloc_type_str(enum AllocType AT)
 			return "KMEM_CACHE_ND";
 		case MEM_ALLOC_PAGES:
 			return "ALLOC_PAGES";
+		case MEM_ALLOC_PAGES_EXACT:
+			return "ALLOC_PAGES_EXACT";
+		case MEM_ALLOC_PAGES_GETFREEPAGES:
+			return "ALLOC_PAGES_GETFREEPAGES";
+		case MEM_ALLOC_PAGES_FOLIO:
+			return "ALLOC_PAGES_FOLIO";
 		case MEM_VMALLOC:
 			return "VMALLOC";
 		case MEM_INDUCED:

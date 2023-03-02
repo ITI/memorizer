@@ -336,29 +336,71 @@ inline struct memorizer_kobj * lt_get_kobj(uintptr_t addr)
 /*
  * handle_overalpping_insert() -- hanlde the overlapping insert case
  * @addr:		the virtual address that is currently not vacant
- * @l1e:	the l1 entry pointer for the addr
+ * @prev_addr:          `addr` from the immediately preceeding allocation
+ * @new_kobj:           The l1 entry that will be inserted
+ * @obj:                the current l1 entry 
  *
- * There is some missing free's currently, it isn't clear what is causing them;
+ * If a successful klt_insert is followed immediately by another klt_insert
+ * of the same address, assume we have nested allocators (e.g.
+ * `alloc_pages_exact` calls `__get_free_pages`.) Update the old and new
+ * li entries appropriately.
+ *
+ * Otherwise, there are some missing free's, and it isn't clear what is causing them;
  * however, if we assume objects are allocated before use then the most recent
  * allocation will be viable for any writes to these regions so we remove the
  * previous entry and set up its free times with a special code denoting it was
  * evicted from the table in an erroneous fasion.
  */
-static void handle_overlapping_insert(uintptr_t addr)
+static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_addr, struct memorizer_kobj* new_kobj)
 {
     unsigned long flags;
     struct memorizer_kobj *obj = lt_get_kobj(addr);
 
+    /*
+     * If there is current obj, or the current object is already
+     * marked free, there is no resolution required.
+     *
+     * If `free_jiffies` is already set, that probably means
+     * that this is the Nth address of an allocation, and we
+     * updated `obj` when we saw the first address of this
+     * allocation.
+     */
     if (!obj)
         return;
+    if (obj->free_jiffies)
+        return;
+
+    /*
+     * TODO robadams@illinois.edu
+    if(obj->alloc_type == new_kobj->alloc_type) {
+	    pr_info("memorizer: va_ptr re-allocated:\n  %p %p %p %s\n  %p %p %p %s\n",
+			    (void*)obj->va_ptr,
+			    (void*)obj->alloc_ip, (void*)obj->free_ip,
+			    alloc_type_str(obj->alloc_type),
+			    (void*)new_kobj->va_ptr,
+			    (void*)new_kobj->alloc_ip, (void*)new_kobj->free_ip,
+			    alloc_type_str(new_kobj->alloc_type));
+    }
+    */
 
     /*
      * Note we don't need to free because the object is in the free list and
      * will get expunged later.
      */
     write_lock_irqsave(&obj->rwlock, flags);
-    obj->free_jiffies = get_ts();
-    obj->free_ip = 0xDEADBEEF;
+    obj->free_jiffies = new_kobj->alloc_jiffies;
+
+    /* TODO robadams@illinois.edu is there room in the l1 entry for one more byte?
+     * That way, we could get rid of magic numbers below.
+     * */
+    if(addr == prev_addr) {
+	    /* This is a nested allocation */
+	    obj->free_ip = new_kobj->alloc_type | 0xfeed00000000;
+    } else {
+	    /* The reason for this duplicate alloc is unknown */
+	    obj->free_ip = new_kobj->alloc_type | 0xdeadbeef00000000;
+    }
+
     write_unlock_irqrestore(&obj->rwlock, flags);
 }
 
@@ -381,6 +423,7 @@ static int __klt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
 	uint64_t l1_i = 0;
 	uintptr_t addr = ptr;
 	uintptr_t kobjend = ptr + size;
+	static uintptr_t prev_addr = 0;
 
 	while (addr < kobjend) {
 		/* Pointer to the l3 entry for addr and alloc if needed */
@@ -404,16 +447,17 @@ static int __klt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
 
 			/* If it is not null then we are double allocating */
 			if (*l1e)
-				handle_overlapping_insert(addr);
+				handle_overlapping_insert(addr, prev_addr, (struct memorizer_kobj *)metadata);
 
 			/* insert object pointer in the table for byte addr */
 			*l1e = (struct memorizer_kobj *)metadata;
 
-            /* Track end of the table and the object tracking */
-            addr += 1;
+			/* Track end of the table and the object tracking */
+			addr += 1;
 			++l1_i;
 		}
 	}
+	prev_addr = ptr;
 	return 0;
 }
 

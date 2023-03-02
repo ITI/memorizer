@@ -55,6 +55,9 @@ enum AllocType {
     MEM_KMEM_CACHE_ND,
     MEM_VMALLOC,
     MEM_ALLOC_PAGES,
+    MEM_ALLOC_PAGES_EXACT,
+    MEM_ALLOC_PAGES_GETFREEPAGES,
+    MEM_ALLOC_PAGES_FOLIO,
     MEM_INDUCED,
     MEM_BOOTMEM,
     MEM_MEMBLOCK,
@@ -102,6 +105,8 @@ void memorizer_alloc_pages(unsigned long call_site, struct page *page, unsigned
         int order, gfp_t gfp_flags);
 void memorizer_alloc_pages_exact(unsigned long call_site, void * ptr, unsigned int size, gfp_t gfp_flags);
 void memorizer_alloc_getfreepages(unsigned long call_site, struct page *page, unsigned
+        int order, gfp_t gfp_flags);
+void memorizer_alloc_folio(unsigned long call_site, struct page *page, unsigned
         int order, gfp_t gfp_flags);
 
 void memorizer_start_getfreepages(void);

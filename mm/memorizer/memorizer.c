@@ -1201,8 +1201,21 @@ void memorizer_alloc_pages_exact(unsigned long call_site, void * ptr, unsigned
 
   __memorizer_kmalloc(call_site, ptr,
 		      alloc_size, alloc_size,
-		      gfp_flags, MEM_ALLOC_PAGES);
+		      gfp_flags, MEM_ALLOC_PAGES_EXACT);
 
+}
+void memorizer_free_pages_exact (unsigned long call_site, struct page *page, unsigned
+		int order)
+{
+	/*
+	 * Condition for ensuring free is from online cpu: see trace point
+	 * condition from include/trace/events/kmem.h for reason
+	 */
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled) {
+		return;
+	}
+	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)
+			page_address(page));
 }
 
 
@@ -1217,7 +1230,19 @@ void memorizer_alloc_getfreepages(unsigned long call_site, struct page *page, un
     __memorizer_kmalloc(call_site, page_address(page),
             (uintptr_t) PAGE_SIZE * (1 << order),
             (uintptr_t) PAGE_SIZE * (1 << order),
-            gfp_flags, MEM_ALLOC_PAGES);
+            gfp_flags, MEM_ALLOC_PAGES_GETFREEPAGES);
+
+    clear_bit_unlock(0,&in_getfreepages);
+}
+
+void memorizer_alloc_folio(unsigned long call_site, struct page *page, unsigned
+			   int order, gfp_t gfp_flags)
+{
+    //TODO: Conflict here where one version used 1 << order, other used 2 << order.
+    __memorizer_kmalloc(call_site, page_address(page),
+            (uintptr_t) PAGE_SIZE * (1 << order),
+            (uintptr_t) PAGE_SIZE * (1 << order),
+            gfp_flags, MEM_ALLOC_PAGES_FOLIO);
 
     clear_bit_unlock(0,&in_getfreepages);
 }
@@ -1336,6 +1361,9 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	struct access_from_counts *afc;
 	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
 			object_list);
+	char *new_alloc_type = 0;
+	uintptr_t free_ip = 0;
+
 	read_lock(&kobj->rwlock);
 	/* If free_jiffies is 0 then this object is live */
 	if (!print_live_obj && kobj->free_jiffies == 0) {
@@ -1343,12 +1371,37 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 		return 0;
 	}
 	kobj->printed = true;
+
 	/* Print object allocation info */
-	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s\n",
+	if((kobj->free_ip >> 32) == 0xdeadbeef) {
+		/* This allocation was replaced by another
+		 * allocation with no interveing `free()`
+		 * for reasons unknown. The subsequent
+		 * allocator is in `free_ip`.
+		 */
+		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
+		/* Some post-processing scripts expect to
+		 * see "DEADBEEF" in this case.
+		 */
+		free_ip = 0xdeadbeef;
+	} else if ((kobj->free_ip >> 32) == 0xfeed) {
+		/* This allocation was replaced by another
+		 * allocation with no intervening `free()` due
+		 * to a nested allocation. The subsequent allocator
+		 * is in `free_ip`.
+		 * */
+		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
+		free_ip = 0xfedbeef;
+	} else {
+		/* Normal allocation */
+		new_alloc_type = "";
+		free_ip = kobj->free_ip;
+	}
+	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s,%s\n",
 			(void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
 			kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
-			kobj->free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
-			kobj->slabname);
+			free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
+			kobj->slabname,new_alloc_type);
 
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list) {

@@ -763,6 +763,9 @@ static inline bool pcp_allowed_order(unsigned int order)
 
 static inline void free_the_page(struct page *page, unsigned int order)
 {
+	/* TODO robadams@illinois.edu
+	 * Also in free_pages_prepare. Belt and suspenders? */
+	memorizer_free_pages(_RET_IP_, page, order);
 	if (pcp_allowed_order(order))		/* Via pcp? */
 		free_unref_page(page, order);
 	else
@@ -1399,6 +1402,10 @@ static __always_inline bool free_pages_prepare(struct page *page,
 
 	trace_mm_page_free(page, order);
 
+	/* TODO robadams@illinois.edu
+	 * Also in free_the_page. Belt and suspenders? */
+	memorizer_free_pages(_RET_IP_, page, order);
+
 	if (unlikely(PageHWPoison(page)) && !order) {
 		/*
 		 * Do not let hwpoison pages hit pcplists/buddy
@@ -1485,8 +1492,6 @@ static __always_inline bool free_pages_prepare(struct page *page,
 
 	debug_pagealloc_unmap_pages(page, 1 << order);
 
-// TODO: memorizer: is this in the right place?
-	memorizer_free_pages(0, page, order);
 
 	return true;
 }
@@ -5587,6 +5592,10 @@ struct folio *__folio_alloc(gfp_t gfp, unsigned int order, int preferred_nid,
 
 	if (page && order > 1)
 		prep_transhuge_page(page);
+
+	if(page)
+		memorizer_alloc_folio(_RET_IP_, page, order, gfp | __GFP_COMP);
+
 	return (struct folio *)page;
 }
 EXPORT_SYMBOL(__folio_alloc);
@@ -5616,11 +5625,9 @@ EXPORT_SYMBOL(__get_free_pages);
 
 unsigned long get_zeroed_page(gfp_t gfp_mask)
 {
-	// Memorizer hook here to attribute alloc to this caller
 	unsigned long ret = __get_free_pages(gfp_mask | __GFP_ZERO, 0);
 
-	// TODO robadams@illinois.edu
-	// But does this just lead to a bunch of '0xDEADBEEF'?
+	// Memorizer hook here to attribute alloc to this caller
 	memorizer_alloc_pages(_RET_IP_, (void *) ret, 0, gfp_mask);
 
 	return ret;

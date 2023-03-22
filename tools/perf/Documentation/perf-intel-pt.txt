@@ -943,12 +943,15 @@ event packets are recorded only if the "pwr_evt" config term was used.  Refer to
 the config terms section above.  The power events record information about
 C-state changes, whereas CBR is indicative of CPU frequency.  perf script
 "event,synth" fields display information like this:
+
 	cbr:  cbr: 22 freq: 2189 MHz (200%)
 	mwait:  hints: 0x60 extensions: 0x1
 	pwre:  hw: 0 cstate: 2 sub-cstate: 0
 	exstop:  ip: 1
 	pwrx:  deepest cstate: 2 last cstate: 2 wake reason: 0x4
+
 Where:
+
 	"cbr" includes the frequency and the percentage of maximum non-turbo
 	"mwait" shows mwait hints and extensions
 	"pwre" shows C-state transitions (to a C-state deeper than C0) and
@@ -956,6 +959,7 @@ Where:
 	"exstop" indicates execution stopped and whether the IP was recorded
 	exactly,
 	"pwrx" indicates return to C0
+
 For more details refer to the Intel 64 and IA-32 Architectures Software
 Developer Manuals.
 
@@ -969,8 +973,10 @@ are quite important.  Users must know if what they are seeing is a complete
 picture or not. The "e" option may be followed by flags which affect what errors
 will or will not be reported.  Each flag must be preceded by either '+' or '-'.
 The flags supported by Intel PT are:
+
 		-o	Suppress overflow errors
 		-l	Suppress trace data lost errors
+
 For example, for errors but not overflow or data lost errors:
 
 	--itrace=e-o-l
@@ -980,11 +986,16 @@ decoded packets and instructions.  Note that this option slows down the decoder
 and that the resulting file may be very large.  The "d" option may be followed
 by flags which affect what debug messages will or will not be logged. Each flag
 must be preceded by either '+' or '-'. The flags support by Intel PT are:
+
 		-a	Suppress logging of perf events
 		+a	Log all perf events
+		+e	Output only on decoding errors (size configurable)
 		+o	Output to stdout instead of "intel_pt.log"
+
 By default, logged perf events are filtered by any specified time ranges, but
-flag +a overrides that.
+flag +a overrides that.  The +e flag can be useful for analyzing errors.  By
+default, the log size in that case is 16384 bytes, but can be altered by
+linkperf:perf-config[1] e.g. perf config itrace.debug-log-buffer-size=30000
 
 In addition, the period of the "instructions" event can be specified. e.g.
 
@@ -1800,6 +1811,36 @@ Can be compiled and traced:
  $ perf script --itrace=ew
            eg_ptw 19875 [007]  8061.235912:     ptwrite:  IP: 0 payload: 0x1234567890abcdef      55701249a196 perf_emulate_ptwrite+0x16 (/home/user/eg_ptw)
  $
+
+
+Pipe mode
+---------
+Pipe mode is a problem for Intel PT and possibly other auxtrace users.
+It's not recommended to use a pipe as data output with Intel PT because
+of the following reason.
+
+Essentially the auxtrace buffers do not behave like the regular perf
+event buffers.  That is because the head and tail are updated by
+software, but in the auxtrace case the data is written by hardware.
+So the head and tail do not get updated as data is written.
+
+In the Intel PT case, the head and tail are updated only when the trace
+is disabled by software, for example:
+    - full-trace, system wide : when buffer passes watermark
+    - full-trace, not system-wide : when buffer passes watermark or
+                                    context switches
+    - snapshot mode : as above but also when a snapshot is made
+    - sample mode : as above but also when a sample is made
+
+That means finished-round ordering doesn't work.  An auxtrace buffer
+can turn up that has data that extends back in time, possibly to the
+very beginning of tracing.
+
+For a perf.data file, that problem is solved by going through the trace
+and queuing up the auxtrace buffers in advance.
+
+For pipe mode, the order of events and timestamps can presumably
+be messed up.
 
 
 EXAMPLE

@@ -19,6 +19,9 @@
 #include <linux/usb.h>
 #include <linux/hid.h>
 
+#define UCLOGIC_MOUSE_FRAME_QUIRK	BIT(0)
+#define UCLOGIC_BATTERY_QUIRK		BIT(1)
+
 /* Types of pen in-range reporting */
 enum uclogic_params_pen_inrange {
 	/* Normal reports: zero - out of proximity, one - in proximity */
@@ -27,6 +30,16 @@ enum uclogic_params_pen_inrange {
 	UCLOGIC_PARAMS_PEN_INRANGE_INVERTED,
 	/* No reports */
 	UCLOGIC_PARAMS_PEN_INRANGE_NONE,
+};
+
+/* Types of frames */
+enum uclogic_params_frame_type {
+	/* Frame with buttons */
+	UCLOGIC_PARAMS_FRAME_BUTTONS = 0,
+	/* Frame with buttons and a dial */
+	UCLOGIC_PARAMS_FRAME_DIAL,
+	/* Frame with buttons and a mouse (shaped as a dial + touchpad) */
+	UCLOGIC_PARAMS_FRAME_MOUSE,
 };
 
 /*
@@ -203,6 +216,27 @@ struct uclogic_params {
 	 * parts. Only valid, if "invalid" is false.
 	 */
 	struct uclogic_params_frame frame_list[3];
+};
+
+/* Driver data */
+struct uclogic_drvdata {
+	/* Interface parameters */
+	struct uclogic_params params;
+	/* Pointer to the replacement report descriptor. NULL if none. */
+	__u8 *desc_ptr;
+	/*
+	 * Size of the replacement report descriptor.
+	 * Only valid if desc_ptr is not NULL
+	 */
+	unsigned int desc_size;
+	/* Pen input device */
+	struct input_dev *pen_input;
+	/* In-range timer */
+	struct timer_list inrange_timer;
+	/* Last rotary encoder state, or U8_MAX for none */
+	u8 re_state;
+	/* Device quirks */
+	unsigned long quirks;
 };
 
 /* Initialize a tablet interface and discover its parameters */

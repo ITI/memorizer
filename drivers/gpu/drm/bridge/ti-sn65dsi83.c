@@ -346,7 +346,7 @@ static void sn65dsi83_atomic_enable(struct drm_bridge *bridge,
 
 	/* Deassert reset */
 	gpiod_set_value_cansleep(ctx->enable_gpio, 1);
-	usleep_range(1000, 1100);
+	usleep_range(10000, 11000);
 
 	/* Get the LVDS format from the bridge state. */
 	bridge_state = drm_atomic_get_new_bridge_state(state, bridge);
@@ -708,13 +708,11 @@ err_remove_bridge:
 	return ret;
 }
 
-static int sn65dsi83_remove(struct i2c_client *client)
+static void sn65dsi83_remove(struct i2c_client *client)
 {
 	struct sn65dsi83 *ctx = i2c_get_clientdata(client);
 
 	drm_bridge_remove(&ctx->bridge);
-
-	return 0;
 }
 
 static struct i2c_device_id sn65dsi83_id[] = {

@@ -171,6 +171,9 @@ static inline void memorizer_memblock_alloc(unsigned long base, unsigned long si
 static inline void memorizer_alloc_getfreepages(unsigned long call_site, struct page *page, unsigned
                         int order, gfp_t gfp_flags){}
 
+static inline void memorizer_alloc_folio(
+		unsigned long call_site, struct page *page, unsigned
+		int order, gfp_t gfp_flags){}
 static inline void memorizer_start_getfreepages(void){}
 static inline void memorizer_end_getfreepages(void){}
 

@@ -705,6 +705,7 @@ static int tsl2563_probe(struct i2c_client *client,
 	struct iio_dev *indio_dev;
 	struct tsl2563_chip *chip;
 	struct tsl2563_platform_data *pdata = client->dev.platform_data;
+	unsigned long irq_flags;
 	int err = 0;
 	u8 id = 0;
 
@@ -760,10 +761,15 @@ static int tsl2563_probe(struct i2c_client *client,
 		indio_dev->info = &tsl2563_info_no_irq;
 
 	if (client->irq) {
+		irq_flags = irq_get_trigger_type(client->irq);
+		if (irq_flags == IRQF_TRIGGER_NONE)
+			irq_flags = IRQF_TRIGGER_RISING;
+		irq_flags |= IRQF_ONESHOT;
+
 		err = devm_request_threaded_irq(&client->dev, client->irq,
 					   NULL,
 					   &tsl2563_event_handler,
-					   IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+					   irq_flags,
 					   "tsl2563_event",
 					   indio_dev);
 		if (err) {
@@ -796,7 +802,7 @@ fail:
 	return err;
 }
 
-static int tsl2563_remove(struct i2c_client *client)
+static void tsl2563_remove(struct i2c_client *client)
 {
 	struct iio_dev *indio_dev = i2c_get_clientdata(client);
 	struct tsl2563_chip *chip = iio_priv(indio_dev);
@@ -809,8 +815,6 @@ static int tsl2563_remove(struct i2c_client *client)
 	i2c_smbus_write_byte_data(chip->client, TSL2563_CMD | TSL2563_REG_INT,
 				  chip->intr);
 	tsl2563_set_power(chip, 0);
-
-	return 0;
 }
 
 static int tsl2563_suspend(struct device *dev)

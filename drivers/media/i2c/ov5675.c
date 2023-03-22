@@ -820,8 +820,10 @@ static int ov5675_init_controls(struct ov5675 *ov5675)
 	v4l2_ctrl_new_std(ctrl_hdlr, &ov5675_ctrl_ops,
 			  V4L2_CID_VFLIP, 0, 1, 1, 0);
 
-	if (ctrl_hdlr->error)
+	if (ctrl_hdlr->error) {
+		v4l2_ctrl_handler_free(ctrl_hdlr);
 		return ctrl_hdlr->error;
+	}
 
 	ov5675->sd.ctrl_handler = ctrl_hdlr;
 
@@ -1175,7 +1177,7 @@ check_hwcfg_error:
 	return ret;
 }
 
-static int ov5675_remove(struct i2c_client *client)
+static void ov5675_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov5675 *ov5675 = to_ov5675(sd);
@@ -1185,8 +1187,6 @@ static int ov5675_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ov5675->mutex);
-
-	return 0;
 }
 
 static int ov5675_probe(struct i2c_client *client)

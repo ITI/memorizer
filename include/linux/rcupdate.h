@@ -42,7 +42,31 @@ void call_rcu(struct rcu_head *head, rcu_callback_t func);
 void rcu_barrier_tasks(void);
 void rcu_barrier_tasks_rude(void);
 void synchronize_rcu(void);
+
+struct rcu_gp_oldstate;
 unsigned long get_completed_synchronize_rcu(void);
+void get_completed_synchronize_rcu_full(struct rcu_gp_oldstate *rgosp);
+
+// Maximum number of unsigned long values corresponding to
+// not-yet-completed RCU grace periods.
+#define NUM_ACTIVE_RCU_POLL_OLDSTATE 2
+
+/**
+ * same_state_synchronize_rcu - Are two old-state values identical?
+ * @oldstate1: First old-state value.
+ * @oldstate2: Second old-state value.
+ *
+ * The two old-state values must have been obtained from either
+ * get_state_synchronize_rcu(), start_poll_synchronize_rcu(), or
+ * get_completed_synchronize_rcu().  Returns @true if the two values are
+ * identical and @false otherwise.  This allows structures whose lifetimes
+ * are tracked by old-state values to push these values to a list header,
+ * allowing those structures to be slightly smaller.
+ */
+static inline bool same_state_synchronize_rcu(unsigned long oldstate1, unsigned long oldstate2)
+{
+	return oldstate1 == oldstate2;
+}
 
 #ifdef CONFIG_PREEMPT_RCU
 
@@ -205,6 +229,7 @@ void synchronize_rcu_tasks_rude(void);
 
 #define rcu_note_voluntary_context_switch(t) rcu_tasks_qs(t, false)
 void exit_tasks_rcu_start(void);
+void exit_tasks_rcu_stop(void);
 void exit_tasks_rcu_finish(void);
 #else /* #ifdef CONFIG_TASKS_RCU_GENERIC */
 #define rcu_tasks_classic_qs(t, preempt) do { } while (0)
@@ -213,6 +238,7 @@ void exit_tasks_rcu_finish(void);
 #define call_rcu_tasks call_rcu
 #define synchronize_rcu_tasks synchronize_rcu
 static inline void exit_tasks_rcu_start(void) { }
+static inline void exit_tasks_rcu_stop(void) { }
 static inline void exit_tasks_rcu_finish(void) { }
 #endif /* #else #ifdef CONFIG_TASKS_RCU_GENERIC */
 
@@ -324,11 +350,18 @@ static inline int rcu_read_lock_any_held(void)
  * RCU_LOCKDEP_WARN - emit lockdep splat if specified condition is met
  * @c: condition to check
  * @s: informative message
+ *
+ * This checks debug_lockdep_rcu_enabled() before checking (c) to
+ * prevent early boot splats due to lockdep not yet being initialized,
+ * and rechecks it after checking (c) to prevent false-positive splats
+ * due to races with lockdep being disabled.  See commit 3066820034b5dd
+ * ("rcu: Reject RCU_LOCKDEP_WARN() false positives") for more detail.
  */
 #define RCU_LOCKDEP_WARN(c, s)						\
 	do {								\
 		static bool __section(".data.unlikely") __warned;	\
-		if ((c) && debug_lockdep_rcu_enabled() && !__warned) {	\
+		if (debug_lockdep_rcu_enabled() && (c) &&		\
+		    debug_lockdep_rcu_enabled() && !__warned) {		\
 			__warned = true;				\
 			lockdep_rcu_suspicious(__FILE__, __LINE__, s);	\
 		}							\
@@ -496,13 +529,21 @@ do {									      \
  * against NULL.  Although rcu_access_pointer() may also be used in cases
  * where update-side locks prevent the value of the pointer from changing,
  * you should instead use rcu_dereference_protected() for this use case.
+ * Within an RCU read-side critical section, there is little reason to
+ * use rcu_access_pointer().
+ *
+ * It is usually best to test the rcu_access_pointer() return value
+ * directly in order to avoid accidental dereferences being introduced
+ * by later inattentive changes.  In other words, assigning the
+ * rcu_access_pointer() return value to a local variable results in an
+ * accident waiting to happen.
  *
  * It is also permissible to use rcu_access_pointer() when read-side
- * access to the pointer was removed at least one grace period ago, as
- * is the case in the context of the RCU callback that is freeing up
- * the data, or after a synchronize_rcu() returns.  This can be useful
- * when tearing down multi-linked structures after a grace period
- * has elapsed.
+ * access to the pointer was removed at least one grace period ago, as is
+ * the case in the context of the RCU callback that is freeing up the data,
+ * or after a synchronize_rcu() returns.  This can be useful when tearing
+ * down multi-linked structures after a grace period has elapsed.  However,
+ * rcu_dereference_protected() is normally preferred for this use case.
  */
 #define rcu_access_pointer(p) __rcu_access_pointer((p), __UNIQUE_ID(rcu), __rcu)
 

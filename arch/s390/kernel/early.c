@@ -267,7 +267,7 @@ char __bootdata(early_command_line)[COMMAND_LINE_SIZE];
 static void __init setup_boot_command_line(void)
 {
 	/* copy arch command line */
-	strlcpy(boot_command_line, early_command_line, COMMAND_LINE_SIZE);
+	strscpy(boot_command_line, early_command_line, COMMAND_LINE_SIZE);
 }
 
 static void __init check_image_bootable(void)
@@ -288,7 +288,6 @@ static void __init sort_amode31_extable(void)
 
 void __init startup_init(void)
 {
-	sclp_early_adjust_va();
 	reset_tod_clock();
 	check_image_bootable();
 	time_early_init();

@@ -630,8 +630,10 @@ static int ov2740_init_controls(struct ov2740 *ov2740)
 				     V4L2_CID_TEST_PATTERN,
 				     ARRAY_SIZE(ov2740_test_pattern_menu) - 1,
 				     0, 0, ov2740_test_pattern_menu);
-	if (ctrl_hdlr->error)
+	if (ctrl_hdlr->error) {
+		v4l2_ctrl_handler_free(ctrl_hdlr);
 		return ctrl_hdlr->error;
+	}
 
 	ov2740->sd.ctrl_handler = ctrl_hdlr;
 
@@ -1053,7 +1055,7 @@ check_hwcfg_error:
 	return ret;
 }
 
-static int ov2740_remove(struct i2c_client *client)
+static void ov2740_remove(struct i2c_client *client)
 {
 	struct v4l2_subdev *sd = i2c_get_clientdata(client);
 	struct ov2740 *ov2740 = to_ov2740(sd);
@@ -1063,8 +1065,6 @@ static int ov2740_remove(struct i2c_client *client)
 	v4l2_ctrl_handler_free(sd->ctrl_handler);
 	pm_runtime_disable(&client->dev);
 	mutex_destroy(&ov2740->mutex);
-
-	return 0;
 }
 
 static int ov2740_nvmem_read(void *priv, unsigned int off, void *val,

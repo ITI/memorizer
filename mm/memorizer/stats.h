@@ -61,7 +61,7 @@ void track_l3_alloc(void);
 void print_stats(size_t pr_level);
 int seq_print_stats(struct seq_file *seq);
 #else
-static inline char * alloc_type_str(enum AllocType AT){}
+static inline char * alloc_type_str(enum AllocType AT){return "";}
 static inline void track_alloc(enum AllocType AT){}
 static inline void track_disabled_alloc(void){}
 static inline void track_induced_alloc(void){}

@@ -90,7 +90,7 @@ if [ -n "$KDEB_PKGVERSION" ]; then
 	packageversion=$KDEB_PKGVERSION
 	revision=${packageversion##*-}
 else
-	revision=$(cat .version 2>/dev/null||echo 1)
+	revision=$($srctree/init/build-version)
 	packageversion=$version-$revision
 fi
 sourcename=$KDEB_SOURCENAME
@@ -236,7 +236,7 @@ binary-arch: build-arch
 	KBUILD_BUILD_VERSION=${revision} -f \$(srctree)/Makefile intdeb-pkg
 
 clean:
-	rm -rf debian/*tmp debian/files
+	rm -rf debian/files debian/linux-*
 	\$(MAKE) clean
 
 binary: binary-arch

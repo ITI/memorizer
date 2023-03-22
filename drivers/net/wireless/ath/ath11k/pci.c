@@ -685,6 +685,7 @@ static const struct ath11k_hif_ops ath11k_pci_hif_ops = {
 	.stop = ath11k_pcic_stop,
 	.read32 = ath11k_pcic_read32,
 	.write32 = ath11k_pcic_write32,
+	.read = ath11k_pcic_read,
 	.power_down = ath11k_pci_power_down,
 	.power_up = ath11k_pci_power_up,
 	.suspend = ath11k_pci_hif_suspend,
@@ -978,7 +979,7 @@ static __maybe_unused int ath11k_pci_pm_suspend(struct device *dev)
 	if (ret)
 		ath11k_warn(ab, "failed to suspend core: %d\n", ret);
 
-	return ret;
+	return 0;
 }
 
 static __maybe_unused int ath11k_pci_pm_resume(struct device *dev)

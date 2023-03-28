@@ -1,30 +1,48 @@
 #!/bin/bash -ex
 
+U=robadams
+D="/data/$U/data/$(uname -r)/$(date -Iseconds)"
+ssh "$U@_gateway" mkdir -p "$D"
+
+function copy() {
+  # Stoopid virtual file system. scp won't copy
+  # the file directly because its size is 0.
+  # Here's hoping there aren't any spaces in $D, $1, or $2
+  cat "$1" | ssh $U@_gateway "cat > $D/${2:-$1}"
+}
+
 cd /sys/kernel/debug/memorizer
 
-#cfg_log_on
-#cfgmap
-#clear_dead_objs
-#clear_printed_list
-#global_table
-#kmap
+# Turn everything off and clear stale data
 echo 0 > memorizer_enabled
 echo 0 > memorizer_log_access
+echo 0 > cfg_log_on
+echo 0 > cfgmap
 echo 1 > clear_dead_objs
-echo 0 > print_live_obj
+# Adjust following line: 0 gets less data, 1 gets more data
+echo 1 > print_live_obj
 echo 1 > clear_printed_list
-[[ $(wc -l <kmap) == 0 ]]
 
+# Given above config, kmap should be empty
+# [[ $(wc -l <kmap) == 0 ]]
+
+# Turn everything on
+echo 1 > cfg_log_on
 echo 1 > memorizer_enabled
 echo 1 > memorizer_log_access
-/bin/ls
+
+# Run some test.
+"$@"
+
+# Turn everything off
 echo 0 > memorizer_enabled
 echo 0 > memorizer_log_access
-[[ $(wc -l <kmap) != 0 ]]
-wc -l kmap
-wc -l kmap
-cp kmap /tmp/kmap
-D="/data/robadams/data/$(uname -r)"
-U=robadams
-ssh $U@_gateway mkdir -p "$D"
-scp /tmp/kmap $U@_gateway:"$D/$(date -Iseconds)"
+echo 0 > cfg_log_on
+
+# If we gathered any data, kmap should be non-empty
+# [[ $(wc -l <kmap) != 0 ]]
+
+# Store the data on the server
+copy kmap
+copy cfgmap
+copy global_table

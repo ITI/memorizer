@@ -1149,6 +1149,11 @@ void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
 		__memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
 				gfp_flags, MEM_KMEM_CACHE);
 }
+void memorizer_kmem_cache_alloc_bulk(unsigned long call_site, 
+	struct kmem_cache *s, gfp_t flags, size_t size, void **p)
+{
+	/* TODO robadams@illinois.edu */
+}
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,
 		struct kmem_cache *s, gfp_t gfp_flags, int node)
@@ -1171,6 +1176,11 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 	}
 
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
+}
+
+void memorizer_kmem_cache_free_bulk(unsigned long call_site, size_t size, void**p)
+{
+	/* TODO robadams@illinois.edu */
 }
 
 

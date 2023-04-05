@@ -1772,7 +1772,6 @@ static gfp_t last_flags = 0;
 static void *setup_object(struct kmem_cache *s, void *object)
 {
 
-	// TODO memorizer : consider setup_object_debug
 	/* This function is called when Slub allocates new objects for a cache.
 	 * Memorizer preallocates objects here so any accesses from constructors
 	 * are captured correctly. */
@@ -3805,6 +3804,8 @@ void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
 		slab_free(df.s, df.slab, df.freelist, df.tail, &p[size], df.cnt,
 			  _RET_IP_);
 	} while (likely(size));
+	/* TODO robadams@illinois.edu test this. */
+	memorizer_kmem_cache_free_bulk(_RET_IP_, size, p);
 }
 EXPORT_SYMBOL(kmem_cache_free_bulk);
 
@@ -3879,6 +3880,11 @@ int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
 	 */
 	slab_post_alloc_hook(s, objcg, flags, size, p,
 				slab_want_init_on_alloc(flags, s));
+
+	/*
+	 * TODO robadams@illinois.edu test this
+	 */
+	memorizer_kmem_cache_alloc_bulk(_RET_IP_, s, flags, size, p);
 	return i;
 error:
 	slub_put_cpu_ptr(s->cpu_slab);

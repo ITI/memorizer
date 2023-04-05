@@ -28,6 +28,7 @@ UBSAN_SANITIZE	:= n
 KCSAN_SANITIZE	:= n
 KMSAN_SANITIZE	:= n
 KCOV_INSTRUMENT := n
+MEMORIZER_INSTRUMENT := n
 
 # These are adjustments to the compiler flags used for objects that
 # make up the standalone purgatory.ro

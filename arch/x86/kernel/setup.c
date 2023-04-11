@@ -25,6 +25,7 @@
 #include <linux/static_call.h>
 #include <linux/swiotlb.h>
 #include <linux/random.h>
+#include <linux/memorizer.h>
 
 #include <uapi/linux/mount.h>
 
@@ -1240,6 +1241,8 @@ void __init setup_arch(char **cmdline_p)
 
 	if (!early_xdbc_setup_hardware())
 		early_xdbc_register_console();
+
+	memorizer_init();
 
 	x86_init.paging.pagetable_init();
 

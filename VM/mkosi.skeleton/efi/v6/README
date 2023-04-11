@@ -1,0 +1,2 @@
+After building the kernel, before running `mkosi build`, copy the kernel and some initrd here
+as `linux` and `initrd`, respectively.

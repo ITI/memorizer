@@ -956,6 +956,8 @@ void *__do_kmalloc_node(size_t size, gfp_t flags, int node, unsigned long caller
 		ret = __kmalloc_large_node(size, flags, node);
 		trace_kmalloc(caller, ret, size,
 			      PAGE_SIZE << get_order(size), flags, node);
+		memorizer_kmalloc_node(caller, ret, size,
+			PAGE_SIZE << get_order(size), flags, node);
 		return ret;
 	}
 
@@ -967,6 +969,7 @@ void *__do_kmalloc_node(size_t size, gfp_t flags, int node, unsigned long caller
 	ret = __kmem_cache_alloc_node(s, flags, node, size, caller);
 	ret = kasan_kmalloc(s, ret, size, flags);
 	trace_kmalloc(caller, ret, size, s->size, flags, node);
+	memorizer_kmalloc_node(caller, ret, size, s->size, flags, node);
 	return ret;
 }
 
@@ -1141,6 +1144,7 @@ void *kmalloc_large_node(size_t size, gfp_t flags, int node)
 
 	trace_kmalloc(_RET_IP_, ret, size, PAGE_SIZE << get_order(size),
 		      flags, node);
+	memorizer_kmalloc(_RET_IP_, ret, size, PAGE_SIZE << get_order(size), flags);
 	return ret;
 }
 EXPORT_SYMBOL(kmalloc_large_node);

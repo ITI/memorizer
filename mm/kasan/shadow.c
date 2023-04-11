@@ -26,6 +26,128 @@
 
 #include "kasan.h"
 
+
+/* Memorizer-introduced function to classify an access based on the
+   metadata in shadow space made available by KASAN. It returns the
+   shadow value type that it finds. See kasan.h for the possible
+   values. With the current design, it will return 0x00 if the obj
+   is larger than a page. This might make it unsuitable for heap
+   objects, but for stacks and globals it should be very accurate.
+   Now deprecated, see new implementation below.*/
+u8 detect_access_kind(void * p){
+
+    /* get shadow info for access address */
+    u8 shadow_val = *(u8 *)kasan_mem_to_shadow(p);
+    const void *first_poisoned_addr = p;
+
+    /* We now search for a shadow value. We search both forwards and
+       backwards without leaving the current page so we don't trigger
+       any invalid accesses. This may fail if there really is an obj
+       larger than a page, but for now we will accept these as losses.
+       That should be very rare for stacks/globals. A possible
+       extension is searching beyond 1 page, but first checking to see
+       if that will be valid.  */
+    // Calculate the page-aligned address we are on
+    void * p_aligned = (void *)( (long) p & (~((1 << PAGE_SHIFT) - 1)));
+    // Calculate the max forwards search distance
+    long search_size = (long) (p_aligned + PAGE_SIZE - p);
+    // Search forwards
+    while (shadow_val < KASAN_GRANULE_SIZE && first_poisoned_addr < p + search_size) {
+        first_poisoned_addr += KASAN_GRANULE_SIZE;
+        shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
+    }
+
+    // If no hit, search backwards too. Stay higher than p_aligned
+    first_poisoned_addr = p;
+    while (shadow_val < KASAN_GRANULE_SIZE && first_poisoned_addr > (p_aligned + KASAN_GRANULE_SIZE)) {
+        first_poisoned_addr -= KASAN_GRANULE_SIZE;
+        shadow_val = *(u8 *)kasan_mem_to_shadow(first_poisoned_addr);
+    }
+
+    return shadow_val;
+}
+#if 0
+
+// Another variant of this logic. Still debugging.
+u8 detect_access_kind_alt(void * p){
+
+  // Calculate page-aligned address
+  void * p_aligned = (void *) ((unsigned long) p & (~((1 << PAGE_SHIFT) - 1)));
+
+  // Initialize shadow pointer and current shadow value
+  u8* shadow_ptr = kasan_mem_to_shadow(p_aligned);
+  u8 shadow_val = *shadow_ptr;
+
+  // Set maximum search distance
+  u8* search_max = kasan_mem_to_shadow(p_aligned + 1*PAGE_SIZE);
+  /* Search until we (1) find a valid shadow type identifier, (2)
+     exceed the max search distance, or (3) would go beyond end of
+     shadow space.
+     Note that shadow values that are nonzero but less than
+     KASAN_SHADOW_SCALE encode a partial red zone, and you need
+     to look at the next byte to get the kind. */
+  while (shadow_val < KASAN_SHADOW_SCALE_SIZE &&
+	 shadow_ptr < search_max &&
+	 shadow_ptr < (u8 *)KASAN_SHADOW_END){
+    shadow_ptr++;
+    shadow_val = *shadow_ptr;
+  }
+  return shadow_val;
+}
+#endif
+
+extern char __start_rodata[];
+extern char __bss_start[];
+enum AllocType kasan_obj_type(const void *p, unsigned int size)
+{
+    /* If we are below the Kernel address space */
+	if (p < kasan_shadow_to_mem((void *)KASAN_SHADOW_START)) {
+        /* our pointer is to page 0... null ptr */
+		if ((unsigned long)p < PAGE_SIZE)
+            return MEM_BUG;
+        /* our pointer is in 0 to User space end addr range  */
+		else if ((unsigned long)p < TASK_SIZE)
+            return MEM_MZ_USER;
+        /* crazy other stuff */
+		else
+            return MEM_BUG;
+    } else {
+        /* get shadow info for access address */
+        u8 shadow_val = detect_access_kind((void *)p);
+        switch(shadow_val)
+        {
+            case KASAN_PAGE_REDZONE:
+                return MEM_ALLOC_PAGES;
+#ifdef KASAN_KMALLOC_REDZONE
+            case KASAN_KMALLOC_REDZONE:
+                return MEM_HEAP;
+#endif
+            case KASAN_GLOBAL_REDZONE:
+                return MEM_GLOBAL;
+            case KASAN_STACK_LEFT:
+            case KASAN_STACK_MID:
+            case KASAN_STACK_RIGHT:
+            case KASAN_STACK_PARTIAL:
+                return MEM_STACK_PAGE;
+            default:
+	      /* There are some global objects that are not registered by KASAN.
+		 We can use the section that the address is in to classify it
+		 as an unknown global. We'll count anything in rodata, data or bss.
+		 Very strangely, only a few of the section starts and ends are defined
+		 constants. I wish they were all defined...
+		 For now, taking the beginning of rodata to the end of bss as unknown
+		 global. There are some other sections in there, but we shouldn't
+		 be getting data accesses to them. In the future we could split these
+		 down more finely if we want to.
+	      */
+	      if (p >= (const void *)__start_rodata && p <= (const void *)(__bss_start + 0x01fea000)){
+			return MEM_GLOBAL;
+	      }
+	      return MEM_NONE;
+        }
+    }
+}
+
 bool __kasan_check_read(const volatile void *p, unsigned int size)
 {
 	return kasan_check_range((unsigned long)p, size, false, _RET_IP_);

@@ -2,7 +2,7 @@
 VERSION = 6
 PATCHLEVEL = 2
 SUBLEVEL = 10
-EXTRAVERSION =
+EXTRAVERSION = -memorizer-3
 NAME = Hurr durr I'ma ninja sloth
 
 # *DOCUMENTATION*
@@ -1099,6 +1099,7 @@ include-$(CONFIG_KASAN)		+= scripts/Makefile.kasan
 include-$(CONFIG_KCSAN)		+= scripts/Makefile.kcsan
 include-$(CONFIG_KMSAN)		+= scripts/Makefile.kmsan
 include-$(CONFIG_UBSAN)		+= scripts/Makefile.ubsan
+include-$(CONFIG_MEMORIZER)	+= scripts/Makefile.memorizer
 include-$(CONFIG_KCOV)		+= scripts/Makefile.kcov
 include-$(CONFIG_RANDSTRUCT)	+= scripts/Makefile.randstruct
 include-$(CONFIG_GCC_PLUGINS)	+= scripts/Makefile.gcc-plugins

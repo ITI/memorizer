@@ -1013,6 +1013,24 @@ source "lib/Kconfig.kasan"
 source "lib/Kconfig.kfence"
 source "lib/Kconfig.kmsan"
 
+config MEMORIZER
+	bool "Memorizer: kernel object lifetime access tracing"
+	depends on KASAN
+        help
+          Enables memory allocation and tracing tool that combines compiler
+          instrumentation on all loads/stores with embedded hooks for
+          allocations to track lifetime access patterns for kernel memory
+          objects.
+
+config MEMORIZER_STATS
+	bool "Memorizer stats: Enable the statistic summary for Memorizer"
+	depends on MEMORIZER
+		help
+		  Enables the statistic summary including the number of accesses and
+		  number of shadow object allocated for Memorizer which will slow down the
+		  performance.
+
+
 endmenu # "Memory Debugging"
 
 config DEBUG_SHIRQ
@@ -2129,6 +2147,7 @@ config TEST_MIN_HEAP
 config TEST_SORT
 	tristate "Array-based sort test" if !KUNIT_ALL_TESTS
 	depends on KUNIT
+	select STACKTRACE if ARCH_CORRECT_STACKTRACE_ON_KRETPROBE
 	default KUNIT_ALL_TESTS
 	help
 	  This option enables the self-test function of 'sort()' at boot,

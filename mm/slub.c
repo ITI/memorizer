@@ -1825,8 +1825,14 @@ static inline bool slab_free_freelist_hook(struct kmem_cache *s,
 	return *head != NULL;
 }
 
+static gfp_t last_flags = 0;
 static void *setup_object(struct kmem_cache *s, void *object)
 {
+	/* This function is called when Slub allocates new objects for a cache.
+	 * Memorizer preallocates objects here so any accesses from constructors
+	 * are captured correctly. */
+	memorizer_kmem_cache_alloc(MEMORIZER_PREALLOCED, object, s, last_flags);
+
 	setup_object_debug(s, object);
 	object = kasan_init_slab_obj(s, object);
 	if (unlikely(s->ctor)) {
@@ -1992,6 +1998,9 @@ static struct slab *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 	 * so we fall-back to the minimum order allocation.
 	 */
 	alloc_gfp = (flags | __GFP_NOWARN | __GFP_NORETRY) & ~__GFP_NOFAIL;
+
+	last_flags = alloc_gfp;
+
 	if ((alloc_gfp & __GFP_DIRECT_RECLAIM) && oo_order(oo) > oo_order(s->min))
 		alloc_gfp = (alloc_gfp | __GFP_NOMEMALLOC) & ~__GFP_RECLAIM;
 
@@ -2023,7 +2032,12 @@ static struct slab *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 
 	setup_slab_debug(s, slab, start);
 
+#ifdef CONFIG_MEMORIZER
+	// For Memorizer, let's not shuffle slab. This way there's only one place where setup_object() is called.
+	shuffle = false;
+#else
 	shuffle = shuffle_freelist(s, slab);
+#endif
 
 	if (!shuffle) {
 		start = fixup_red_left(s, start);
@@ -3427,6 +3441,7 @@ static __always_inline void maybe_wipe_obj_freeptr(struct kmem_cache *s,
 static __fastpath_inline void *slab_alloc_node(struct kmem_cache *s, struct list_lru *lru,
 		gfp_t gfpflags, int node, unsigned long addr, size_t orig_size)
 {
++	// TODO robadams@illinois.edu memorizer path?
 	void *object;
 	struct obj_cgroup *objcg = NULL;
 	bool init = false;
@@ -3464,9 +3479,14 @@ static __fastpath_inline
 void *__kmem_cache_alloc_lru(struct kmem_cache *s, struct list_lru *lru,
 			     gfp_t gfpflags)
 {
+	int update;
 	void *ret = slab_alloc(s, lru, gfpflags, _RET_IP_, s->object_size);
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags, NUMA_NO_NODE);
+
+	update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+		memorizer_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags);
 
 	return ret;
 }
@@ -3488,15 +3508,21 @@ void *__kmem_cache_alloc_node(struct kmem_cache *s, gfp_t gfpflags,
 			      int node, size_t orig_size,
 			      unsigned long caller)
 {
+	// TODO robadams@illinois.edu -- memorizer?
 	return slab_alloc_node(s, NULL, gfpflags, node,
 			       caller, orig_size);
 }
 
 void *kmem_cache_alloc_node(struct kmem_cache *s, gfp_t gfpflags, int node)
 {
+	int update;
 	void *ret = slab_alloc_node(s, NULL, gfpflags, node, _RET_IP_, s->object_size);
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags, node);
+
+	update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+		memorizer_kmem_cache_alloc_node(_RET_IP_, ret, s, gfpflags, node);
 
 	return ret;
 }
@@ -3807,6 +3833,7 @@ void kmem_cache_free(struct kmem_cache *s, void *x)
 		return;
 	trace_kmem_cache_free(_RET_IP_, x, s);
 	slab_free(s, virt_to_slab(x), x, NULL, &x, 1, _RET_IP_);
+	memorizer_kmem_cache_free(_RET_IP_, x);
 }
 EXPORT_SYMBOL(kmem_cache_free);
 
@@ -3905,6 +3932,8 @@ void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
 		slab_free(df.s, df.slab, df.freelist, df.tail, &p[size], df.cnt,
 			  _RET_IP_);
 	} while (likely(size));
+	/* TODO robadams@illinois.edu test this. */
+	memorizer_kmem_cache_free_bulk(_RET_IP_, size, p);
 }
 EXPORT_SYMBOL(kmem_cache_free_bulk);
 
@@ -4029,9 +4058,15 @@ int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
 	 * memcg and kmem_cache debug support and memory initialization.
 	 * Done outside of the IRQ disabled fastpath loop.
 	 */
-	if (i != 0)
+	if (i != 0) {
 		slab_post_alloc_hook(s, objcg, flags, size, p,
 			slab_want_init_on_alloc(flags, s), s->object_size);
+	
+		/*
+		 * TODO robadams@illinois.edu test this
+		 */
+		memorizer_kmem_cache_alloc_bulk(_RET_IP_, s, flags, size, p);
+	}
 	return i;
 }
 EXPORT_SYMBOL(kmem_cache_alloc_bulk);

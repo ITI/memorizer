@@ -185,6 +185,12 @@ _c_flags += $(if $(patsubst n%,, \
 	$(CFLAGS_KCOV))
 endif
 
+ifeq ($(CONFIG_MEMORIZER),y)
+_c_flags += $(if $(patsubst n%,, \
+		$(MEMORIZER_INSTRUMENT_$(basetarget).o)$(MEMORIZER_INSTRUMENT)y), \
+		$(CFLAGS_MEMORIZER))
+endif
+
 #
 # Enable KCSAN flags except some files or directories we don't want to check
 # (depends on variables KCSAN_SANITIZE_obj.o, KCSAN_SANITIZE)

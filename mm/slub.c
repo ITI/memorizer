@@ -3441,7 +3441,7 @@ static __always_inline void maybe_wipe_obj_freeptr(struct kmem_cache *s,
 static __fastpath_inline void *slab_alloc_node(struct kmem_cache *s, struct list_lru *lru,
 		gfp_t gfpflags, int node, unsigned long addr, size_t orig_size)
 {
-+	// TODO robadams@illinois.edu memorizer path?
+	// TODO robadams@illinois.edu memorizer path?
 	void *object;
 	struct obj_cgroup *objcg = NULL;
 	bool init = false;

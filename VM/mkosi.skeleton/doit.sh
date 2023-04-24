@@ -8,12 +8,12 @@ H="_gateway"
 MZ=/sys/kernel/debug/memorizer
 TESTTYPE=dump
 
-function create_dir() {
+create_dir() {
   ssh "$U@$H" mkdir -p "$D"
 }
 
 copy_iter=0
-function copy() {
+copy() {
   # Stoopid virtual file system. scp won't copy
   # the file directly because its size is 0.
   # Here's hoping there aren't any spaces in $D, $1, or $2
@@ -21,7 +21,7 @@ function copy() {
   copy_iter=$(( $copy_iter + 1 ))
 }
 
-function setup() {
+setup() {
   cd $MZ
 
   # Are we in the right spot?
@@ -38,14 +38,14 @@ function setup() {
   echo 1 > clear_printed_list
  }
 
-function on() {
+on() {
   # Turn everything on
   echo 1 > cfg_log_on
   echo 1 > memorizer_enabled
   echo 1 > memorizer_log_access
 }
 
-function off() {
+off() {
   # Turn everything off
   echo 0 > memorizer_enabled
   echo 0 > memorizer_log_access
@@ -56,13 +56,39 @@ function off() {
 # [[ $(wc -l <kmap) != 0 ]]
 
 # Store the data on the server
-function copy_all() {
+copy_all() {
   copy kmap
   copy cfgmap
   copy global_table
 }
 
-function dump() {
+drip() {
+  create_dir
+  setup
+  echo 0 > print_live_obj
+  echo 1 > clear_printed_list
+  {
+    
+    leave=false
+    trap "leave=true" USR1
+    while sleep 5 && [ "$leave" = "false" ]; do
+        copy kmap kmap.drip
+        echo 1 > clear_printed_list
+    done
+  } &
+  helper=$!
+
+  on
+  "$@"
+  off
+
+  kill $helper -USR1
+  wait $helper
+
+  copy_all 
+}
+
+dump() {
   create_dir
   setup
   on
@@ -71,7 +97,7 @@ function dump() {
   copy_all
 }
 
-function stream() {
+stream() {
   echo Not implemented yet
   false
 }

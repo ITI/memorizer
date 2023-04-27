@@ -63,18 +63,23 @@ copy_all() {
 }
 
 drip() {
+  echo WARNING - the drip operation is a work in progress.
+  echo WARNING - Using drip probably wont work.
   create_dir
   setup
   echo 0 > print_live_obj
   echo 1 > clear_printed_list
+
   {
-    
     leave=false
     trap "leave=true" USR1
-    while sleep 5 && [ "$leave" = "false" ]; do
-        copy kmap kmap.drip
+    while [ "$leave" = "false" ]; do
+        # cat kmap
+	copy kmap kmap.drip
+	# wc -l kmap
         echo 1 > clear_printed_list
-    done
+	sleep 5
+    done # | copy - kmap.drop 
   } &
   helper=$!
 
@@ -82,7 +87,8 @@ drip() {
   "$@"
   off
 
-  kill $helper -USR1
+  echo helper $helper dollar $$
+  kill -USR1 $helper
   wait $helper
 
   copy_all 

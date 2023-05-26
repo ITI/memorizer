@@ -1,8 +1,10 @@
 # Pretty much only doing one thing
+# TODO robadams@illinois.edu add tests
+# TODO automate release, including generate a patch file.
 stages:
   - compile
 
-compile:
+compile_deb:
   tags: ["docker"]
   stage: compile
   image: illinoisrobert/kernel-build
@@ -10,24 +12,28 @@ compile:
     # Some people like tarballs; some like debs. We'll build both
     # Note: "make O=o" is not compatible with "deb-pkg", so we won't use it.
     - make  defconfig rob.config memorizer.config
-    # TODO We need a better formulate for "-j", maybe taking load average into account.
-    # Hmm.  tar-pkg followed by deb-pkg doesn't work.
-    - make -j $(expr $(nproc) / 2 + 1) deb-pkg
-    - make -j $(expr $(nproc) / 2 + 1) tar-pkg
+    - make -j $(expr $(nproc) / 3 + 1) deb-pkg
     # I don't know why deb-pkg puts the files where we can't reach them.
     - mv ../linux-* .
   artifacts:
-    expire_in: 2 weeks
+    expire_in: 1 week
     paths:
-      # Not all of these will actually exist. We cast a wide net.
-      # First, whatever random fils you want to add
+      - ./.config
+      - ./vmlinux
+      - ./linux-*
+
+compile_tar:
+  tags: ["docker"]
+  stage: compile
+  image: illinoisrobert/kernel-build
+  script:
+    # Some people like tarballs; some like debs. We'll build both
+    # Note: "make O=o" is not compatible with "deb-pkg", so we won't use it.
+    - make  defconfig rob.config memorizer.config
+    - make -j $(expr $(nproc) / 3 + 1) tar-pkg
+  artifacts:
+    expire_in: 1 week
+    paths:
       - .config
       - vmlinux
-      - o/.config
-      - o/vmlinux
-      # Now the debs
-      # ERROR: Uploading artifacts ... Too Large .. status=413 ... FATAL: too large
-      # - linux-*
-      # Now the tarball
       - ./*.tar
-      - o/*.tar

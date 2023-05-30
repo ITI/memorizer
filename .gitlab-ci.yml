@@ -21,6 +21,7 @@ compile_deb:
       - ./.config
       - ./vmlinux
       - ./linux-*
+      - ./arch/x86/boot/bzImage
 
 compile_tar:
   tags: ["docker"]
@@ -37,3 +38,4 @@ compile_tar:
       - .config
       - vmlinux
       - ./*.tar
+      - ./arch/x86/boot/bzImage

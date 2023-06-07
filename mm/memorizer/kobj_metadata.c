@@ -287,7 +287,7 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t addr)
         uintptr_t nextobj = 0;
 
     /*
-     * Get the l1 entry for the addr, if there is not entry then we not only
+     * Get the l1 entry for the addr, if there is no entry then we not only
      * haven't tracked the object, but we also haven't allocated a l1 page
      * for the particular address
      */
@@ -365,10 +365,23 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
      * updated `obj` when we saw the first address of this
      * allocation.
      */
-    if (!obj)
+    if ( (!obj) || (!is_tracked_obj((uintptr_t)obj)) )
         return;
     if (obj->free_jiffies)
         return;
+
+    /*
+     * If the value to be written is not an object, take care
+     * not to dereference it.
+     */
+    if( (!new_kobj) || (!is_tracked_obj((uintptr_t)new_kobj)) ) {
+        write_lock_irqsave(&obj->rwlock, flags);
+	obj->free_jiffies = get_ts();
+	obj->free_ip = MEM_INDUCED | 0xdeadbeef00000000;
+        write_unlock_irqrestore(&obj->rwlock, flags);
+	return;
+    }
+
 
     /*
      * TODO robadams@illinois.edu
@@ -390,9 +403,9 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
     write_lock_irqsave(&obj->rwlock, flags);
     obj->free_jiffies = new_kobj->alloc_jiffies;
 
-    /* TODO robadams@illinois.edu is there room in the l1 entry for one more byte?
-     * That way, we could get rid of magic numbers below.
-     * */
+    /* 
+     * DANGER! Magic numbers ahead.
+     */
     if(addr == prev_addr) {
 	    /* This is a nested allocation */
 	    obj->free_ip = new_kobj->alloc_type | 0xfeed00000000;

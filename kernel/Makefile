@@ -40,6 +40,10 @@ KCSAN_SANITIZE_kcov.o := n
 UBSAN_SANITIZE_kcov.o := n
 KMSAN_SANITIZE_kcov.o := n
 CFLAGS_kcov.o := $(call cc-option, -fno-conserve-stack) -fno-stack-protector
+MEMORIZER_INSTRUMENT_compat.o := n
+ifdef CONFIG_MEMORIZER
+KASAN_SANITIZE_compat.o := n
+endif
 
 obj-y += sched/
 obj-y += locking/

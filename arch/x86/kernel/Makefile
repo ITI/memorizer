@@ -39,6 +39,10 @@ KMSAN_SANITIZE_nmi.o					:= n
 KCOV_INSTRUMENT		:= n
 
 MEMORIZER_INSTRUMENT					:= n
+ifdef CONFIG_MEMORIZER
+KASAN_SANITIZE_signal.o                                 := n
+KASAN_SANITIZE_sys_ia32.o                               := n
+endif
 
 CFLAGS_irq.o := -I $(srctree)/$(src)/../include/asm/trace
 

@@ -13,8 +13,6 @@ KASAN_SANITIZE_readdir.o := n
 KASAN_SANITIZE_select.o := n
 endif
 
-obj-$(CONFIG_SYSCTL)		+= sysctls.o
-
 obj-y :=	open.o read_write.o file_table.o super.o \
 		char_dev.o stat.o exec.o pipe.o namei.o fcntl.o \
 		ioctl.o readdir.o select.o dcache.o inode.o \
@@ -56,7 +54,7 @@ obj-$(CONFIG_FS_MBCACHE)	+= mbcache.o
 obj-$(CONFIG_FS_POSIX_ACL)	+= posix_acl.o
 obj-$(CONFIG_NFS_COMMON)	+= nfs_common/
 obj-$(CONFIG_COREDUMP)		+= coredump.o
-obj-$(CONFIG_SYSCTL)		+= drop_caches.o
+obj-$(CONFIG_SYSCTL)		+= drop_caches.o sysctls.o
 
 obj-$(CONFIG_FHANDLE)		+= fhandle.o
 obj-y				+= iomap/

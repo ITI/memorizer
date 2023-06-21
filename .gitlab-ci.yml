@@ -5,6 +5,7 @@ stages:
   - compile
   - upload
   - release
+  - announce
 
 variables_job:
   tags: ["docker"]
@@ -20,24 +21,27 @@ variables_job:
     GIT_STRATEGY: none
 
 
-# compile_deb_job:
-#   tags: ["docker"]
-#   stage: compile
-#   image: illinoisrobert/kernel-build
-#   script:
-#     # Some people like tarballs; some like debs. We'll build both
-#     # Note: "make O=o" is not compatible with "deb-pkg", so we won't use it.
-#     - make  defconfig rob.config memorizer.config
-#     - make -j $(expr $(nproc) / 3 + 1) deb-pkg
-#     # I don't know why deb-pkg puts the files where we can't reach them.
-#     - mv ../linux-* .
-#   artifacts:
-#     expire_in: 1 week
-#     paths:
-#       # - ./.config
-#       # - ./vmlinux
-#       - ./linux-*
-#       # - ./arch/x86/boot/bzImage
+compile_deb_job:
+  rules:
+    # Not until we figure out how to do it right.
+    - when: never
+  tags: ["docker"]
+  stage: compile
+  image: illinoisrobert/kernel-build
+  script:
+    # Some people like tarballs; some like debs. We'll build both
+    # Note: "make O=o" is not compatible with "deb-pkg", so we won't use it.
+    - make  defconfig rob.config memorizer.config
+    - make -j $(expr $(nproc) / 3 + 1) deb-pkg
+    # I don't know why deb-pkg puts the files where we can't reach them.
+    - mv ../linux-* .
+  artifacts:
+    expire_in: 1 week
+    paths:
+      # - ./.config
+      # - ./vmlinux
+      - ./linux-*
+      # - ./arch/x86/boot/bzImage
 
 compile_tar_job:
   tags: ["docker"]
@@ -102,3 +106,14 @@ release_job:
           url: $PACKAGE_REGISTRY_URL/bzImage-$CI_COMMIT_TAG
         - name: $CI_COMMIT_TAG.patch
           url: $PACKAGE_REGISTRY_URL/$CI_COMMIT_TAG.patch
+
+announce_job:
+  tags: ["docker"]
+  stage: announce
+  image: illinoisrobert/kernel-build
+  needs: ["release_job"]
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    # slack-announce returns true even if the announcement didn't work.
+    - slack-announce "$SLACK_CHANNEL_ID" "$SLACK_AUTH_TOKEN" "There is a new memorizer release $CI_COMMIT_TAG. You can download it from $CI_PROJECT_URL/-/releases/$CI_COMMIT_TAG."

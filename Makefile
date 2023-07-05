@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 6
 PATCHLEVEL = 1
-SUBLEVEL = 34
-EXTRAVERSION = -memorizer-8
+SUBLEVEL = 38
+EXTRAVERSION = -memorizer-9
 NAME = Curry Ramen
 
 # *DOCUMENTATION*

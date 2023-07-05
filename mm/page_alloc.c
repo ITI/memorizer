@@ -766,8 +766,6 @@ static inline bool pcp_allowed_order(unsigned int order)
 
 static inline void free_the_page(struct page *page, unsigned int order)
 {
-	/* TODO robadams@illinois.edu
-	 * Also in free_pages_prepare. Belt and suspenders? */
 	memorizer_free_pages(_RET_IP_, page, order);
 	if (pcp_allowed_order(order))		/* Via pcp? */
 		free_unref_page(page, order);
@@ -1413,8 +1411,6 @@ static __always_inline bool free_pages_prepare(struct page *page,
 	trace_mm_page_free(page, order);
 	kmsan_free_page(page, order);
 
-	/* TODO robadams@illinois.edu
-	 * Also in free_the_page. Belt and suspenders? */
 	memorizer_free_pages(_RET_IP_, page, order);
 
 	if (unlikely(PageHWPoison(page)) && !order) {
@@ -5865,9 +5861,6 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
 
 	// Memorizer hook here to attribute alloc to this caller
 	// Special Memorizer hook for exact page allocation
-
-	// TODO robadams@illinois.edu
-	// But does this lead to a bunch of 0xDEADBEEF?
 	memorizer_alloc_pages_exact(_RET_IP_, ret, size, gfp_mask);
 
 	return ret;

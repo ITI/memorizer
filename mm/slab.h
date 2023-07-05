@@ -720,7 +720,8 @@ static inline struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s,
 
 static inline void slab_post_alloc_hook(struct kmem_cache *s,
 					struct obj_cgroup *objcg, gfp_t flags,
-					size_t size, void **p, bool init)
+					size_t size, void **p, bool init,
+					unsigned long addr)
 {
 	size_t i;
 
@@ -740,6 +741,7 @@ static inline void slab_post_alloc_hook(struct kmem_cache *s,
 		kmemleak_alloc_recursive(p[i], s->object_size, 1,
 					 s->flags, flags);
 		kmsan_slab_alloc(s, p[i], flags);
+		memorizer_kmem_cache_alloc_bulk(addr, p[i], s, flags);
 	}
 
 	memcg_slab_post_alloc_hook(s, objcg, flags, size, p);

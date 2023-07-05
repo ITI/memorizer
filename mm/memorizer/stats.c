@@ -99,6 +99,8 @@ char * alloc_type_str(enum AllocType AT)
 			return "KMEM_CACHE";
 		case MEM_KMEM_CACHE_ND:
 			return "KMEM_CACHE_ND";
+		case MEM_KMEM_CACHE_BULK:
+			return "KMEM_CACHE_BULK";
 		case MEM_ALLOC_PAGES:
 			return "ALLOC_PAGES";
 		case MEM_ALLOC_PAGES_EXACT:

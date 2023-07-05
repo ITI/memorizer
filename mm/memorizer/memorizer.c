@@ -1007,13 +1007,6 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site,
 	return kobj;
 }
 
-/**
- * memorizer_alloc() - record allocation event
- * @object:	Pointer to the beginning of hte object
- * @size:	Size of the object
- *
- * Track the allocation and add the object to the set of active object tree.
- */
 static void inline __memorizer_kmalloc(unsigned long call_site, const void
 		*ptr, uint64_t bytes_req, uint64_t bytes_alloc, gfp_t gfp_flags, enum AllocType AT)
 {
@@ -1044,6 +1037,14 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 }
 
 /*** HOOKS similar to the kmem points ***/
+
+/**
+ * memorizer_alloc() - record allocation event
+ * @object:	Pointer to the beginning of hte object
+ * @size:	Size of the object
+ *
+ * Track the allocation and add the object to the set of active object tree.
+ */
 void memorizer_kmalloc(unsigned long call_site, const void *ptr, size_t
 		bytes_req, size_t bytes_alloc, gfp_t gfp_flags)
 {
@@ -1070,6 +1071,11 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	}
 
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t) ptr);
+}
+
+void memorizer_slab_free(unsigned long call_site, const void *ptr)
+{
+	memorizer_kfree(call_site, ptr);
 }
 
 void memorizer_memblock_alloc(phys_addr_t base, phys_addr_t size)
@@ -1149,10 +1155,14 @@ void memorizer_kmem_cache_alloc(unsigned long call_site, const void *ptr,
 		__memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
 				gfp_flags, MEM_KMEM_CACHE);
 }
-void memorizer_kmem_cache_alloc_bulk(unsigned long call_site, 
-	struct kmem_cache *s, gfp_t flags, size_t size, void **p)
+void memorizer_kmem_cache_alloc_bulk(unsigned long call_site, const void *ptr,
+		struct kmem_cache *s, gfp_t gfp_flags)
 {
-	/* TODO robadams@illinois.edu */
+	if (unlikely(ptr == NULL))
+		return;
+	if (!is_memorizer_cache_alloc((char *)s->name))
+		__memorizer_kmalloc(call_site, ptr, s->object_size, s->size,
+				gfp_flags, MEM_KMEM_CACHE_BULK);
 }
 
 void memorizer_kmem_cache_alloc_node (unsigned long call_site, const void *ptr,

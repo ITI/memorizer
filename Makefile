@@ -2,7 +2,7 @@
 VERSION = 6
 PATCHLEVEL = 1
 SUBLEVEL = 38
-EXTRAVERSION = -memorizer-9
+EXTRAVERSION = -memorizer-10
 NAME = Curry Ramen
 
 # *DOCUMENTATION*

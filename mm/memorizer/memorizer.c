@@ -321,7 +321,9 @@ atomic_t timestamp = ATOMIC_INIT(0);
 long get_ts(void) { return atomic_fetch_add(1,&timestamp); }
 
 /**
- * __memorizer_enter() - increment recursion counter for entry into memorizer
+ * __memorizer_enter() - set recursion flag for entry into memorizer
+ *
+ * Return value: 0 for success. Any other value for failure.
  *
  * The primary goal of this is to stop recursive handling of events. Memorizer
  * by design tracks two types of events: allocations and accesses. Effectively,
@@ -329,6 +331,10 @@ long get_ts(void) { return atomic_fetch_add(1,&timestamp); }
  * events that are sources from within memorizer. Yes this means we may not
  * track legitimate access of some types, but these are caused by memorizer and
  * we want to ignore them.
+ *
+ * N.b. There is no way yet to wait for memorizer to be available. Before
+ * you try `while(__memorizer_enter()) yield();`, look at the comment
+ * for `yield()` in kernel/sched/core.c
  */
 static inline int __memorizer_enter(void)
 {
@@ -837,6 +843,8 @@ static void free_kobj(struct memorizer_kobj * kobj)
 
 /**
  * clear_free_list() --- remove entries from free list and free kobjs
+ * 
+ * Caller should have already called __memorizer_enter() successfully.
  */
 static void clear_dead_objs(void)
 {
@@ -845,9 +853,8 @@ static void clear_dead_objs(void)
 	struct list_head *tmp;
 	unsigned long flags;
 	pr_info("Clearing the free'd kernel objects\n");
-	/* Avoid rentrance while freeing the list */
-	while(!__memorizer_enter())
-		yield();
+
+	/* This might take a long time with interrupts disabled. */
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_for_each_safe(p, tmp, &object_list) {
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
@@ -860,11 +867,12 @@ static void clear_dead_objs(void)
 		}
 	}
 	write_unlock_irqrestore(&object_list_spinlock, flags);
-	__memorizer_exit();
 }
 
 /**
  * clear_printed_objects() --- remove entries from free list and free kobjs
+ *
+ * Caller should have already called __memorizer_enter() successfully.
  */
 static void clear_printed_objects(void)
 {
@@ -873,7 +881,8 @@ static void clear_printed_objects(void)
 	struct list_head *tmp;
 	unsigned long flags;
 	pr_info("Clearing the free'd and printed kernel objects\n");
-	__memorizer_enter();
+
+	/* This could take a long time with interrupts disabled. */
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_for_each_safe(p, tmp, &object_list) {
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
@@ -886,7 +895,6 @@ static void clear_printed_objects(void)
 		}
 	}
 	write_unlock_irqrestore(&object_list_spinlock, flags);
-	__memorizer_exit();
 }
 
 /**
@@ -1317,52 +1325,36 @@ void memorizer_register_global(const void *ptr, size_t size)
 
 
 //==-- Memorizer Data Export ----------------------------------------------==//
-static unsigned long seq_flags;
-static bool sequence_done = false;
 extern struct list_head *seq_list_start(struct list_head *head, loff_t pos);
 extern struct list_head *seq_list_next(void *v, struct list_head *head, loff_t
 		*ppos);
 
 /*
- * kmap_seq_start() --- get the head of the free'd kobj list
+ * kmap_seq_start() --- set up the next 'session' of the seq_file. N.b.
+ *                      this function is called rougly once per `read()` syscall.
  *
- * Grab the lock here and give back on close. There is an interesting problem
- * here in that when the data gets to the page size limit for printing, the
- * sequence file closes the file and opens up again by coming to the start
- * location having processed a subset of the list already. The problem with this
- * is that without having __memorizer_enter() it will add objects to the list
- * between the calls to show and next opening the potential for an infinite
- * loop. It also adds elements in between start and stop operations.
+ * We must not call seq_list_start(). On every call to seq_list_start, other
+ * than the first, seq_list_next() is called pos times. Since
+ * seq_list_start() is called roughly once per read(), this means that
+ * seq_list_next is called O(n^2) times. 
  *
- * For some reason the start is called every time after a *stop*, which allows
- * more entries to be added to the list thus requiring the extra sequence_done
- * flag that I added to detect the end of the list. So we add this flag so that
- * any entries added after won't make the sequence continue forever in an
- * infinite loop.
+ * We are inside the memorizer_enter exclusion, so no locks are required. In fact,
+ * the memorizer_enter exclusion goes from the open() to the release(), including
+ * several read system calls in between. [I know that isn't what memorizer_enter
+ * was written for. Maybe we should use some other exclusion device. Maybe
+ * {kmap,clear_dead_obj,clear_printed_list} each set memorizer_enabled to 0?]
  */
 static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
 {
-	__memorizer_enter();
-	write_lock_irqsave(&object_list_spinlock, seq_flags);
-
-	if (list_empty(&object_list))
-		return NULL;
-
-	if (*pos == 0) {
-		sequence_done = false;
-		return object_list.next;
-	}
-
 	/*
-	 * Second call back even after return NULL to stop. This must occur
-	 * after the check to (*pos == 0) otherwise it won't continue after the
-	 * first time a read is executed in userspace. The specs didn't mention
-	 * this but my experiments showed its occurrence.
+	 * The first time through, private and pos are both zero.
+	 * The subsequent times before EOF, private and pos are both non-zero.
+	 * At EOF, private is zero, pos is non-zero.
 	 */
-	if (sequence_done == true)
-		return NULL;
-
-	return seq_list_start(&object_list, *pos);
+	if (!seq->private && !*pos) {
+		seq->private = object_list.next;
+	}
+	return seq->private;
 }
 
 /*
@@ -1370,6 +1362,10 @@ static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
  */
 static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
+	if (list_is_head(v, &object_list)) {
+		return NULL;
+	}
+
 	return seq_list_next(v, &object_list, pos);
 }
 
@@ -1442,19 +1438,15 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 }
 
 /*
- * kmap_seq_stop() --- clean up on sequence file stopping
- *
- * Must release locks and ensure that we can re-enter. Also must set the
- * sequence_done flag to avoid an infinit loop, which is required so that we
- * guarantee completions without reentering due to extra allocations between
- * this invocation of stop and the start that happens.
+ * kmap_seq_stop() --- clean up on end of single read session.
  */
 static void kmap_seq_stop(struct seq_file *seq, void *v)
 {
-	if (!v)
-		sequence_done = true;
-	write_unlock_irqrestore(&object_list_spinlock, seq_flags);
-	__memorizer_exit();
+	/*
+	 * We are exiting the read syscall. We need a place
+	 * to store our list pointer until the next read syscall.
+	 */
+	seq->private = v;
 }
 
 static const struct seq_operations kmap_seq_ops = {
@@ -1466,22 +1458,36 @@ static const struct seq_operations kmap_seq_ops = {
 
 static int kmap_open(struct inode *inode, struct file *file)
 {
+	/* We need to temporarily stop memorizer so that
+	 * the seq_file iterator remains valid between
+	 * syscalls. [Yes, I know. This is ugly and need to
+	 * be replaced.]
+	 */
+	if(__memorizer_enter()) {
+		/*
+		 * Probably should wait_event() here, but mem_access
+		 * can't reliably call wake_up().
+		 */
+		return -EBUSY;
+	}
 	return seq_open(file, &kmap_seq_ops);
+
+	/* __memorizer_exit to be called in kmap_release()  */
 }
 
-static ssize_t kmap_write(struct file *file, const char __user *user_buf,
-		size_t size, loff_t *ppos)
+static int kmap_release(struct inode *inode, struct file *file)
 {
-	return 0;
+	/* __memorizer_enter called in kmap_open() */
+	int ret = seq_release(inode, file);
+	__memorizer_exit();
+	return ret;
 }
 
 static const struct file_operations kmap_fops = {
 	.owner		= THIS_MODULE,
 	.open		= kmap_open,
-	.write		= kmap_write,
 	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= seq_release,
+	.release	= kmap_release,
 };
 
 /*
@@ -1490,8 +1496,16 @@ static const struct file_operations kmap_fops = {
 static ssize_t clear_dead_objs_write(struct file *file, const char __user
 		*user_buf, size_t size, loff_t *ppos)
 {
+	if(__memorizer_enter()) {
+		/*
+		 * Probably should wait_event() here, but mem_access
+		 * can't reliably call wake_up().
+		 */
+		return -EBUSY;
+	}
 	clear_dead_objs();
 	*ppos += size;
+	__memorizer_exit();
 	return size;
 }
 
@@ -1506,8 +1520,16 @@ static const struct file_operations clear_dead_objs_fops = {
 static ssize_t clear_printed_list_write(struct file *file, const char __user
 		*user_buf, size_t size, loff_t *ppos)
 {
+	if(__memorizer_enter()) {
+		/*
+		 * Probably should wait_event() here, but mem_access
+		 * can't reliably call wake_up().
+		 */
+		return -EBUSY;
+	}
 	clear_printed_objects();
 	*ppos += size;
+	__memorizer_exit();
 	return size;
 }
 
@@ -1520,7 +1542,9 @@ static ssize_t cfgmap_write(struct file *file, const char __user
 		*user_buf, size_t size, loff_t *ppos)
 {
 	unsigned long flags;
-	__memorizer_enter();
+	if (__memorizer_enter()) {
+		return -EBUSY;
+	}
 	local_irq_save(flags);
 	cfgmap_clear(cfgtbl);
 	local_irq_restore(flags);
@@ -1611,6 +1635,9 @@ void __init memorizer_init(void)
 	unsigned long flags;
 	int i = 0;
 
+	/*
+	 * Don't need to consider the return code.
+	 */
 	__memorizer_enter();
 #if INLINE_EVENT_PARSE == 0
 	init_mem_access_wls();

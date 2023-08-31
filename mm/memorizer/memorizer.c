@@ -1353,6 +1353,7 @@ static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
 	 */
 	if (!seq->private && !*pos) {
 		seq->private = object_list.next;
+		return SEQ_START_TOKEN;
 	}
 	return seq->private;
 }
@@ -1362,8 +1363,14 @@ static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
  */
 static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
+	/* we are at the end */
 	if (list_is_head(v, &object_list)) {
 		return NULL;
+	}
+
+	/* we are at the beginning */
+	if (v == SEQ_START_TOKEN) {
+		return seq->private;
 	}
 
 	return seq_list_next(v, &object_list, pos);
@@ -1379,6 +1386,11 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 			object_list);
 	char *new_alloc_type = 0;
 	uintptr_t free_ip = 0;
+
+	if (v == SEQ_START_TOKEN) {
+		/* kmap file doesn't have a header */
+		return 0;
+	}
 
 	read_lock(&kobj->rwlock);
 	/* If free_jiffies is 0 then this object is live */
@@ -1438,6 +1450,106 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 }
 
 /*
+ * allocs_seq_show() - print out the object
+ */
+static int allocs_seq_show(struct seq_file *seq, void *v)
+{
+	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
+			object_list);
+	char *new_alloc_type = 0;
+	uintptr_t free_ip = 0;
+
+	if (v == SEQ_START_TOKEN) {
+		/* first time through, print the header */
+		seq_printf(seq, "alloc_ip,pid,ptr,size,alloc_jiffies,free_jiffies,free_ip,type,slab,new_type\n");
+		return 0;
+	}
+	read_lock(&kobj->rwlock);
+	/* If free_jiffies is 0 then this object is live */
+	if (!print_live_obj && kobj->free_jiffies == 0) {
+		read_unlock(&kobj->rwlock);
+		return 0;
+	}
+	kobj->printed = true;
+
+	/* Print object allocation info */
+	if((kobj->free_ip >> 32) == 0xdeadbeef) {
+		/* This allocation was replaced by another
+		 * allocation with no interveing `free()`
+		 * for reasons unknown. The subsequent
+		 * allocator is in `free_ip`.
+		 */
+		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
+		/* Some post-processing scripts expect to
+		 * see "DEADBEEF" in this case.
+		 */
+		free_ip = 0xdeadbeef;
+	} else if ((kobj->free_ip >> 32) == 0xfeed) {
+		/* This allocation was replaced by another
+		 * allocation with no intervening `free()` due
+		 * to a nested allocation. The subsequent allocator
+		 * is in `free_ip`.
+		 * */
+		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
+		free_ip = 0xfedbeef;
+	} else {
+		/* Normal allocation */
+		new_alloc_type = "";
+		free_ip = kobj->free_ip;
+	}
+	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s,%s\n",
+			(void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
+			kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
+			free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
+			kobj->slabname,new_alloc_type);
+
+	read_unlock(&kobj->rwlock);
+	return 0;
+}
+
+/*
+ * accesses_seq_show() - print out the access info
+ */
+static int accesses_seq_show(struct seq_file *seq, void *v)
+{
+	struct access_from_counts *afc;
+	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
+			object_list);
+
+	if (v == SEQ_START_TOKEN) {
+		/* first time through, print the header */
+		seq_printf(seq, "alloc_jiffies,access_ip,writes,reads\n");
+		return 0;
+	}
+
+	read_lock(&kobj->rwlock);
+	/* If free_jiffies is 0 then this object is live */
+	if (!print_live_obj && kobj->free_jiffies == 0) {
+		read_unlock(&kobj->rwlock);
+		return 0;
+	}
+	kobj->printed = true;
+
+	/* print each access IP with counts and remove from list */
+	list_for_each_entry(afc, &kobj->access_counts, list) {
+		if (kobj->alloc_type == MEM_NONE && track_calling_context) {
+			seq_printf(seq, "  from:%p,caller:%p,%llu,%llu\n",
+					(void *) afc->ip, (void *)afc->caller,
+					(unsigned long long) afc->writes,
+					(unsigned long long) afc->reads);
+		} else
+			seq_printf(seq, "%llu,%p,%llu,%llu\n",
+					(unsigned long long)kobj->alloc_jiffies,
+					(void *) afc->ip,
+					(unsigned long long) afc->writes,
+					(unsigned long long) afc->reads);
+	}
+
+	read_unlock(&kobj->rwlock);
+	return 0;
+}
+
+/*
  * kmap_seq_stop() --- clean up on end of single read session.
  */
 static void kmap_seq_stop(struct seq_file *seq, void *v)
@@ -1454,6 +1566,18 @@ static const struct seq_operations kmap_seq_ops = {
 	.next  = kmap_seq_next,
 	.stop  = kmap_seq_stop,
 	.show  = kmap_seq_show,
+};
+static const struct seq_operations allocs_seq_ops = {
+	.start = kmap_seq_start,
+	.next  = kmap_seq_next,
+	.stop  = kmap_seq_stop,
+	.show  = allocs_seq_show,
+};
+static const struct seq_operations accesses_seq_ops = {
+	.start = kmap_seq_start,
+	.next  = kmap_seq_next,
+	.stop  = kmap_seq_stop,
+	.show  = accesses_seq_show,
 };
 
 static int kmap_open(struct inode *inode, struct file *file)
@@ -1486,6 +1610,56 @@ static int kmap_release(struct inode *inode, struct file *file)
 static const struct file_operations kmap_fops = {
 	.owner		= THIS_MODULE,
 	.open		= kmap_open,
+	.read		= seq_read,
+	.release	= kmap_release,
+};
+
+static int allocs_open(struct inode *inode, struct file *file)
+{
+	/* We need to temporarily stop memorizer so that
+	 * the seq_file iterator remains valid between
+	 * syscalls. [Yes, I know. This is ugly and need to
+	 * be replaced.]
+	 */
+	if(__memorizer_enter()) {
+		/*
+		 * Probably should wait_event() here, but mem_access
+		 * can't reliably call wake_up().
+		 */
+		return -EBUSY;
+	}
+	return seq_open(file, &allocs_seq_ops);
+
+	/* __memorizer_exit to be called in kmap_release()  */
+}
+static const struct file_operations allocs_fops = {
+	.owner		= THIS_MODULE,
+	.open		= allocs_open,
+	.read		= seq_read,
+	.release	= kmap_release,
+};
+
+static int accesses_open(struct inode *inode, struct file *file)
+{
+	/* We need to temporarily stop memorizer so that
+	 * the seq_file iterator remains valid between
+	 * syscalls. [Yes, I know. This is ugly and need to
+	 * be replaced.]
+	 */
+	if(__memorizer_enter()) {
+		/*
+		 * Probably should wait_event() here, but mem_access
+		 * can't reliably call wake_up().
+		 */
+		return -EBUSY;
+	}
+	return seq_open(file, &accesses_seq_ops);
+
+	/* __memorizer_exit to be called in kmap_release()  */
+}
+static const struct file_operations accesses_fops = {
+	.owner		= THIS_MODULE,
+	.open		= accesses_open,
 	.read		= seq_read,
 	.release	= kmap_release,
 };
@@ -1705,6 +1879,10 @@ static int memorizer_late_init(void)
 
 	debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
 			NULL, &kmap_fops);
+	debugfs_create_file("allocs", S_IRUGO, dentryMemDir,
+			NULL, &allocs_fops);
+	debugfs_create_file("accesses", S_IRUGO, dentryMemDir,
+			NULL, &accesses_fops);
 	/* stats interface */
 	debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
 			NULL, &show_stats_fops);

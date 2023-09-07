@@ -372,9 +372,9 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("\texecutable: %s\n", kobj->comm);
 	list_for_each(listptr, &(kobj->access_counts)){
 		entry = list_entry(listptr, struct access_from_counts, list);
-		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
-				//(void *) entry->ip, entry->pid,
-				(void *) entry->ip, 0,
+		pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
+				(void *) entry->ip, entry->pid,
+				//(void *) entry->ip, 0,
 				(unsigned long long) entry->writes,
 				(unsigned long long) entry->reads);
 	}
@@ -411,6 +411,7 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 {
 	INIT_LIST_HEAD(&(afc->list));
 	afc->ip = ip;
+	afc->pid = pid;
 	afc->writes = 0;
 	afc->reads = 0;
 	if (track_calling_context)
@@ -456,13 +457,18 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
 	list_for_each (listptr, &(kobj->access_counts)) {
 		entry = list_entry(listptr, struct access_from_counts, list);
 		if (src_ip == entry->ip) {
-			if (kobj->alloc_type == MEM_NONE) {
-				if (entry->caller == cur_caller)
+			if (pid == entry->pid) {
+				if (kobj->alloc_type == MEM_NONE) {
+					if (entry->caller == cur_caller)
+						return entry;
+					else if (cur_caller < entry->caller)
+						break;
+				} else {
 					return entry;
-				else if (cur_caller < entry->caller)
-					break;
-			} else {
-				return entry;
+				}
+			}
+			else if (pid < entry->pid) {
+				break;
 			}
 		} else if (src_ip < entry->ip) {
 			break;
@@ -590,6 +596,8 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		write, uintptr_t ip)
 {
 	unsigned long flags;
+	pid_t pid;
+
 	if (unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled)) {
 		track_disabled_access();
 		return;
@@ -605,8 +613,16 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		return;
 	}
 
+	if (in_irq()) {
+		pid = 0;
+	} else if (in_softirq()) {
+		pid = 0;
+	} else {
+		pid = current->pid;
+	}
+
 	local_irq_save(flags);
-	find_and_update_kobj_access(ip,addr,-1,write,size);
+	find_and_update_kobj_access(ip,addr,pid,write,size);
 	local_irq_restore(flags);
 
 	__memorizer_exit();
@@ -1439,10 +1455,11 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 					(unsigned long long) afc->writes,
 					(unsigned long long) afc->reads);
 		} else
-			seq_printf(seq, "  %p,%llu,%llu\n",
+			seq_printf(seq, "  %p,%llu,%llu,%llu\n",
 					(void *) afc->ip,
 					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads);
+					(unsigned long long) afc->reads,
+					(unsigned long long) afc->pid);
 	}
 
 	read_unlock(&kobj->rwlock);
@@ -1518,7 +1535,7 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 
 	if (v == SEQ_START_TOKEN) {
 		/* first time through, print the header */
-		seq_printf(seq, "alloc_jiffies,access_ip,writes,reads\n");
+		seq_printf(seq, "alloc_jiffies,access_ip,pid,writes,reads\n");
 		return 0;
 	}
 
@@ -1538,9 +1555,10 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 					(unsigned long long) afc->writes,
 					(unsigned long long) afc->reads);
 		} else
-			seq_printf(seq, "%llu,%p,%llu,%llu\n",
+			seq_printf(seq, "%llu,%p,%llu,%llu,%llu\n",
 					(unsigned long long)kobj->alloc_jiffies,
 					(void *) afc->ip,
+					(unsigned long long)afc->pid,
 					(unsigned long long) afc->writes,
 					(unsigned long long) afc->reads);
 	}

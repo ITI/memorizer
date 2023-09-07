@@ -269,6 +269,9 @@ early_param("stack_trace_boot", early_stack_trace_boot);
 /* flag enable/disable printing of live objects */
 static bool print_live_obj = true;
 
+/* flag enable/disable consideration of access_from_counts.pid */
+static bool ignore_access_pid = true;
+
 /* Function has table */
 struct FunctionHashTable * cfgtbl;
 
@@ -571,6 +574,9 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 	write_lock(&kobj->rwlock);
 
 	/* Search access queue to the entry associated with src_ip */
+	if (ignore_access_pid) {
+		pid = 0;
+	}
 	afc = unlckd_insert_get_access_counts(src_va_ptr, pid, kobj);
 
 	/* increment the counter associated with the access type */
@@ -1920,6 +1926,8 @@ static int memorizer_late_init(void)
 			dentryMemDir, &stack_trace_on);
 	debugfs_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
 			dentryMemDir, &print_live_obj);
+	debugfs_create_bool("ignore_access_pid", S_IRUGO | S_IWUGO,
+			dentryMemDir, &ignore_access_pid);
 	debugfs_create_file("global_table", S_IRUGO, dentryMemDir,
 				     NULL, &globaltable_fops);
 

@@ -21,6 +21,8 @@ OBJECT_FILES_NON_STANDARD	:= y
 # Prevents link failures: __sanitizer_cov_trace_pc() is not linked in.
 KCOV_INSTRUMENT		:= n
 
+MEMORIZER_INSTRUMENT		:= n
+
 VDSO64-$(CONFIG_X86_64)		:= y
 VDSOX32-$(CONFIG_X86_X32_ABI)	:= y
 VDSO32-$(CONFIG_X86_32)		:= y
@@ -101,11 +103,11 @@ $(vobjs): KBUILD_AFLAGS += -DBUILD_VDSO
 #
 # vDSO code runs in userspace and -pg doesn't help with profiling anyway.
 #
-CFLAGS_REMOVE_vclock_gettime.o = -pg
-CFLAGS_REMOVE_vdso32/vclock_gettime.o = -pg
-CFLAGS_REMOVE_vgetcpu.o = -pg
-CFLAGS_REMOVE_vdso32/vgetcpu.o = -pg
-CFLAGS_REMOVE_vsgx.o = -pg
+CFLAGS_REMOVE_vclock_gettime.o = -pg -finstrument-functions
+CFLAGS_REMOVE_vdso32/vclock_gettime.o = -pg -finstrument-functions
+CFLAGS_REMOVE_vgetcpu.o = -pg -finstrument-functions
+CFLAGS_REMOVE_vdso32/vgetcpu.o = -pg -finstrument-functions
+CFLAGS_REMOVE_vsgx.o = -pg -finstrument-functions
 
 #
 # X32 processes use x32 vDSO to access 64bit kernel data.

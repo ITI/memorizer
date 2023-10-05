@@ -1359,6 +1359,9 @@ struct task_struct {
 #if defined(CONFIG_KASAN_GENERIC) || defined(CONFIG_KASAN_SW_TAGS)
 	unsigned int			kasan_depth;
 #endif
+#ifdef CONFIG_MEMORIZER
+	unsigned long memorizer_recursion;
+#endif
 
 #ifdef CONFIG_KCSAN
 	struct kcsan_ctx		kcsan_ctx;

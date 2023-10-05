@@ -83,7 +83,7 @@ hwm_locked_with_pm_intel_uncore_rmw(struct hwm_drvdata *ddat,
  * of the field taken from the 32-bit register value might cause a result to
  * exceed 32 bits.
  */
-static u64
+static inline u64
 hwm_field_read_and_scale(struct hwm_drvdata *ddat, i915_reg_t rgadr,
 			 u32 field_msk, int nshift, u32 scale_factor)
 {

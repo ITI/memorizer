@@ -2713,10 +2713,16 @@ void vfree(const void *addr)
 	struct vm_struct *vm;
 	int i;
 
+
 	if (unlikely(in_interrupt())) {
 		vfree_atomic(addr);
 		return;
 	}
+
+	// Memorizer hook free.
+	// TODO robadams@illinois.edu - do we call memorizer*free twice
+	// on the same address? Once here, and once in __vfree()?
+	memorizer_vmalloc_free(_RET_IP_,  addr);
 
 	BUG_ON(in_nmi());
 	kmemleak_free(addr);
@@ -3205,6 +3211,11 @@ again:
 	ret = __vmalloc_area_node(area, gfp_mask, prot, shift, node);
 	if (!ret)
 		goto fail;
+
+	// Memorizer hooking here
+	memorizer_vmalloc_alloc((unsigned long) caller, area->addr, size, gfp_mask);
+	// TODO memorizer : do we need other calls?
+
 
 	/*
 	 * Mark the pages as accessible, now that they are mapped.

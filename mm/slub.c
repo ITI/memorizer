@@ -1745,7 +1745,7 @@ static bool freelist_corrupted(struct kmem_cache *s, struct slab *slab,
  * production configuration these hooks all should produce no code at all.
  */
 static __always_inline bool slab_free_hook(struct kmem_cache *s,
-						void *x, bool init)
+						void *x, bool init, unsigned long addr)
 {
 	kmemleak_free_recursive(x, s->flags);
 	kmsan_slab_free(s, x);
@@ -1777,13 +1777,14 @@ static __always_inline bool slab_free_hook(struct kmem_cache *s,
 		memset((char *)kasan_reset_tag(x) + s->inuse, 0,
 		       s->size - s->inuse - rsize);
 	}
+	memorizer_slab_free(addr, x);
 	/* KASAN might put x into memory quarantine, delaying its reuse. */
 	return kasan_slab_free(s, x, init);
 }
 
 static inline bool slab_free_freelist_hook(struct kmem_cache *s,
 					   void **head, void **tail,
-					   int *cnt)
+					   int *cnt, unsigned long addr)
 {
 
 	void *object;
@@ -1791,7 +1792,7 @@ static inline bool slab_free_freelist_hook(struct kmem_cache *s,
 	void *old_tail = *tail ? *tail : *head;
 
 	if (is_kfence_address(next)) {
-		slab_free_hook(s, next, false);
+		slab_free_hook(s, next, false, addr);
 		return true;
 	}
 
@@ -1804,7 +1805,7 @@ static inline bool slab_free_freelist_hook(struct kmem_cache *s,
 		next = get_freepointer(s, object);
 
 		/* If object's reuse doesn't have to be delayed */
-		if (!slab_free_hook(s, object, slab_want_init_on_free(s))) {
+		if (!slab_free_hook(s, object, slab_want_init_on_free(s), addr)) {
 			/* Move object to the new freelist */
 			set_freepointer(s, object, *head);
 			*head = object;
@@ -1825,8 +1826,15 @@ static inline bool slab_free_freelist_hook(struct kmem_cache *s,
 	return *head != NULL;
 }
 
+static gfp_t last_flags = 0;
 static void *setup_object(struct kmem_cache *s, void *object)
 {
+
+	/* This function is called when Slub allocates new objects for a cache.
+	 * Memorizer preallocates objects here so any accesses from constructors
+	 * are captured correctly. */
+	memorizer_kmem_cache_alloc(MEMORIZER_PREALLOCED, object, s, last_flags);
+
 	setup_object_debug(s, object);
 	object = kasan_init_slab_obj(s, object);
 	if (unlikely(s->ctor)) {
@@ -1992,6 +2000,9 @@ static struct slab *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 	 * so we fall-back to the minimum order allocation.
 	 */
 	alloc_gfp = (flags | __GFP_NOWARN | __GFP_NORETRY) & ~__GFP_NOFAIL;
+
+	last_flags = alloc_gfp;
+
 	if ((alloc_gfp & __GFP_DIRECT_RECLAIM) && oo_order(oo) > oo_order(s->min))
 		alloc_gfp = (alloc_gfp | __GFP_NOMEMALLOC) & ~__GFP_RECLAIM;
 
@@ -2023,7 +2034,9 @@ static struct slab *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 
 	setup_slab_debug(s, slab, start);
 
-	shuffle = shuffle_freelist(s, slab);
+	// For Memorizer, let's not shuffle slab. This way there's only one place where setup_object() is called.
+	// shuffle = shuffle_freelist(s, slab);
+	shuffle = false;
 
 	if (!shuffle) {
 		start = fixup_red_left(s, start);
@@ -3427,6 +3440,7 @@ static __always_inline void maybe_wipe_obj_freeptr(struct kmem_cache *s,
 static __fastpath_inline void *slab_alloc_node(struct kmem_cache *s, struct list_lru *lru,
 		gfp_t gfpflags, int node, unsigned long addr, size_t orig_size)
 {
+	// TODO robadams@illinois.edu memorizer path?
 	void *object;
 	struct obj_cgroup *objcg = NULL;
 	bool init = false;
@@ -3449,7 +3463,7 @@ out:
 	 * When init equals 'true', like for kzalloc() family, only
 	 * @orig_size bytes might be zeroed instead of s->object_size
 	 */
-	slab_post_alloc_hook(s, objcg, gfpflags, 1, &object, init, orig_size);
+	slab_post_alloc_hook(s, objcg, gfpflags, 1, &object, init, orig_size, _RET_IP_);
 
 	return object;
 }
@@ -3465,8 +3479,13 @@ void *__kmem_cache_alloc_lru(struct kmem_cache *s, struct list_lru *lru,
 			     gfp_t gfpflags)
 {
 	void *ret = slab_alloc(s, lru, gfpflags, _RET_IP_, s->object_size);
+	int update;
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags, NUMA_NO_NODE);
+
+	update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+		memorizer_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags);
 
 	return ret;
 }
@@ -3488,6 +3507,7 @@ void *__kmem_cache_alloc_node(struct kmem_cache *s, gfp_t gfpflags,
 			      int node, size_t orig_size,
 			      unsigned long caller)
 {
+	// TODO robadams@illinois.edu -- memorizer?
 	return slab_alloc_node(s, NULL, gfpflags, node,
 			       caller, orig_size);
 }
@@ -3495,8 +3515,13 @@ void *__kmem_cache_alloc_node(struct kmem_cache *s, gfp_t gfpflags,
 void *kmem_cache_alloc_node(struct kmem_cache *s, gfp_t gfpflags, int node)
 {
 	void *ret = slab_alloc_node(s, NULL, gfpflags, node, _RET_IP_, s->object_size);
+	int update;
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags, node);
+
+	update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+		memorizer_kmem_cache_alloc_node(_RET_IP_, ret, s, gfpflags, node);
 
 	return ret;
 }
@@ -3784,7 +3809,7 @@ static __fastpath_inline void slab_free(struct kmem_cache *s, struct slab *slab,
 	 * With KASAN enabled slab_free_freelist_hook modifies the freelist
 	 * to remove objects, whose reuse must be delayed.
 	 */
-	if (slab_free_freelist_hook(s, &head, &tail, &cnt))
+	if (slab_free_freelist_hook(s, &head, &tail, &cnt, addr))
 		do_slab_free(s, slab, head, tail, cnt, addr);
 }
 
@@ -3807,6 +3832,7 @@ void kmem_cache_free(struct kmem_cache *s, void *x)
 		return;
 	trace_kmem_cache_free(_RET_IP_, x, s);
 	slab_free(s, virt_to_slab(x), x, NULL, &x, 1, _RET_IP_);
+	memorizer_kmem_cache_free(_RET_IP_, x);
 }
 EXPORT_SYMBOL(kmem_cache_free);
 
@@ -3905,6 +3931,8 @@ void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
 		slab_free(df.s, df.slab, df.freelist, df.tail, &p[size], df.cnt,
 			  _RET_IP_);
 	} while (likely(size));
+	/* TODO robadams@illinois.edu test this. */
+	memorizer_kmem_cache_free_bulk(_RET_IP_, size, p);
 }
 EXPORT_SYMBOL(kmem_cache_free_bulk);
 
@@ -3973,7 +4001,7 @@ static inline int __kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags,
 
 error:
 	slub_put_cpu_ptr(s->cpu_slab);
-	slab_post_alloc_hook(s, objcg, flags, i, p, false, s->object_size);
+	slab_post_alloc_hook(s, objcg, flags, i, p, false, s->object_size, _RET_IP_);
 	kmem_cache_free_bulk(s, i, p);
 	return 0;
 
@@ -4003,7 +4031,7 @@ static int __kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags,
 	return i;
 
 error:
-	slab_post_alloc_hook(s, objcg, flags, i, p, false, s->object_size);
+	slab_post_alloc_hook(s, objcg, flags, i, p, false, s->object_size, _RET_IP_);
 	kmem_cache_free_bulk(s, i, p);
 	return 0;
 }
@@ -4032,7 +4060,7 @@ int kmem_cache_alloc_bulk(struct kmem_cache *s, gfp_t flags, size_t size,
 	 */
 	if (i != 0)
 		slab_post_alloc_hook(s, objcg, flags, size, p,
-			slab_want_init_on_alloc(flags, s), s->object_size);
+			slab_want_init_on_alloc(flags, s), s->object_size, _RET_IP_);
 	return i;
 }
 EXPORT_SYMBOL(kmem_cache_alloc_bulk);

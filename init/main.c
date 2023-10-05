@@ -68,6 +68,7 @@
 #include <linux/lockdep.h>
 #include <linux/kmemleak.h>
 #include <linux/padata.h>
+#include <linux/memorizer.h>
 #include <linux/pid_namespace.h>
 #include <linux/device/driver.h>
 #include <linux/kthread.h>

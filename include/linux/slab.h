@@ -161,6 +161,7 @@
 				(unsigned long)ZERO_SIZE_PTR)
 
 #include <linux/kasan.h>
+#include <linux/memorizer.h>
 
 struct list_lru;
 struct mem_cgroup;

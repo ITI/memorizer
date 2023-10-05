@@ -26,6 +26,8 @@ OBJECT_FILES_NON_STANDARD	:= y
 # Prevents link failures: __sanitizer_cov_trace_pc() is not linked in.
 KCOV_INSTRUMENT		:= n
 
+MEMORIZER_INSTRUMENT	:= n
+
 targets := vmlinux vmlinux.bin vmlinux.bin.gz vmlinux.bin.bz2 vmlinux.bin.lzma \
 	vmlinux.bin.xz vmlinux.bin.lzo vmlinux.bin.lz4 vmlinux.bin.zst
 
@@ -62,7 +64,9 @@ KBUILD_AFLAGS  := $(KBUILD_CFLAGS) -D__ASSEMBLY__
 GCOV_PROFILE := n
 UBSAN_SANITIZE :=n
 
-KBUILD_LDFLAGS := -m elf_$(UTS_MACHINE)
+# Memorizer: added allowing multiple definitions so that inlining libs works with
+# the compressed vmlinux too. There's probably a better way...
+KBUILD_LDFLAGS := -m elf_$(UTS_MACHINE) --allow-multiple-definition
 KBUILD_LDFLAGS += $(call ld-option,--no-ld-generated-unwind-info)
 # Compressed kernel should be built as PIE since it may be loaded at any
 # address by the bootloader.

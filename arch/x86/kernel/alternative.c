@@ -1399,7 +1399,9 @@ void __init alternative_instructions(void)
 	 */
 	callthunks_patch_builtin_calls();
 
+#ifdef CONFIG_X86_KERNEL_IBT
 	apply_ibt_endbr(__ibt_endbr_seal, __ibt_endbr_seal_end);
+#endif
 
 #ifdef CONFIG_SMP
 	/* Patch to UP if other cpus not imminent. */

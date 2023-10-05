@@ -6,6 +6,12 @@
 # Rewritten to use lists instead of if-statements.
 # 
 
+MEMORIZER_INSTRUMENT_readdir.o := n
+MEMORIZER_INSTRUMENT_select.o := n
+ifdef CONFIG_MEMORIZER
+KASAN_SANITIZE_readdir.o := n
+KASAN_SANITIZE_select.o := n
+endif
 
 obj-y :=	open.o read_write.o file_table.o super.o \
 		char_dev.o stat.o exec.o pipe.o namei.o fcntl.o \

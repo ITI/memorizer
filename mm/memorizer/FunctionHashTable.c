@@ -17,6 +17,10 @@ DEFINE_RWLOCK(fht_rwlock);
 struct FunctionHashTable * create_function_hashtable() {
 
 	struct FunctionHashTable * h = memalloc(sizeof(struct FunctionHashTable));
+
+	if (!h)
+		panic("Memorizer could not allocate FunctionHashTable");
+
 	h -> buckets = zmemalloc(NUM_BUCKETS * sizeof(struct EdgeBucket *));
 	h -> number_buckets = NUM_BUCKETS;
 
@@ -182,17 +186,23 @@ void cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t 
 		new_bucket = prev -> next;
 	}
 
-	// Update bucket information
-	new_bucket -> from = from;
-	new_bucket -> to = to;
-	atomic_long_set(&ht -> buckets[index] -> count, 1);
-	new_bucket -> next = NULL;
-	new_bucket -> kobj = NULL;
 
-	// Create new stack frame kobj and arguments kobj for callee
-	if (stack_trace_on) {
-		create_stack_kobj(to, new_bucket, pt_regs);
+	if (new_bucket) {
+		// Update bucket information
+		new_bucket -> from = from;
+		new_bucket -> to = to;
+		atomic_long_set(&ht -> buckets[index] -> count, 1);
+		new_bucket -> next = NULL;
+		new_bucket -> kobj = NULL;
+
+		// Create new stack frame kobj and arguments kobj for callee
+		if (stack_trace_on) {
+			create_stack_kobj(to, new_bucket, pt_regs);
+		}
+	} else {
+		pr_warn("memalloc returns NULL in cfg_update_counts\n");
 	}
+
 	write_unlock(&fht_rwlock);
 
 	return;

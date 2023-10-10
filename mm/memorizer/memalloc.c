@@ -64,6 +64,11 @@ void __init memorizer_alloc_init(void)
 	pool_next_avail_byte = pool_base;
 }
 
+bool is_mem_avail(unsigned long size)
+{
+	return !(pool_next_avail_byte + size > pool_end);
+}
+
 void * memalloc(unsigned long size)
 {
 	unsigned long flags;
@@ -72,8 +77,15 @@ void * memalloc(unsigned long size)
 	va = (void *)pool_next_avail_byte;
 	if (!pool_next_avail_byte)
 		return 0;
-	if (pool_next_avail_byte + size > pool_end)
-		panic("Memorizer ran out of internal heap: add more with kernel boot flag (# is read as GB): memalloc_size=60");
+	if (pool_next_avail_byte + size > pool_end) {
+		// TODO robadams@illinois.edu get rid of this extern.
+		extern bool memorizer_enabled;
+		memorizer_enabled = false;
+		write_unlock_irqrestore(&mem_rwlock, flags);
+		pr_warn("Memorizer ran out of internal heap: add more with kernel boot flag, e.g. memalloc_size=%lu", (memalloc_size>>30)*2);
+		print_pool_info();
+		return 0;
+	}
 	pool_next_avail_byte += size;
 	write_unlock_irqrestore(&mem_rwlock, flags);
 	return va;
@@ -81,18 +93,19 @@ void * memalloc(unsigned long size)
 
 void * zmemalloc(unsigned long size)
 {
-	unsigned long i = 0;
 	void * va = memalloc(size);
-	char * vatmp = va;
-	for (i = 0; i < size; i++)
-		vatmp[i] = 0;
+	if (va)
+		memset(va, 0, size);
 	return va;
 }
 
 void print_pool_info(void)
 {
-	pr_info("Mempool begin: 0x%p, end: 0x%p, size:%llu GB\n", (void *)pool_base,
-		(void *)pool_end, (long long unsigned int)(pool_end-pool_base)>>30);
+	pr_info("Mempool begin: 0x%p, end: 0x%p, size:%llu GB, used=%llu MB\n",
+		(void *)pool_base,
+		(void *)pool_end,
+		(long long unsigned int)(pool_end-pool_base)>>30,
+		(long long unsigned int)(pool_next_avail_byte-pool_base)>>20);
 }
 
 bool in_pool(unsigned long va)

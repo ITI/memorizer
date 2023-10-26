@@ -36,8 +36,6 @@
 #include <linux/rbtree.h>
 #include <linux/rwlock.h>
 #include <linux/sched.h>
-#include <linux/list.h>
-#include <linux/hashtable.h>
 
 /**
  * struct memorizer_kobj - metadata for kernel objects
@@ -83,11 +81,9 @@ struct memorizer_kobj {
  */
 struct access_from_counts {
 	struct list_head list;
-	struct hlist_node hash;
 	uintptr_t ip;
 	uintptr_t caller;
 	uint64_t pid;
-	uint64_t jiffies;
 	uint64_t writes;
 	uint64_t reads;
 };

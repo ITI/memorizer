@@ -269,24 +269,11 @@ early_param("stack_trace_boot", early_stack_trace_boot);
 /* flag enable/disable printing of live objects */
 static bool print_live_obj = true;
 
-/* flag enable/disable consideration of access_from_counts.pid */
-static bool ignore_access_pid = true;
-
 /* Function has table */
 struct FunctionHashTable * cfgtbl;
 
-/* All active kobj's */
+/* full list of freed kobjs */
 static LIST_HEAD(object_list);
-
-/* All inactive kobj's */
-static LIST_HEAD(object_free_cache);
-
-/* hash for object accesses counts */
-/* TODO: 20 bits is a total guess */
-static DEFINE_HASHTABLE(afc_hash, 20);
-
-/* cache for object access counts */
-static LIST_HEAD(afc_free_cache);
 
 /* global object id reference counter */
 static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
@@ -295,14 +282,8 @@ static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
 static struct memorizer_kobj * general_kobjs[NumAllocTypes];
 
 //==-- Locks --=//
-/* RW Spinlock for access to kobject list */
+/* RW Spinlock for access to freed kobject list */
 DEFINE_RWLOCK(object_list_spinlock);
-
-/* RW Spinklock for access to inactive kobject list */
-DEFINE_RWLOCK(object_free_cache_spinlock);
-
-/* RW Spinlock for access to dead afc's */
-DEFINE_RWLOCK(afc_free_cache_rwlock);
 
 /* Monitor variable to prevent Memorizer from entering itself */
 DEFINE_PER_CPU(unsigned long, inmem);
@@ -391,9 +372,9 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("\texecutable: %s\n", kobj->comm);
 	list_for_each(listptr, &(kobj->access_counts)){
 		entry = list_entry(listptr, struct access_from_counts, list);
-		pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
-				(void *) entry->ip, entry->pid,
-				//(void *) entry->ip, 0,
+		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
+				//(void *) entry->ip, entry->pid,
+				(void *) entry->ip, 0,
 				(unsigned long long) entry->writes,
 				(unsigned long long) entry->reads);
 	}
@@ -414,18 +395,8 @@ static struct access_from_counts *
 __alloc_afc(void)
 {
 	struct access_from_counts * afc = NULL;
-
-	write_lock(&afc_free_cache_rwlock);
-	if (!list_empty(&afc_free_cache)) {
-		afc = list_first_entry(&afc_free_cache, struct access_from_counts, list);
-		list_del_init(&afc->list);
-	}
-	write_unlock(&afc_free_cache_rwlock);
-
-	if (!afc) {
-		afc = (struct access_from_counts *) memalloc(sizeof(struct access_from_counts));
-	}
-
+	afc = (struct access_from_counts *)
+	memalloc(sizeof(struct access_from_counts));
 	return afc;
 }
 
@@ -436,15 +407,12 @@ __alloc_afc(void)
  */
 static inline void
 init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
-		pid, uint64_t jiffies)
+		pid)
 {
 	INIT_LIST_HEAD(&(afc->list));
-	INIT_HLIST_NODE(&(afc->hash));
 	afc->ip = ip;
-	afc->pid = pid;
 	afc->writes = 0;
 	afc->reads = 0;
-	afc->jiffies = jiffies;
 	if (track_calling_context)
 		afc->caller = cur_caller;
 	else
@@ -456,29 +424,13 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
  * @ip:		the access from value
  */
 static inline struct access_from_counts *
-alloc_and_init_access_counts(uint64_t ip, pid_t pid, uint64_t jiffies)
+alloc_and_init_access_counts(uint64_t ip, pid_t pid)
 {
 	struct access_from_counts * afc = NULL;
 	afc = __alloc_afc();
-	init_access_counts_object(afc, ip, pid, jiffies);
+	init_access_counts_object(afc, ip, pid);
 	track_access_counts_alloc();
 	return afc;
-}
-
-static __always_inline bool
-__afc_match(struct access_from_counts * entry, uint64_t src_ip, pid_t pid, struct memorizer_kobj *kobj)
-{
-	if (src_ip == entry->ip &&
-	    kobj->alloc_jiffies == entry->jiffies &&
-	    pid == entry->pid ) {
-		if (kobj->alloc_type == MEM_NONE) {
-			if (entry->caller == cur_caller)
-				return true;
-		} else {
-			return true;
-		}
-	}
-	return false;
 }
 
 /**
@@ -498,23 +450,28 @@ static inline struct access_from_counts *
 unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
 		memorizer_kobj *kobj)
 {
-	struct access_from_counts * entry = NULL;
+	struct list_head * listptr;
+	struct access_from_counts *entry;
 	struct access_from_counts * afc = NULL;
-
-	/* Check the cache */
-	uint32_t key = src_ip ^ kobj->alloc_jiffies ^ pid;
-	hash_for_each_possible(afc_hash, entry, hash, key) {
-		if (__afc_match(entry, src_ip, pid, kobj)) {
-			return entry;
-		} 
+	list_for_each (listptr, &(kobj->access_counts)) {
+		entry = list_entry(listptr, struct access_from_counts, list);
+		if (src_ip == entry->ip) {
+			if (kobj->alloc_type == MEM_NONE) {
+				if (entry->caller == cur_caller)
+					return entry;
+				else if (cur_caller < entry->caller)
+					break;
+			} else {
+				return entry;
+			}
+		} else if (src_ip < entry->ip) {
+			break;
+		}
 	}
-
-	/* Not in the hash, add it to the hash and the list */
-	afc = alloc_and_init_access_counts(src_ip, pid, kobj->alloc_jiffies);
-	if (afc) {
-		list_add_tail(&(afc->list), &(kobj->access_counts));
-		hash_add(afc_hash, &(afc->hash), key);
-	}
+	/* allocate the new one and initialize the count none in list */
+	afc = alloc_and_init_access_counts(src_ip, pid);
+	if (afc)
+		list_add_tail(&(afc->list), listptr);
 	return afc;
 }
 
@@ -608,9 +565,6 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 	write_lock(&kobj->rwlock);
 
 	/* Search access queue to the entry associated with src_ip */
-	if (ignore_access_pid) {
-		pid = 0;
-	}
 	afc = unlckd_insert_get_access_counts(src_va_ptr, pid, kobj);
 
 	/* increment the counter associated with the access type */
@@ -636,8 +590,6 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		write, uintptr_t ip)
 {
 	unsigned long flags;
-	pid_t pid;
-
 	if (unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled)) {
 		track_disabled_access();
 		return;
@@ -653,16 +605,8 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		return;
 	}
 
-	if (in_irq()) {
-		pid = 0;
-	} else if (in_softirq()) {
-		pid = 0;
-	} else {
-		pid = current->pid;
-	}
-
 	local_irq_save(flags);
-	find_and_update_kobj_access(ip,addr,pid,write,size);
+	find_and_update_kobj_access(ip,addr,-1,write,size);
 	local_irq_restore(flags);
 
 	__memorizer_exit();
@@ -854,11 +798,17 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 }
 
 /**
- * free_access_from_list() --- remove each element from the afc list
- *
- * We must remove the afc from both the per-kobj list and
- * the global hash. Once it is removed, put that memory on a
- * free list for subsequent re-use.
+ * free_access_from_entry() --- free the entry from the kmem_cache
+ */
+static void free_access_from_entry(struct access_from_counts *afc)
+{
+	//TODO clean up all the kmem_cache_free stuff
+	//kmem_cache_free(access_from_counts_cache, afc);
+	//TODO Create Free function here with new memalloc allocator
+}
+
+/**
+ * free_access_from_list() --- for each element remove from list and free
  */
 static void free_access_from_list(struct list_head *afc_lh)
 {
@@ -867,11 +817,8 @@ static void free_access_from_list(struct list_head *afc_lh)
 	struct list_head *tmp;
 	list_for_each_safe(p, tmp, afc_lh) {
 		afc = list_entry(p, struct access_from_counts, list);
-		list_del_init(&afc->list);
-		hash_del(&afc->hash);
-		write_lock(&afc_free_cache_rwlock);
-		list_add_tail(&(afc->list), &afc_free_cache);
-		write_unlock(&afc_free_cache_rwlock);
+		list_del(&afc->list);
+		free_access_from_entry(afc);
 	}
 }
 
@@ -889,9 +836,6 @@ static void free_kobj(struct memorizer_kobj * kobj)
 	write_lock(&kobj->rwlock);
 	free_access_from_list(&kobj->access_counts);
 	write_unlock(&kobj->rwlock);
-
-	list_add_tail(&(kobj->object_list), &object_free_cache);
-
 	//kmem_cache_free(kobj_cache, kobj);
 	//TODO add new free function here from memalloc allocator
 	track_kobj_free();
@@ -917,7 +861,7 @@ static void clear_dead_objs(void)
 		/* If free_jiffies is 0 then this object is live */
 		if (kobj->free_jiffies > 0) {
 			/* remove the kobj from the free-list */
-			list_del_init(&kobj->object_list);
+			list_del(&kobj->object_list);
 			/* Free the object data */
 			free_kobj(kobj);
 		}
@@ -1044,23 +988,13 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site,
 		uintptr_t ptr, uint64_t
 		size, enum AllocType AT)
 {
-	struct memorizer_kobj *kobj = NULL;
+	struct memorizer_kobj *kobj;
 
-	/* Check the cache first */
-	write_lock(&object_free_cache_spinlock);
-	if (!list_empty(&object_free_cache)) {
-		kobj = list_first_entry(&object_free_cache, struct memorizer_kobj, object_list);
-		list_del_init(&kobj->object_list);
-	}
-	write_unlock(&object_free_cache_spinlock);
-
-	/* otherwise, try the allocator */
+	/* inline parsing */
+	kobj = memalloc(sizeof(struct memorizer_kobj));
 	if (!kobj) {
-		kobj = memalloc(sizeof(struct memorizer_kobj));
-		if (!kobj) {
-			track_failed_kobj_alloc();
-			return NULL;
-		}
+		track_failed_kobj_alloc();
+		return NULL;
 	}
 
 	/* initialize all object metadata */
@@ -1505,11 +1439,10 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 					(unsigned long long) afc->writes,
 					(unsigned long long) afc->reads);
 		} else
-			seq_printf(seq, "  %p,%llu,%llu,%llu\n",
+			seq_printf(seq, "  %p,%llu,%llu\n",
 					(void *) afc->ip,
 					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads,
-					(unsigned long long) afc->pid);
+					(unsigned long long) afc->reads);
 	}
 
 	read_unlock(&kobj->rwlock);
@@ -1585,7 +1518,7 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 
 	if (v == SEQ_START_TOKEN) {
 		/* first time through, print the header */
-		seq_printf(seq, "alloc_jiffies,access_ip,pid,writes,reads\n");
+		seq_printf(seq, "alloc_jiffies,access_ip,writes,reads\n");
 		return 0;
 	}
 
@@ -1605,10 +1538,9 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 					(unsigned long long) afc->writes,
 					(unsigned long long) afc->reads);
 		} else
-			seq_printf(seq, "%llu,%p,%llu,%llu,%llu\n",
+			seq_printf(seq, "%llu,%p,%llu,%llu\n",
 					(unsigned long long)kobj->alloc_jiffies,
 					(void *) afc->ip,
-					(unsigned long long)afc->pid,
 					(unsigned long long) afc->writes,
 					(unsigned long long) afc->reads);
 	}
@@ -1970,8 +1902,6 @@ static int memorizer_late_init(void)
 			dentryMemDir, &stack_trace_on);
 	debugfs_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
 			dentryMemDir, &print_live_obj);
-	debugfs_create_bool("ignore_access_pid", S_IRUGO | S_IWUGO,
-			dentryMemDir, &ignore_access_pid);
 	debugfs_create_file("global_table", S_IRUGO, dentryMemDir,
 				     NULL, &globaltable_fops);
 

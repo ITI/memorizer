@@ -180,7 +180,7 @@ DEFINE_PER_CPU(int, recursive_depth = 0);
  * Make this and the next open for early boot param manipulation via bootloader
  * kernel args: root=/hda1 memorizer_enabled=[yes|no]
  */
-static bool memorizer_enabled = false;
+bool memorizer_enabled = false;
 static bool memorizer_enabled_boot = true;
 static int __init early_memorizer_enabled(char *arg)
 {
@@ -394,10 +394,7 @@ EXPORT_SYMBOL(memorizer_print_stats);
 static struct access_from_counts *
 __alloc_afc(void)
 {
-	struct access_from_counts * afc = NULL;
-	afc = (struct access_from_counts *)
-	memalloc(sizeof(struct access_from_counts));
-	return afc;
+	return memalloc(sizeof(struct access_from_counts));
 }
 
 /**
@@ -428,8 +425,10 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
 {
 	struct access_from_counts * afc = NULL;
 	afc = __alloc_afc();
-	init_access_counts_object(afc, ip, pid);
-	track_access_counts_alloc();
+	if (afc) {
+		init_access_counts_object(afc, ip, pid);
+		track_access_counts_alloc();
+	}
 	return afc;
 }
 
@@ -759,8 +758,12 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	cache = get_slab_cache((void *)(kobj->va_ptr));
 	if (cache) {
 		kobj->slabname = memalloc(strlen(cache->name)+1);
-		strncpy(kobj->slabname, cache->name, strlen(cache->name));
-		kobj->slabname[strlen(cache->name)]='\0';
+		if (kobj->slabname) {
+			strncpy(kobj->slabname, cache->name, strlen(cache->name));
+			kobj->slabname[strlen(cache->name)]='\0';
+		} else {
+			kobj->slabname = "no-slab";
+		}
 	} else {
 		kobj->slabname = "no-slab";
 	}
@@ -1828,6 +1831,8 @@ void __init memorizer_init(void)
 	/* Create default catch all objects for types of allocated memory */
 	for (i = 0; i < NumAllocTypes; i++) {
 		general_kobjs[i] = memalloc(sizeof(struct memorizer_kobj));
+		if (!general_kobjs[i])
+			panic("Memorizer could not allocate catch-all kobjs");
 		init_kobj(general_kobjs[i], 0, 0, 0, i);
 		write_lock(&object_list_spinlock);
 		list_add_tail(&general_kobjs[i]->object_list, &object_list);
@@ -1838,6 +1843,8 @@ void __init memorizer_init(void)
 	 * Not used by Memorizer, but used in processing globals offline. */
 	global_table_text = memalloc(global_table_text_size);
 	global_table_ptr = global_table_text;
+	if (!global_table_text)
+		panic("Memorizer could not allocate global table");
 
 	local_irq_save(flags);
 	if (memorizer_enabled_boot) {

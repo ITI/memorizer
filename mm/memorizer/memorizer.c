@@ -180,7 +180,8 @@ DEFINE_PER_CPU(int, recursive_depth = 0);
  * Make this and the next open for early boot param manipulation via bootloader
  * kernel args: root=/hda1 memorizer_enabled=[yes|no]
  */
-bool memorizer_enabled = false;
+int memorizer_enabled = 0;
+static pid_t memorizer_enabled_pid;
 static bool memorizer_enabled_boot = true;
 static int __init early_memorizer_enabled(char *arg)
 {
@@ -1800,6 +1801,53 @@ static const struct file_operations globaltable_fops = {
 	.release	= single_release,
 };
 
+static ssize_t memorizer_enabled_read(struct file *filp, char __user *usr_buf, size_t size, loff_t *ppos)
+{
+	char buf[128];
+	int count;
+
+	if (*ppos != 0)
+		return 0;
+
+	switch(memorizer_enabled) {
+	case 0:
+	default:
+		count = snprintf(buf, sizeof buf, "0 - memorizer disabled\n");
+		break;
+	case 1:
+		count = snprintf(buf, sizeof buf, "1 - memorizer enabled, all processes\n");
+		break;
+	case 2:
+		count = snprintf(buf, sizeof buf, "2 - memorizer enabled, proc root = %d\n", memorizer_enabled_pid);
+	}
+
+	return simple_read_from_buffer(usr_buf, size, ppos, buf, count);
+}
+
+static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf, size_t count, loff_t *ppos)
+{
+    int ret;
+    int value;
+
+    ret = kstrtoint_from_user(buf, count, 10, &value);
+    if (ret)
+        return ret;
+
+    if (value < 0 || value > 2)
+        return -EINVAL;
+
+    memorizer_enabled = value;
+    memorizer_enabled_pid = task_pid_nr(current);
+
+    return count;
+}
+
+static const struct file_operations memorizer_enabled_fops = {
+	.owner		= THIS_MODULE,
+	.read		= memorizer_enabled_read,
+	.write		= memorizer_enabled_write,
+};
+
 //==-- Memorizer Initializtion --------------------------------------------==//
 /**
  * memorizer_init() - initialize memorizer state
@@ -1848,9 +1896,9 @@ void __init memorizer_init(void)
 
 	local_irq_save(flags);
 	if (memorizer_enabled_boot) {
-		memorizer_enabled = true;
+		memorizer_enabled = 1;
 	} else {
-		memorizer_enabled = false;
+		memorizer_enabled = 0;
 	}
 	if (mem_log_boot) {
 		memorizer_log_access = true;
@@ -1899,8 +1947,8 @@ static int memorizer_late_init(void)
 			NULL, &clear_printed_list_fops);
 	debugfs_create_file("cfgmap", S_IRUGO|S_IWUGO, dentryMemDir,
 			NULL, &cfgmap_fops);
-	debugfs_create_bool("memorizer_enabled", S_IRUGO|S_IWUGO,
-			dentryMemDir, &memorizer_enabled);
+	debugfs_create_file("memorizer_enabled", S_IRUGO|S_IWUGO,
+			dentryMemDir, NULL, &memorizer_enabled_fops);
 	debugfs_create_bool("memorizer_log_access", S_IRUGO|S_IWUGO,
 			dentryMemDir, &memorizer_log_access);
 	debugfs_create_bool("cfg_log_on", S_IRUGO|S_IWUGO,

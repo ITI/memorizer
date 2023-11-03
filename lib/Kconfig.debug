@@ -1002,6 +1002,11 @@ config MEMORIZER_STATS
 		  number of shadow object allocated for Memorizer which will slow down the
 		  performance.
 
+config MEMORIZER_TRACKPIDS
+	bool "Memorizer: segregate access counts by process"
+	depends on MEMORIZER
+	help
+	  Enables the tracing of memory accesses seperately by pid.
 
 endmenu # "Memory Debugging"
 

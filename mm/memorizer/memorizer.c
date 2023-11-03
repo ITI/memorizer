@@ -577,6 +577,28 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 
 //==-- Memorizer memory access tracking -----------------------------------==//
 
+static bool __always_inline memorizer_is_enabled(void) {
+	if (likely(memorizer_enabled == 1)) {
+		return true;
+	}
+
+	if (likely(memorizer_enabled == 2)) {
+		if (!in_task()) {
+			/* TODO robadams@illinois.edu:
+			 * This an interesting policy question:
+			 * If we are recording events from only selected
+			 * tasks, should out-of-task events be recorded?
+			 */
+			return true;
+		}
+		if (current->memorizer_enabled)  {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /**
  * memorizer_mem_access() - record associated data with the load or store
  * @addr:	The virtual address being accessed
@@ -590,7 +612,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		write, uintptr_t ip)
 {
 	unsigned long flags;
-	if (unlikely(!memorizer_log_access) || unlikely(!memorizer_enabled)) {
+	if (unlikely(!memorizer_log_access) || unlikely(!memorizer_is_enabled())) {
 		track_disabled_access();
 		return;
 	}
@@ -1028,7 +1050,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 	if (unlikely(ptr==NULL))
 		return;
 
-	if (unlikely(!memorizer_enabled)) {
+	if (unlikely(!memorizer_is_enabled())) {
 		track_disabled_alloc();
 		return;
 	}
@@ -1078,7 +1100,7 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
 		return;
 	}
 
@@ -1193,7 +1215,7 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
 		return;
 	}
 
@@ -1243,7 +1265,7 @@ void memorizer_free_pages_exact (unsigned long call_site, struct page *page, uns
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
 		return;
 	}
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)
@@ -1290,7 +1312,7 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_enabled) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
 		return;
 	}
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)

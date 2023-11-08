@@ -267,6 +267,29 @@ static int __init early_stack_trace_boot(char *arg)
 }
 early_param("stack_trace_boot", early_stack_trace_boot);
 
+static enum {
+	COLUMN_SERIAL,
+	COLUMN_TIME,
+} index_column_type = COLUMN_SERIAL;
+
+static int __init early_index_column_type(char *arg)
+{
+	if (!arg)
+		return 1;
+	if (strcmp(arg,"serial") == 0) {
+		pr_info("Enabling serial number index\n");
+		index_column_type = COLUMN_SERIAL;
+		return 0;
+	}
+	if (strcmp(arg,"time") == 0) {
+		pr_info("Enabling time index\n");
+		index_column_type = COLUMN_TIME;
+		return 0;
+	}
+	return 1;
+}
+early_param("memorizer_index_type", early_index_column_type);
+
 /* flag enable/disable printing of live objects */
 static bool print_live_obj = true;
 
@@ -319,7 +342,12 @@ bool in_memblocks(uintptr_t va_ptr)
 
 /* global timestamp counter */
 atomic_t timestamp = ATOMIC_INIT(0);
-long get_ts(void) { return atomic_fetch_add(1,&timestamp); }
+// long get_ts(void) { return atomic_fetch_add(1,&timestamp); }
+unsigned long get_ts(void) {
+	if(unlikely(index_column_type == COLUMN_TIME))
+		return get_jiffies_64();
+	return atomic_fetch_add(1, &timestamp);
+}
 
 /**
  * __memorizer_enter() - set recursion flag for entry into memorizer
@@ -1504,7 +1532,11 @@ static int allocs_seq_show(struct seq_file *seq, void *v)
 
 	if (v == SEQ_START_TOKEN) {
 		/* first time through, print the header */
-		seq_printf(seq, "alloc_ip,pid,ptr,size,alloc_jiffies,free_jiffies,free_ip,type,slab,new_type\n");
+		char *index_column = "serial";
+		if(index_column_type == COLUMN_TIME)
+			index_column = "time";
+
+		seq_printf(seq, "alloc_ip,pid,ptr,size,alloc_%s,free_%s,free_ip,type,slab,new_type\n", index_column, index_column);
 		return 0;
 	}
 	read_lock(&kobj->rwlock);

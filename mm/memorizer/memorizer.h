@@ -38,6 +38,6 @@
 /* mask to apply to memorizer allocations TODO: verify the list */
 #define gfp_memorizer_mask(gfp)	((GFP_ATOMIC | __GFP_NOTRACK | __GFP_NORETRY | GFP_NOWAIT))
 
-unsigned long get_ts(void);
+unsigned long get_index(void);
 struct memorizer_kobj *create_kobj(uintptr_t call_site, uintptr_t ptr, uint64_t size, enum AllocType AT);
 #endif /* __MEMORIZER_H_ */

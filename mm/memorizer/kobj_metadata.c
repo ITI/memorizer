@@ -34,7 +34,6 @@
 #include <linux/gfp.h>
 #include <linux/atomic.h>
 #include <linux/slab.h>
-#include <linux/jiffies.h>
 #include <linux/seq_file.h>
 #include <linux/memorizer.h>
 
@@ -360,14 +359,14 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
      * If there is current obj, or the current object is already
      * marked free, there is no resolution required.
      *
-     * If `free_jiffies` is already set, that probably means
+     * If `free_index` is already set, that probably means
      * that this is the Nth address of an allocation, and we
      * updated `obj` when we saw the first address of this
      * allocation.
      */
     if ( (!obj) || (!is_tracked_obj((uintptr_t)obj)) )
         return;
-    if (obj->free_jiffies)
+    if (obj->free_index)
         return;
 
     /*
@@ -376,7 +375,7 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
      */
     if( (!new_kobj) || (!is_tracked_obj((uintptr_t)new_kobj)) ) {
         write_lock_irqsave(&obj->rwlock, flags);
-	obj->free_jiffies = get_ts();
+	obj->free_index = get_index();
 	obj->free_ip = MEM_INDUCED | 0xdeadbeef00000000;
         write_unlock_irqrestore(&obj->rwlock, flags);
 	return;
@@ -401,7 +400,7 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
      * will get expunged later.
      */
     write_lock_irqsave(&obj->rwlock, flags);
-    obj->free_jiffies = new_kobj->alloc_jiffies;
+    obj->free_index = new_kobj->alloc_index;
 
     /* 
      * DANGER! Magic numbers ahead.

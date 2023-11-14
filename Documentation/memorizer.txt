@@ -89,12 +89,18 @@ Output Format
 Memorizer outputs data as text, which may change if space is a problem. The
 format of the kmap file is as follows:
 
-alloc_ip,pid,obj_va_ptr,size,alloc_jiffies,free_jiffies,free_ip,executable
+alloc_ip,pid,obj_va_ptr,size,alloc_[index],free_[index],free_ip,executable
   access_ip,access_pid,write_count,read_count
   access_ip,access_pid,write_count,read_count
   access_ip,access_pid,write_count,read_count
     ...
     ...
+
+Note that the `[index]` is either "serial" or "time". The serial index is a
+strictly increasing value that orders the kmap entries, but does not
+relate in any way to time. The "time" index associates each event
+with the kernel system time, but does not provide a complete
+ordering of the events.
 
 There are a few special error codes:
 

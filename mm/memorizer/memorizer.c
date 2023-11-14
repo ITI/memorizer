@@ -155,6 +155,13 @@
 #define CALL_SITE_STRING	1
 #define TASK_STRING		1
 
+//==-- Naming information for debugfs --==//
+struct bool_name {
+	bool value;
+	char* name;
+};
+#define BOOL_DECL(name, value) struct bool_name name = { value, # name }
+
 //==-- Prototype Declarations ---------------------------------------------==//
 static void inline __memorizer_kmalloc(unsigned long call_site, const void *ptr,
 		uint64_t bytes_req, uint64_t bytes_alloc,
@@ -182,86 +189,86 @@ DEFINE_PER_CPU(int, recursive_depth = 0);
  */
 int memorizer_enabled = 0;
 static pid_t memorizer_enabled_pid;
-static bool memorizer_enabled_boot = true;
+static BOOL_DECL(memorizer_enabled_boot, true);
 static int __init early_memorizer_enabled(char *arg)
 {
 	if (!arg)
 		return 0;
 	if (strcmp(arg,"yes") == 0) {
 		pr_info("Enabling boot alloc logging\n");
-		memorizer_enabled_boot = true;
+		memorizer_enabled_boot.value = true;
 	}
 	if (strcmp(arg,"no") == 0) {
 		pr_info("Disable boot alloc logging\n");
-		memorizer_enabled_boot = false;
+		memorizer_enabled_boot.value = false;
 	}
 	return 1;
 }
 early_param("memorizer_enabled_boot", early_memorizer_enabled);
 
 /* flag enable/disable memory access logging */
-static bool memorizer_log_access = false;
-static bool mem_log_boot = false;
+static BOOL_DECL(memorizer_log_access, false); 
+static BOOL_DECL(mem_log_boot, false);
 static int __init early_mem_log_boot(char *arg)
 {
 	if (!arg)
 		return 0;
 	if (strcmp(arg,"yes") == 0) {
 		pr_info("Enabling boot accessing logging\n");
-		mem_log_boot= true;
+		mem_log_boot.value = true;
 	}
 	if (strcmp(arg,"no") == 0) {
 		pr_info("Disabling boot accessing logging\n");
-		mem_log_boot= false;
+		mem_log_boot.value = false;
 	}
 	return 1;
 }
 early_param("mem_log_boot", early_mem_log_boot);
 
 /* flag enable/disable memory access logging */
-static bool cfg_log_on = false;
-static bool cfg_log_boot = false;
+static BOOL_DECL(cfg_log_on, false);
+static BOOL_DECL(cfg_log_boot, false);
 static int __init early_cfg_log_boot(char *arg)
 {
 	if (!arg)
 		return 0;
 	if (strcmp(arg,"yes") == 0) {
 		pr_info("Enabling boot accessing logging\n");
-		cfg_log_boot= true;
+		cfg_log_boot.value = true;
 	}
 	if (strcmp(arg,"no") == 0) {
 		pr_info("Disabling boot accessing logging\n");
-		cfg_log_boot= false;
+		cfg_log_boot.value = false;
 	}
 	return 1;
 }
 early_param("cfg_log_boot", early_cfg_log_boot);
 
-static bool track_calling_context = false;
+static BOOL_DECL(track_calling_context, false);
 static int __init track_cc(char *arg){
     if(!arg)
         return 0;
     if(strcmp(arg,"yes") == 0) {
         pr_info("Enabling boot accessing logging\n");
-        track_calling_context = true;
+        track_calling_context.value = true;
     }
 	return 1;
 }
 early_param("mem_track_cc", track_cc);
 
-static bool stack_trace_on = false;
-static bool stack_trace_boot = false;
+static BOOL_DECL(stack_trace_on, false);
+static BOOL_DECL(stack_trace_boot, false);
 static int __init early_stack_trace_boot(char *arg)
 {
 	if (!arg)
 		return 0;
 	if (strcmp(arg,"yes") == 0) {
 		pr_info("Enabling boot accessing logging\n");
-		stack_trace_boot = true;
+		stack_trace_boot.value = true;
 	}
 	if (strcmp(arg,"no") == 0) {
 		pr_info("Disabling boot accessing logging\n");
-		stack_trace_boot= false;
+		stack_trace_boot.value = false;
 	}
 	return 1;
 }
@@ -291,7 +298,7 @@ static int __init early_index_column_type(char *arg)
 early_param("memorizer_index_type", early_index_column_type);
 
 /* flag enable/disable printing of live objects */
-static bool print_live_obj = true;
+static BOOL_DECL(print_live_obj, true);
 
 /* Function has table */
 struct FunctionHashTable * cfgtbl;
@@ -444,7 +451,7 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 #else
 	afc->pid = -1;
 #endif
-	if (track_calling_context)
+	if (track_calling_context.value)
 		afc->caller = cur_caller;
 	else
 		afc->caller = 0;
@@ -650,7 +657,7 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 		write, uintptr_t ip)
 {
 	unsigned long flags;
-	if (unlikely(!memorizer_log_access) || unlikely(!memorizer_is_enabled())) {
+	if (unlikely(!memorizer_log_access.value) || unlikely(!memorizer_is_enabled())) {
 		track_disabled_access();
 		return;
 	}
@@ -691,13 +698,13 @@ void __cyg_profile_func_enter(void *ip, void *parent_ip)
 	unsigned long flags;
 	struct pt_regs pt_regs;
 
-	if (!cfg_log_on && !stack_trace_on)
+	if (!cfg_log_on.value && !stack_trace_on.value)
 		return;
 	/* Prevent infinete loop */
 	if (__memorizer_enter())
 		return;
 
-	if (track_calling_context)
+	if (track_calling_context.value)
 		cur_caller = (uintptr_t)parent_ip;
 
 	/* Disable interrupt */
@@ -717,7 +724,7 @@ void __cyg_profile_func_enter(void *ip, void *parent_ip)
 	 * the callee bp and callee bp + 0x10 is the func sp.
 	 */
 
-	if (stack_trace_on) {
+	if (stack_trace_on.value) {
 		uintptr_t callee_bp = 0, callee_sp = 0;
 		register uintptr_t cyg_rbp asm("rbp");
 		callee_bp = *(uintptr_t *)cyg_rbp; // deference callee bp
@@ -728,7 +735,7 @@ void __cyg_profile_func_enter(void *ip, void *parent_ip)
 	}
 
 	/* cfg_update_counts creates <from, to, callee kobj, args kobj> tuple */
-	cfg_update_counts(cfgtbl, (uintptr_t)parent_ip, (uintptr_t)ip, &pt_regs, stack_trace_on);
+	cfg_update_counts(cfgtbl, (uintptr_t)parent_ip, (uintptr_t)ip, &pt_regs, stack_trace_on.value);
 #endif
 
 #else
@@ -922,7 +929,7 @@ static void clear_dead_objs(void)
 	struct list_head *p;
 	struct list_head *tmp;
 	unsigned long flags;
-	pr_info("Clearing the free'd kernel objects\n");
+	pr_info("clear_dead_objs: Clearing the free'd kernel objects\n");
 
 	/* This might take a long time with interrupts disabled. */
 	write_lock_irqsave(&object_list_spinlock, flags);
@@ -950,7 +957,7 @@ static void clear_printed_objects(void)
 	struct list_head *p;
 	struct list_head *tmp;
 	unsigned long flags;
-	pr_info("Clearing the free'd and printed kernel objects\n");
+	pr_info("clear_printed_list: Clearing the free'd and printed kernel objects\n");
 
 	/* This could take a long time with interrupts disabled. */
 	write_lock_irqsave(&object_list_spinlock, flags);
@@ -1464,7 +1471,7 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 
 	read_lock(&kobj->rwlock);
 	/* If free_jiffies is 0 then this object is live */
-	if (!print_live_obj && kobj->free_jiffies == 0) {
+	if (!print_live_obj.value && kobj->free_jiffies == 0) {
 		read_unlock(&kobj->rwlock);
 		return 0;
 	}
@@ -1503,7 +1510,7 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list) {
-		if (kobj->alloc_type == MEM_NONE && track_calling_context) {
+		if (kobj->alloc_type == MEM_NONE && track_calling_context.value) {
 			seq_printf(seq, "  from:%p,caller:%p,%llu,%llu\n",
 					(void *) afc->ip, (void *)afc->caller,
 					(unsigned long long) afc->writes,
@@ -1541,7 +1548,7 @@ static int allocs_seq_show(struct seq_file *seq, void *v)
 	}
 	read_lock(&kobj->rwlock);
 	/* If free_jiffies is 0 then this object is live */
-	if (!print_live_obj && kobj->free_jiffies == 0) {
+	if (!print_live_obj.value && kobj->free_jiffies == 0) {
 		read_unlock(&kobj->rwlock);
 		return 0;
 	}
@@ -1604,7 +1611,7 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 
 	read_lock(&kobj->rwlock);
 	/* If free_jiffies is 0 then this object is live */
-	if (!print_live_obj && kobj->free_jiffies == 0) {
+	if (!print_live_obj.value && kobj->free_jiffies == 0) {
 		read_unlock(&kobj->rwlock);
 		return 0;
 	}
@@ -1612,7 +1619,7 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 
 	/* print each access IP with counts and remove from list */
 	list_for_each_entry(afc, &kobj->access_counts, list) {
-		if (kobj->alloc_type == MEM_NONE && track_calling_context) {
+		if (kobj->alloc_type == MEM_NONE && track_calling_context.value) {
 			seq_printf(seq, "  from:%p,caller:%p,%llu,%llu\n",
 					(void *) afc->ip, (void *)afc->caller,
 					(unsigned long long) afc->writes,
@@ -1920,10 +1927,13 @@ static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf
     if (value < 0 || value > 2)
         return -EINVAL;
 
+    pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
     memorizer_enabled = value;
+
     if (value == 2) {
 	memorizer_enabled_pid = task_pid_nr(current);
 	current->memorizer_enabled = 1;
+	pr_info("memorizer_enabled_pid: %d\n", memorizer_enabled_pid);
     }
 
     return count;
@@ -1982,30 +1992,71 @@ void __init memorizer_init(void)
 		panic("Memorizer could not allocate global table");
 
 	local_irq_save(flags);
-	if (memorizer_enabled_boot) {
+	if (memorizer_enabled_boot.value) {
 		memorizer_enabled = 1;
 	} else {
 		memorizer_enabled = 0;
 	}
-	if (mem_log_boot) {
-		memorizer_log_access = true;
+	if (mem_log_boot.value ) {
+		memorizer_log_access.value = true;
 	} else {
-		memorizer_log_access = false;
+		memorizer_log_access.value = false;
 	}
-	if (cfg_log_boot) {
-		cfg_log_on = true;
+	if (cfg_log_boot.value ) {
+		cfg_log_on.value = true;
 	} else {
-		cfg_log_on = false;
+		cfg_log_on.value = false;
 	}
-	if (stack_trace_boot && !cfg_log_on) {
-		stack_trace_on = true;
+	if (stack_trace_boot.value && !cfg_log_on.value) {
+		stack_trace_on.value = true;
 	} else {
-		stack_trace_on = false;
+		stack_trace_on.value = false;
 	}
-	print_live_obj = true;
+	print_live_obj.value = true;
 
 	local_irq_restore(flags);
 	__memorizer_exit();
+}
+
+
+ssize_t memorizer_write_file_bool(struct file *file, const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct bool_name *bn = file->private_data;
+	char buf[256];
+	ssize_t result;
+	bool old = bn->value;
+	long res = strncpy_from_user(buf, user_buf, min(count, (size_t)31));
+
+	if (res < 0) {
+		strncpy(buf, "ERROR", 31);
+	} else {
+		buf[res] = 0;
+	}
+
+	result = debugfs_write_file_bool(file, user_buf, count, ppos);
+
+	pr_info("%s(\"%*pEscn\"): %s -> %s\n",
+		bn->name,
+		(int)(strlen(buf)), buf,
+		old ? "Y" : "N",
+		bn->value ? "Y" : "N");
+
+	return result;
+}
+
+static const struct file_operations memorizer_bool_fops = {
+	.read =		debugfs_read_file_bool,
+	.write =	memorizer_write_file_bool,
+	.open =		simple_open,
+	.llseek =	default_llseek,
+};
+
+static 
+void memorizer_create_bool(const char *name, umode_t mode,
+			struct dentry *parent, struct bool_name *value)
+{
+	debugfs_create_file(name, mode, parent, value, &memorizer_bool_fops);
 }
 
 /*
@@ -2036,13 +2087,13 @@ static int memorizer_late_init(void)
 			NULL, &cfgmap_fops);
 	debugfs_create_file("memorizer_enabled", S_IRUGO|S_IWUGO,
 			dentryMemDir, NULL, &memorizer_enabled_fops);
-	debugfs_create_bool("memorizer_log_access", S_IRUGO|S_IWUGO,
+	memorizer_create_bool("memorizer_log_access", S_IRUGO|S_IWUGO,
 			dentryMemDir, &memorizer_log_access);
-	debugfs_create_bool("cfg_log_on", S_IRUGO|S_IWUGO,
+	memorizer_create_bool("cfg_log_on", S_IRUGO|S_IWUGO,
 			dentryMemDir, &cfg_log_on);
-	debugfs_create_bool("stack_trace_on", S_IRUGO|S_IWUGO,
+	memorizer_create_bool("stack_trace_on", S_IRUGO|S_IWUGO,
 			dentryMemDir, &stack_trace_on);
-	debugfs_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
+	memorizer_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
 			dentryMemDir, &print_live_obj);
 	debugfs_create_file("global_table", S_IRUGO, dentryMemDir,
 				     NULL, &globaltable_fops);

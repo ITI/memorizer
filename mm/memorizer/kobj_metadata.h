@@ -44,7 +44,10 @@
  * @va_ptr:		Virtual address of the beginning of the object
  * @pa_ptr:		Physical address of the beginning of object
  * @size:		Size of the object
- * @jiffies:		Time stamp of creation
+ * @index:		Increasing series that marks creation
+ *			 By default this is strictly increasing,
+ *			 but merely increasing alternatives (e.g. jiffies)
+ *			 can be specified.
  * @pid:		PID of the current task
  * @comm:		Executable name
  * @kobj_list:		List of all objects allocated
@@ -63,8 +66,8 @@ struct memorizer_kobj {
 	uintptr_t	    va_ptr;
 	uintptr_t	    pa_ptr;
 	size_t		    size;
-	unsigned long	    alloc_jiffies;
-	unsigned long	    free_jiffies;
+	unsigned long	    alloc_index;
+	unsigned long	    free_index;
 	pid_t		    pid;
 	char		    comm[TASK_COMM_LEN];
 	char		    funcstr[KSYM_NAME_LEN];

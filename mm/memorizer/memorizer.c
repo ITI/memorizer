@@ -347,13 +347,21 @@ bool in_memblocks(uintptr_t va_ptr)
 	return false;
 }
 
-/* global timestamp counter */
-atomic_t timestamp = ATOMIC_INIT(0);
-// long get_ts(void) { return atomic_fetch_add(1,&timestamp); }
-unsigned long get_ts(void) {
+/* global index counter */
+atomic_t index_stamp = ATOMIC_INIT(0);
+
+/*
+ * Provides an increasing function to mark the allocation lifecycle events.
+ * Alterntive number streams are available, but by default
+ * returns a strictly-increasing stream based on `index_stamp`.
+ * 
+ * Note that COLUMN_TIME is increasing, but not strictly increasing, 
+ * i.e. multiple events can share a single time value.
+ */
+unsigned long get_index(void) {
 	if(unlikely(index_column_type == COLUMN_TIME))
 		return get_jiffies_64();
-	return atomic_fetch_add(1, &timestamp);
+	return atomic_fetch_add(1, &index_stamp);
 }
 
 /**
@@ -402,8 +410,8 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("\tva:		0x%p\n", (void*) kobj->va_ptr);
 	pr_info("\tpa:		0x%p\n", (void*) kobj->pa_ptr);
 	pr_info("\tsize:	%lu\n", kobj->size);
-	pr_info("\talloc jiffies: %lu\n", kobj->alloc_jiffies);
-	pr_info("\tfree jiffies:  %lu\n", kobj->free_jiffies);
+	pr_info("\talloc index: %lu\n", kobj->alloc_index);
+	pr_info("\tfree index:  %lu\n", kobj->free_index);
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
 	list_for_each(listptr, &(kobj->access_counts)){
@@ -818,8 +826,8 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->va_ptr = ptr_to_kobj;
 	kobj->pa_ptr = __pa(ptr_to_kobj);
 	kobj->size = bytes_alloc;
-	kobj->alloc_jiffies = get_ts();
-	kobj->free_jiffies = 0;
+	kobj->alloc_index = get_index();
+	kobj->free_index = 0;
 	kobj->free_ip = 0;
 	kobj->obj_id = atomic_long_read(&global_kobj_id_count);
 	kobj->printed = false;
@@ -935,8 +943,8 @@ static void clear_dead_objs(void)
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_for_each_safe(p, tmp, &object_list) {
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
-		/* If free_jiffies is 0 then this object is live */
-		if (kobj->free_jiffies > 0) {
+		/* Iff free_index is 0 then this object is live */
+		if (kobj->free_index > 0) {
 			/* remove the kobj from the free-list */
 			list_del(&kobj->object_list);
 			/* Free the object data */
@@ -963,8 +971,8 @@ static void clear_printed_objects(void)
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_for_each_safe(p, tmp, &object_list) {
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
-		/* If free_jiffies is 0 then this object is live */
-		if (kobj->free_jiffies > 0 && kobj->printed) {
+		/* Iff free_index is 0 then this object is live */
+		if (kobj->free_index > 0 && kobj->printed) {
 			/* remove the kobj from the free-list */
 			list_del(&kobj->object_list);
 			/* Free the object data */
@@ -1007,9 +1015,9 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	 *           * some of the metadata for free.
 	 *               */
 	if (kobj) {
-		/* Update the free_jiffies for the object */
+		/* Update the free_index for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
-		kobj->free_jiffies = get_ts();
+		kobj->free_index = get_index();
 		kobj->free_ip = call_site;
 		write_unlock_irqrestore(&kobj->rwlock, flags);
 		track_free();
@@ -1470,8 +1478,8 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	}
 
 	read_lock(&kobj->rwlock);
-	/* If free_jiffies is 0 then this object is live */
-	if (!print_live_obj.value && kobj->free_jiffies == 0) {
+	/* Iff free_index is 0 then this object is live */
+	if (!print_live_obj.value && kobj->free_index == 0) {
 		read_unlock(&kobj->rwlock);
 		return 0;
 	}
@@ -1504,7 +1512,7 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	}
 	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s,%s\n",
 			(void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
-			kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
+			kobj->size, kobj->alloc_index, kobj->free_index, (void*)
 			free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
 			kobj->slabname,new_alloc_type);
 
@@ -1547,8 +1555,8 @@ static int allocs_seq_show(struct seq_file *seq, void *v)
 		return 0;
 	}
 	read_lock(&kobj->rwlock);
-	/* If free_jiffies is 0 then this object is live */
-	if (!print_live_obj.value && kobj->free_jiffies == 0) {
+	/* If free_index is 0 then this object is live */
+	if (!print_live_obj.value && kobj->free_index == 0) {
 		read_unlock(&kobj->rwlock);
 		return 0;
 	}
@@ -1581,7 +1589,7 @@ static int allocs_seq_show(struct seq_file *seq, void *v)
 	}
 	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s,%s\n",
 			(void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
-			kobj->size, kobj->alloc_jiffies, kobj->free_jiffies, (void*)
+			kobj->size, kobj->alloc_index, kobj->free_index, (void*)
 			free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
 			kobj->slabname,new_alloc_type);
 
@@ -1601,7 +1609,7 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 	if (v == SEQ_START_TOKEN) {
 		/* first time through, print the header */
 		seq_printf(seq,
-			"alloc_jiffies,access_ip,"
+			"alloc_index,access_ip,"
 #ifdef CONFIG_MEMORIZER_TRACKPIDS
 			"pid,"
 #endif
@@ -1610,8 +1618,8 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 	}
 
 	read_lock(&kobj->rwlock);
-	/* If free_jiffies is 0 then this object is live */
-	if (!print_live_obj.value && kobj->free_jiffies == 0) {
+	/* If free_index is 0 then this object is live */
+	if (!print_live_obj.value && kobj->free_index == 0) {
 		read_unlock(&kobj->rwlock);
 		return 0;
 	}
@@ -1631,7 +1639,7 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 #else
 				"%llu,%p,%llu,%llu\n",
 #endif
-				(unsigned long long)kobj->alloc_jiffies,
+				(unsigned long long)kobj->alloc_index,
 				(void *) afc->ip,
 #ifdef CONFIG_MEMORIZER_TRACKPIDS
 				(unsigned long long)afc->pid,

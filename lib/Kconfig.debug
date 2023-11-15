@@ -1008,6 +1008,10 @@ config MEMORIZER_TRACKPIDS
 	help
 	  Enables the tracing of memory accesses seperately by pid.
 
+config MEMORIZER_DEBUGFS_RAM
+	bool "Memorizer: Expose memorizer's buffer via a debugfs file"
+	depends on MEMORIZER
+
 endmenu # "Memory Debugging"
 
 config DEBUG_SHIRQ

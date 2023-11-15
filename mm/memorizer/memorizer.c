@@ -1450,11 +1450,13 @@ static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	/* we are at the end */
 	if (list_is_head(v, &object_list)) {
+		++*pos;
 		return NULL;
 	}
 
 	/* we are at the beginning */
 	if (v == SEQ_START_TOKEN) {
+		++*pos;
 		return seq->private;
 	}
 

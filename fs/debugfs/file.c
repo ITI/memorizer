@@ -1006,7 +1006,11 @@ struct dentry *debugfs_create_blob(const char *name, umode_t mode,
 				   struct dentry *parent,
 				   struct debugfs_blob_wrapper *blob)
 {
-	return debugfs_create_file_unsafe(name, mode & 0444, parent, blob, &fops_blob);
+	struct dentry *de =  debugfs_create_file_unsafe(name, mode & 0444, parent, blob, &fops_blob);
+	if (!IS_ERR(de))
+		d_inode(de)->i_size = blob->size;;
+
+	return de;
 }
 EXPORT_SYMBOL_GPL(debugfs_create_blob);
 

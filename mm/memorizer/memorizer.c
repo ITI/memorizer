@@ -2106,6 +2106,21 @@ static int memorizer_late_init(void)
 	debugfs_create_file("global_table", S_IRUGO, dentryMemDir,
 				     NULL, &globaltable_fops);
 
+#ifdef CONFIG_MEMORIZER_DEBUGFS_RAM
+	{
+		extern uintptr_t pool_base;
+		extern uintptr_t pool_end;
+		static struct debugfs_blob_wrapper memalloc_blob;
+
+		memalloc_blob.data = (void*)pool_base;
+		memalloc_blob.size = pool_end - pool_base;
+		debugfs_create_blob("memalloc_ram", S_IRUGO, dentryMemDir,
+					&memalloc_blob);
+	}
+#endif
+
+	
+
 	pr_info("Memorizer initialized\n");
 	pr_info("Size of memorizer_kobj:%d\n",(int)(sizeof(struct memorizer_kobj)));
 	pr_info("FIXADDR_START: %p,  FIXADDR_SIZE %p", (void *)FIXADDR_START, (void *)FIXADDR_SIZE);

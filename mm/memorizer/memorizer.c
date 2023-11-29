@@ -1889,7 +1889,10 @@ static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf
         return -EINVAL;
 
     memorizer_enabled = value;
-    memorizer_enabled_pid = task_pid_nr(current);
+    if (value == 2) {
+	memorizer_enabled_pid = task_pid_nr(current);
+	current->memorizer_enabled = 1;
+    }
 
     return count;
 }

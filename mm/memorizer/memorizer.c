@@ -411,6 +411,11 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 	afc->ip = ip;
 	afc->writes = 0;
 	afc->reads = 0;
+#ifdef CONFIG_MEMORIZER_TRACKPIDS
+	afc->pid = pid;
+#else
+	afc->pid = -1;
+#endif
 	if (track_calling_context)
 		afc->caller = cur_caller;
 	else
@@ -456,13 +461,18 @@ unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
 	list_for_each (listptr, &(kobj->access_counts)) {
 		entry = list_entry(listptr, struct access_from_counts, list);
 		if (src_ip == entry->ip) {
-			if (kobj->alloc_type == MEM_NONE) {
-				if (entry->caller == cur_caller)
+			if (pid == entry->pid) {
+				if (kobj->alloc_type == MEM_NONE) {
+					if (entry->caller == cur_caller) {
+						return entry;
+					} else if (cur_caller < entry->caller) {
+						break;
+					}
+				} else {
 					return entry;
-				else if (cur_caller < entry->caller)
-					break;
-			} else {
-				return entry;
+				}
+			} else if (pid < entry->pid) {
+				break;
 			}
 		} else if (src_ip < entry->ip) {
 			break;
@@ -628,7 +638,13 @@ void __always_inline memorizer_mem_access(uintptr_t addr, size_t size, bool
 	}
 
 	local_irq_save(flags);
-	find_and_update_kobj_access(ip,addr,-1,write,size);
+	find_and_update_kobj_access(ip,addr,
+#ifdef CONFIG_MEMORIZER_TRACKPIDS
+		in_task() ? task_pid_nr(current) : -1,
+#else
+		-1,
+#endif
+		write,size);
 	local_irq_restore(flags);
 
 	__memorizer_exit();
@@ -1465,10 +1481,11 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 					(unsigned long long) afc->writes,
 					(unsigned long long) afc->reads);
 		} else
-			seq_printf(seq, "  %p,%llu,%llu\n",
+			seq_printf(seq, "  %p,%llu,%llu,%lld\n",
 					(void *) afc->ip,
 					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads);
+					(unsigned long long) afc->reads,
+					(unsigned long long) afc->pid);
 	}
 
 	read_unlock(&kobj->rwlock);
@@ -1544,7 +1561,12 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 
 	if (v == SEQ_START_TOKEN) {
 		/* first time through, print the header */
-		seq_printf(seq, "alloc_jiffies,access_ip,writes,reads\n");
+		seq_printf(seq,
+			"alloc_jiffies,access_ip,"
+#ifdef CONFIG_MEMORIZER_TRACKPIDS
+			"pid,"
+#endif
+			"writes,reads\n");
 		return 0;
 	}
 
@@ -1564,11 +1586,19 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 					(unsigned long long) afc->writes,
 					(unsigned long long) afc->reads);
 		} else
-			seq_printf(seq, "%llu,%p,%llu,%llu\n",
-					(unsigned long long)kobj->alloc_jiffies,
-					(void *) afc->ip,
-					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads);
+			seq_printf(seq,
+#ifdef CONFIG_MEMORIZER_TRACKPIDS
+				"%llu,%p,%llu,%llu,%llu\n",
+#else
+				"%llu,%p,%llu,%llu\n",
+#endif
+				(unsigned long long)kobj->alloc_jiffies,
+				(void *) afc->ip,
+#ifdef CONFIG_MEMORIZER_TRACKPIDS
+				(unsigned long long)afc->pid,
+#endif
+				(unsigned long long) afc->writes,
+				(unsigned long long) afc->reads);
 	}
 
 	read_unlock(&kobj->rwlock);

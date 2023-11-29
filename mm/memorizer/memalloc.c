@@ -79,8 +79,8 @@ void * memalloc(unsigned long size)
 		return 0;
 	if (pool_next_avail_byte + size > pool_end) {
 		// TODO robadams@illinois.edu get rid of this extern.
-		extern bool memorizer_enabled;
-		memorizer_enabled = false;
+		extern int memorizer_enabled;
+		memorizer_enabled = 0;
 		write_unlock_irqrestore(&mem_rwlock, flags);
 		pr_warn("Memorizer ran out of internal heap: add more with kernel boot flag, e.g. memalloc_size=%lu", (memalloc_size>>30)*2);
 		print_pool_info();

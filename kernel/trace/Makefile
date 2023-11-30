@@ -4,6 +4,8 @@
 
 ccflags-remove-$(CONFIG_FUNCTION_TRACER) += $(CC_FLAGS_FTRACE)
 
+KASAN_SANITIZE := n
+
 ifdef CONFIG_FUNCTION_TRACER
 
 # Avoid recursion due to instrumentation.

@@ -558,6 +558,7 @@ static inline bool pcp_allowed_order(unsigned int order)
 
 static inline void free_the_page(struct page *page, unsigned int order)
 {
+	memorizer_free_pages(_RET_IP_, page, order);
 	if (pcp_allowed_order(order))		/* Via pcp? */
 		free_unref_page(page, order);
 	else
@@ -1084,6 +1085,8 @@ static __always_inline bool free_pages_prepare(struct page *page,
 	trace_mm_page_free(page, order);
 	kmsan_free_page(page, order);
 
+	memorizer_free_pages(_RET_IP_, page, order);
+
 	if (unlikely(PageHWPoison(page)) && !order) {
 		/*
 		 * Do not let hwpoison pages hit pcplists/buddy
@@ -1171,6 +1174,7 @@ static __always_inline bool free_pages_prepare(struct page *page,
 	arch_free_page(page, order);
 
 	debug_pagealloc_unmap_pages(page, 1 << order);
+
 
 	return true;
 }
@@ -4448,6 +4452,8 @@ out:
 	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);
 	kmsan_alloc_page(page, order, alloc_gfp);
 
+	memorizer_alloc_pages(_RET_IP_, page, order, alloc_gfp);
+
 	return page;
 }
 EXPORT_SYMBOL(__alloc_pages);
@@ -4461,6 +4467,10 @@ struct folio *__folio_alloc(gfp_t gfp, unsigned int order, int preferred_nid,
 
 	if (folio && order > 1)
 		folio_prep_large_rmappable(folio);
+
+	if(folio)
+		memorizer_alloc_folio(_RET_IP_, page, order, gfp | __GFP_COMP);
+
 	return folio;
 }
 EXPORT_SYMBOL(__folio_alloc);
@@ -4474,16 +4484,28 @@ unsigned long __get_free_pages(gfp_t gfp_mask, unsigned int order)
 {
 	struct page *page;
 
+	memorizer_start_getfreepages();
+
 	page = alloc_pages(gfp_mask & ~__GFP_HIGHMEM, order);
-	if (!page)
+	if (!page) {
+		memorizer_end_getfreepages();
 		return 0;
+	}
+
+	memorizer_alloc_getfreepages(_RET_IP_, page, order, gfp_mask);
+
 	return (unsigned long) page_address(page);
 }
 EXPORT_SYMBOL(__get_free_pages);
 
 unsigned long get_zeroed_page(gfp_t gfp_mask)
 {
-	return __get_free_page(gfp_mask | __GFP_ZERO);
+	unsigned long ret = __get_free_page(gfp_mask | __GFP_ZERO);
+
+	// Memorizer hook here to attribute alloc to this caller
+	memorizer_alloc_pages(_RET_IP_, (void *) ret, 0, gfp_mask);
+
+	return ret;
 }
 EXPORT_SYMBOL(get_zeroed_page);
 
@@ -4695,12 +4717,21 @@ void *alloc_pages_exact(size_t size, gfp_t gfp_mask)
 {
 	unsigned int order = get_order(size);
 	unsigned long addr;
+	void *ret;
 
 	if (WARN_ON_ONCE(gfp_mask & (__GFP_COMP | __GFP_HIGHMEM)))
 		gfp_mask &= ~(__GFP_COMP | __GFP_HIGHMEM);
 
 	addr = __get_free_pages(gfp_mask, order);
-	return make_alloc_exact(addr, order, size);
+
+	// TODO: memorizer: var decl
+	ret = make_alloc_exact(addr, order, size);
+
+	// Memorizer hook here to attribute alloc to this caller
+	// Special Memorizer hook for exact page allocation
+	memorizer_alloc_pages_exact(_RET_IP_, ret, size, gfp_mask);
+
+	return ret;
 }
 EXPORT_SYMBOL(alloc_pages_exact);
 

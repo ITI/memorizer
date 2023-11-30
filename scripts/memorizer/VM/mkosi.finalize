@@ -1,0 +1,9 @@
+#!/bin/sh -ex
+env
+/bin/pwd
+echo $SUDO_USER > $BUILDROOT/sudo_user
+ls -l $BUILDROOT/sudo_user
+
+# /bin/cp ../../../o/arch/x86/boot/bzImage $BUILDROOT/efi/v6/linux
+# /bin/bash
+# /bin/cp $BUILDROOT/boot/initrd.img-* $BUILDROOT/efi/v6/initrd

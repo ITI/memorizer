@@ -38,6 +38,12 @@ KMSAN_SANITIZE_nmi.o					:= n
 KCOV_INSTRUMENT_head$(BITS).o				:= n
 KCOV_INSTRUMENT_sev.o					:= n
 
+MEMORIZER_INSTRUMENT					:= n
+ifdef CONFIG_MEMORIZER
+KASAN_SANITIZE_signal.o                                 := n
+KASAN_SANITIZE_sys_ia32.o                               := n
+endif
+
 CFLAGS_irq.o := -I $(srctree)/$(src)/../include/asm/trace
 
 obj-y			+= head_$(BITS).o

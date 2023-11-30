@@ -22,6 +22,8 @@ OBJECT_FILES_NON_STANDARD	:= y
 # so boot code is not interesting anyway.
 KCOV_INSTRUMENT		:= n
 
+MEMORIZER_INSTRUMENT	:= n
+
 # If you want to preset the SVGA mode, uncomment the next line and
 # set SVGA_MODE to whatever number you want.
 # Set it to -DSVGA_MODE=NORMAL_VGA if you just want the EGA/VGA mode.

@@ -233,3 +233,78 @@ __must_check long strncpy_from_user(char *dst, const char __user *src,
 __must_check long strnlen_user(const char __user *src, long n);
 
 #endif /* __ASM_GENERIC_UACCESS_H */
+
+#if 0
+// TODO memorizer
+diff a/include/asm-generic/uaccess.h b/include/asm-generic/uaccess.h	(rejected hunks)
+@@ -103,6 +103,35 @@ static inline __must_check long __copy_from_user(void *to,
+ #endif
+ 
+ #ifndef __copy_to_user
++#ifdef CONFIG_INLINE_LIBS
++__attribute__((always_inline)) static inline __must_check long __copy_to_user(void __user *to,
++		const void *from, unsigned long n)
++{
++	if (__builtin_constant_p(n)) {
++		switch(n) {
++		case 1:
++			*(u8 __force *)to = *(u8 *)from;
++			return 0;
++		case 2:
++			*(u16 __force *)to = *(u16 *)from;
++			return 0;
++		case 4:
++			*(u32 __force *)to = *(u32 *)from;
++			return 0;
++#ifdef CONFIG_64BIT
++		case 8:
++			*(u64 __force *)to = *(u64 *)from;
++			return 0;
++#endif
++		default:
++			break;
++		}
++	}
++
++	memcpy((void __force *)to, from, n);
++	return 0;
++}
++#else
+ static inline __must_check long __copy_to_user(void __user *to,
+ 		const void *from, unsigned long n)
+ {
+@@ -131,6 +160,7 @@ static inline __must_check long __copy_to_user(void __user *to,
+ 	return 0;
+ }
+ #endif
++#endif
+ 
+ /*
+  * These are the main single-value transfer routines.  They automatically
+@@ -267,6 +297,17 @@ static inline long copy_from_user(void *to,
+ 	return res;
+ }
+ 
++#ifdef CONFIG_INLINE_LIBS
++__attribute__((always_inline)) static inline long copy_to_user(void __user *to,
++		const void *from, unsigned long n)
++{
++	might_fault();
++	if (access_ok(VERIFY_WRITE, to, n))
++		return __copy_to_user(to, from, n);
++	else
++		return n;
++}
++#else
+ static inline long copy_to_user(void __user *to,
+ 		const void *from, unsigned long n)
+ {
+@@ -276,6 +317,7 @@ static inline long copy_to_user(void __user *to,
+ 	else
+ 		return n;
+ }
++#endif
+ 
+ /*
+  * Copy a null terminated string from userspace.
+#endif

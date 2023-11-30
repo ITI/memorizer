@@ -28,6 +28,17 @@ CFLAGS_i915_pci.o = $(call cc-disable-warning, override-init)
 CFLAGS_display/intel_display_device.o = $(call cc-disable-warning, override-init)
 CFLAGS_display/intel_fbdev.o = $(call cc-disable-warning, override-init)
 
+MEMORIZER_INSTRUMENT_i915_gem_execbuffer.o := n
+MEMORIZER_INSTRUMENT_i915_query.o := n 
+MEMORIZER_INSTRUMENT_i915_hwmon.o := n 
+ifdef CONFIG_MEMORIZER
+KASAN_SANITIZE_i915_gem_execbuffer.o := n
+KASAN_SANITIZE_i915_query.o := n
+KASAN_SANITIZE_i915_hwmon.o := n
+endif
+
+MEMORIZER_INSTRUMENT := n
+
 subdir-ccflags-y += -I$(srctree)/$(src)
 
 # Please keep these build lists sorted!

@@ -1,0 +1,119 @@
+# TODO robadams@illinois.edu add tests
+# TODO release deb files
+stages:
+  - setup
+  - compile
+  - upload
+  - release
+  - announce
+
+variables_job:
+  tags: ["docker"]
+  stage: setup
+  image: illinoisrobert/kernel-build
+  script:
+    - echo BASETAG=$CI_COMMIT_TAG | sed s/-mem.*// > basetag.env
+    - echo PACKAGE_REGISTRY_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/memorizer/${CI_COMMIT_TAG}" >> basetag.env
+  artifacts:
+    reports:
+      dotenv: basetag.env
+  variables:
+    GIT_STRATEGY: none
+
+
+compile_deb_job:
+  rules:
+    # Not until we figure out how to do it right.
+    - when: never
+  tags: ["docker"]
+  stage: compile
+  image: illinoisrobert/kernel-build
+  script:
+    # Some people like tarballs; some like debs. We'll build both
+    # Note: "make O=o" is not compatible with "deb-pkg", so we won't use it.
+    - make  defconfig rob.config memorizer.config
+    - make -j $(expr $(nproc) / 3 + 1) deb-pkg
+    # I don't know why deb-pkg puts the files where we can't reach them.
+    - mv ../linux-* .
+  artifacts:
+    expire_in: 1 week
+    paths:
+      # - ./.config
+      # - ./vmlinux
+      - ./linux-*
+      # - ./arch/x86/boot/bzImage
+
+compile_tar_job:
+  tags: ["docker"]
+  stage: compile
+  image: illinoisrobert/kernel-build
+  script:
+    # Some people like tarballs; some like debs. We'll build both
+    # Note: "make O=o" is not compatible with "deb-pkg", so we won't use it.
+    - make  defconfig rob.config memorizer.config
+    - make -j $(expr $(nproc) / 3 + 1) targz-pkg
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - ./*.tar.gz
+      - ./arch/x86/boot/bzImage
+
+patch_job:
+  tags: ["docker"]
+  stage: compile
+  image: illinoisrobert/kernel-build
+  script:
+    - git fetch --depth=1 origin tag "$BASETAG"
+    - git diff -p "$BASETAG" "$CI_COMMIT_TAG" > "$CI_COMMIT_TAG.patch"
+  rules:
+    - if: $CI_COMMIT_TAG
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - $CI_COMMIT_TAG.patch
+
+upload_job:
+  tags: ["docker"]
+  stage: upload
+  image: curlimages/curl:latest
+  rules:
+    - if: $CI_COMMIT_TAG
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file arch/x86/boot/bzImage "${PACKAGE_REGISTRY_URL}/bzImage-${CI_COMMIT_TAG}"'
+    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file *.tar.gz "${PACKAGE_REGISTRY_URL}/linux-${CI_COMMIT_TAG}.tar.gz"'
+    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file $CI_COMMIT_TAG.patch "${PACKAGE_REGISTRY_URL}/${CI_COMMIT_TAG}.patch"'
+
+release_job:
+  tags: ["docker"]
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  variables:
+    GIT_STRATEGY: none
+  rules:
+    - if: $CI_COMMIT_TAG                 # Run this job when a tag is created
+  script:
+    - echo "running release_job"
+  release:                               # See https://docs.gitlab.com/ee/ci/yaml/#release for available properties
+    tag_name: '$CI_COMMIT_TAG'
+    description: '$CI_COMMIT_TAG'
+    assets:
+      links:
+        - name: linux-$CI_COMMIT_TAG.tar.gz
+          url: $PACKAGE_REGISTRY_URL/linux-$CI_COMMIT_TAG.tar.gz
+        - name: bzImage-$CI_COMMIT_TAG
+          url: $PACKAGE_REGISTRY_URL/bzImage-$CI_COMMIT_TAG
+        - name: $CI_COMMIT_TAG.patch
+          url: $PACKAGE_REGISTRY_URL/$CI_COMMIT_TAG.patch
+
+announce_job:
+  tags: ["docker"]
+  stage: announce
+  image: illinoisrobert/kernel-build
+  needs: ["release_job"]
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    # slack-announce returns true even if the announcement didn't work.
+    - slack-announce "$SLACK_CHANNEL_ID" "$SLACK_AUTH_TOKEN" "There is a new memorizer release $CI_COMMIT_TAG. You can download it from $CI_PROJECT_URL/-/releases/$CI_COMMIT_TAG."

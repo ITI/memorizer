@@ -312,6 +312,12 @@ static LIST_HEAD(object_allocated_list);
 static LIST_HEAD(object_freed_list);
 static LIST_HEAD(object_reuse_list);
 
+/*
+ * A wait queue that gets poked every time the lists change in a
+ * non-atomic context.
+ */
+DECLARE_WAIT_QUEUE_HEAD(object_list_wq);
+
 
 /* global object id reference counter */
 static atomic_long_t global_kobj_id_count = ATOMIC_INIT(0);
@@ -638,28 +644,16 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 //==-- Memorizer memory access tracking -----------------------------------==//
 
 static bool __always_inline memorizer_is_enabled(void) {
-	if (likely(memorizer_enabled == 1)) {
+	switch(memorizer_enabled) {
+	case 1: /* grab everything */
 		return true;
+	case 2: /* grab everything from test process plus out-of-task items */
+		return (!in_task()) || current->memorizer_enabled;
+	case 3: /* grab everything from test process only */
+		return in_task() && current->memorizer_enabled;
+	default:
+		return false;
 	}
-
-	if (likely(memorizer_enabled == 2)) {
-		if (!in_task()) {
-			/* TODO robadams@illinois.edu:
-			 * This an interesting policy question:
-			 * If we are recording events from only selected
-			 * tasks, should out-of-task events be recorded?
-			 *
-			 * Memory accesses from out-of-task events (e.g.
-			 * accesses from softirq handler) are recorded.
-			 */
-			return true;
-		}
-		if (current->memorizer_enabled)  {
-			return true;
-		}
-	}
-
-	return false;
 }
 
 /**
@@ -947,6 +941,7 @@ static void harvest_dead_objs(void)
 		}
 	}
 	write_unlock_irqrestore(&object_list_spinlock, flags);
+	wake_up_interruptible(&object_list_wq);
 }
 
 /**
@@ -981,6 +976,9 @@ static void free_kobj(struct memorizer_kobj * kobj)
 	list_add(&kobj->object_list, &object_reuse_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
 
+	/* let everyone know */
+	wake_up_interruptible(&object_list_wq);
+
 	/* stats */
 	track_kobj_free();
 }
@@ -1009,6 +1007,7 @@ static void clear_dead_objs(bool only_printed_items)
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_replace_init(&object_freed_list, &object_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
+	wake_up_interruptible(&object_list_wq);
 
 	
 	/* Now that all of our targets are on our local object list,
@@ -1027,6 +1026,7 @@ static void clear_dead_objs(bool only_printed_items)
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_splice(&object_list, &object_freed_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
+	wake_up_interruptible(&object_list_wq);
 }
 
 /**
@@ -1072,6 +1072,8 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		write_lock_irqsave(&object_list_spinlock, flags);
 		list_move(&kobj->object_list, &object_freed_list);
 		write_unlock_irqrestore(&object_list_spinlock, flags);
+
+		wake_up_interruptible(&object_list_wq);
 
 		track_free();
 	}
@@ -1149,6 +1151,7 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site,
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_add_tail(&kobj->object_list, &object_allocated_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
+	wake_up_interruptible(&object_list_wq);
 
 	return kobj;
 }
@@ -1724,6 +1727,11 @@ static void kmap_seq_stop(struct seq_file *seq, void *v)
 	seq->private = v;
 }
 
+/* TODO robadams@illinois.edu delete this
+ * after proving that the other operations are never invoked */
+static const struct seq_operations kmap_stream_seq_ops = {
+	.show = kmap_seq_show,
+};
 static const struct seq_operations kmap_seq_ops = {
 	.start = kmap_seq_start,
 	.next  = kmap_seq_next,
@@ -1763,6 +1771,27 @@ static int kmap_open(struct inode *inode, struct file *file)
 	/* __memorizer_exit to be called in kmap_release()  */
 }
 
+static int stream_open_(struct inode *inode,
+	struct file *file,
+	struct list_head* lh,
+	struct seq_operations const *op)
+{
+	struct seq_file *seq;
+	int rc = seq_open(file, op);
+	if(rc < 0)
+		return rc;
+
+	seq = file->private_data;
+	seq->private = lh;
+
+	return rc;
+}
+
+static int kmap_stream_open(struct inode *inode, struct file *file)
+{
+	return stream_open_(inode, file, &object_freed_list, &kmap_stream_seq_ops);
+}
+
 static int kmap_release(struct inode *inode, struct file *file)
 {
 	/* __memorizer_enter called in kmap_open() */
@@ -1770,6 +1799,128 @@ static int kmap_release(struct inode *inode, struct file *file)
 	__memorizer_exit();
 	return ret;
 }
+
+#define pop_or_null(head__) ({ \
+	struct list_head *pos__ = READ_ONCE(head__->next); \
+	if(pos__ != head__) { \
+		list_del_init(pos__); \
+	} else { \
+		pos__ = NULL; \
+	} \
+	pos__; \
+})
+
+#define push(lh, p) list_add(p, lh)
+
+
+/*
+ * Specialized seq_read for kmap. Ignore the file offset, always
+ * return the next item.
+ */
+static ssize_t 
+stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
+{
+	struct seq_file *m = file->private_data;
+	struct list_head *lh = m->private;
+	struct list_head *p;
+	size_t count;
+	int err;
+
+	pr_info("stream_seq_read, lh=%p, &object_reuse_list=%p\n", lh, &object_reuse_list);
+
+	if(!size)
+		return 0;
+
+	if(!m->buf) {
+		m->size = PAGE_SIZE;
+		m->buf = kvmalloc(m->size, GFP_KERNEL_ACCOUNT);
+	}
+
+	/* There may be leftover bytes from the previous read */
+	if(m->count) {
+		goto Drain;
+	}
+
+	m->from = 0;
+		
+	/* wait for data to be available */
+	do {
+		long err = wait_event_interruptible_timeout(object_list_wq, !list_empty(lh), HZ);
+		pr_info("weit: %ld\n", err);
+		if(err < 0)
+			return err;
+		p = pop_or_null(lh);
+		pr_info("p: %p\n", p);
+		if(!p) {
+			pr_info("harvest\n");
+			harvest_dead_objs();
+		}
+	} while(!p);
+
+	/* First, grab one result, resizing the buffer as required */
+	while(1) {
+		err = m->op->show(m, p);
+		if(err < 0) {
+			push(lh, p);
+			return err;
+		}
+		if(seq_has_overflowed(m)) {
+			/* You're gonna need a bigger boat */
+			kvfree(m->buf);
+			m->size <<= 1;
+			m->buf = kvmalloc(m->size, GFP_KERNEL_ACCOUNT);
+			if(!m->buf) {
+				push(lh, p);
+				return -ENOMEM;
+			}
+			continue;
+		}
+		break;
+	}
+	push(p, &object_reuse_list);
+
+	/* Next, grab as many results as will fit in the remaining buffer */
+	while(1) {
+		p = pop_or_null(lh);
+		if(!p) {
+			/* all of the source material is consumed */
+			break;
+		}
+		size_t count = m->count;
+		err = m->op->show(m, p);
+		if(err < 0) {
+			m->count = count;
+			push(lh, p);
+			return err;
+		}
+		if(seq_has_overflowed(m)) {
+			/* If it doesn't fit, put it back */
+			m->count = count;
+			push(lh, p);
+			break;
+		}
+		push(p, &object_reuse_list);
+	}
+
+Drain:
+	count = m->count;
+	if(count > size) {
+		count = size;
+	}
+	if(copy_to_user(buf, m->buf + m->from, count)) {
+		return -EFAULT;
+	}
+	m->count -= count;
+	m->from += count;
+	return count;
+}
+
+static const struct file_operations kmap_stream_fops = {
+	.owner		= THIS_MODULE,
+	.open		= kmap_stream_open,
+	.read		= stream_seq_read,
+	.release	= seq_release,
+};
 
 static const struct file_operations kmap_fops = {
 	.owner		= THIS_MODULE,
@@ -1981,6 +2132,10 @@ static ssize_t memorizer_enabled_read(struct file *filp, char __user *usr_buf, s
 		break;
 	case 2:
 		count = snprintf(buf, sizeof buf, "2 - memorizer enabled, proc root = %d\n", memorizer_enabled_pid);
+		break;
+	case 3:
+		count = snprintf(buf, sizeof buf, "3 - memorizer_enabled, no irq, proc root = %d\n", memorizer_enabled_pid);
+		break;
 	}
 
 	return simple_read_from_buffer(usr_buf, size, ppos, buf, count);
@@ -1995,13 +2150,13 @@ static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf
     if (ret)
         return ret;
 
-    if (value < 0 || value > 2)
+    if (value < 0 || value > 3)
         return -EINVAL;
 
     pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
     memorizer_enabled = value;
 
-    if (value == 2) {
+    if (value == 2 || value == 3) {
 	memorizer_enabled_pid = task_pid_nr(current);
 	current->memorizer_enabled = 1;
 	pr_info("memorizer_enabled_pid: %d\n", memorizer_enabled_pid);
@@ -2054,6 +2209,7 @@ void __init memorizer_init(void)
 		list_add_tail(&general_kobjs[i]->object_list, &object_allocated_list);
 		write_unlock(&object_list_spinlock);
 	}
+	wake_up_interruptible(&object_list_wq);
 
 	/* Allocate memory for the global metadata table.
 	 * Not used by Memorizer, but used in processing globals offline. */
@@ -2148,6 +2304,8 @@ static int memorizer_late_init(void)
 	// data
 	debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
 			NULL, &kmap_fops);
+	debugfs_create_file("kmap_stream", S_IRUGO, dentryMemDir,
+			NULL, &kmap_stream_fops);
 	debugfs_create_file("allocs", S_IRUGO, dentryMemDir,
 			NULL, &allocs_fops);
 	debugfs_create_file("accesses", S_IRUGO, dentryMemDir,

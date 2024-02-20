@@ -489,8 +489,14 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		return 0;
 
 	if(!m->buf) {
-		m->size = PAGE_SIZE;
+		m->size = size;
+		if(m->size < PAGE_SIZE)
+			m->size = PAGE_SIZE;
+		if(m->size > 1024 * PAGE_SIZE)
+			m->size = 1024 * PAGE_SIZE;
 		m->buf = kvmalloc(m->size, GFP_KERNEL_ACCOUNT);
+		if(!m->buf)
+			return -ENOMEM;
 	}
 
 	/* There may be leftover bytes from the previous read */

@@ -156,10 +156,6 @@
 #define TASK_STRING		1
 
 //==-- Naming information for debugfs --==//
-struct bool_name {
-	bool value;
-	char* name;
-};
 #define BOOL_DECL(name, value) struct bool_name name = { value, # name }
 
 //==-- Prototype Declarations ---------------------------------------------==//
@@ -244,7 +240,7 @@ static int __init early_cfg_log_boot(char *arg)
 }
 early_param("cfg_log_boot", early_cfg_log_boot);
 
-static BOOL_DECL(track_calling_context, false);
+BOOL_DECL(track_calling_context, false);
 static int __init track_cc(char *arg){
     if(!arg)
         return 0;
@@ -274,11 +270,7 @@ static int __init early_stack_trace_boot(char *arg)
 }
 early_param("stack_trace_boot", early_stack_trace_boot);
 
-static enum {
-	COLUMN_SERIAL,
-	COLUMN_TIME,
-} index_column_type = COLUMN_SERIAL;
-
+enum column_type index_column_type = COLUMN_SERIAL;
 static int __init early_index_column_type(char *arg)
 {
 	if (!arg)
@@ -298,7 +290,7 @@ static int __init early_index_column_type(char *arg)
 early_param("memorizer_index_type", early_index_column_type);
 
 /* flag enable/disable printing of live objects */
-static BOOL_DECL(print_live_obj, true);
+BOOL_DECL(print_live_obj, true);
 
 /* Function has table */
 struct FunctionHashTable * cfgtbl;
@@ -308,9 +300,9 @@ struct FunctionHashTable * cfgtbl;
  * memory range, or it is, itself, free'd
  * and ready for re-use.
  */
-static LIST_HEAD(object_allocated_list);
-static LIST_HEAD(object_freed_list);
-static LIST_HEAD(object_reuse_list);
+LIST_HEAD(memorizer_object_allocated_list);
+LIST_HEAD(memorizer_object_freed_list);
+LIST_HEAD(memorizer_object_reuse_list);
 
 /*
  * A wait queue that gets poked every time the lists change in a
@@ -377,31 +369,6 @@ unsigned long get_index(void) {
 	return atomic_fetch_add(1, &index_stamp);
 }
 
-/**
- * __memorizer_enter() - set recursion flag for entry into memorizer
- *
- * Return value: 0 for success. Any other value for failure.
- *
- * The primary goal of this is to stop recursive handling of events. Memorizer
- * by design tracks two types of events: allocations and accesses. Effectively,
- * while tracking either type we do not want to re-enter and track memorizer
- * events that are sources from within memorizer. Yes this means we may not
- * track legitimate access of some types, but these are caused by memorizer and
- * we want to ignore them.
- *
- * N.b. There is no way yet to wait for memorizer to be available. Before
- * you try `while(__memorizer_enter()) yield();`, look at the comment
- * for `yield()` in kernel/sched/core.c
- */
-static inline int __memorizer_enter(void)
-{
-    return this_cpu_cmpxchg(inmem, 0, 1);
-}
-
-static __always_inline void __memorizer_exit(void)
-{
-    this_cpu_write(inmem, 0);
-}
 
 /**
  * __print_memorizer_kobj() - print out the object for debuggin
@@ -912,7 +879,7 @@ static void free_access_from_list(struct list_head *afc_lh)
 }
 
 /**
- * harvest_dead_objs --- move all dead objets to object_freed_list
+ * harvest_dead_objs --- move all dead objets to memorizer_object_freed_list
  *
  * holds the object_list_spinlock for a long time. O(n)
  *
@@ -932,12 +899,12 @@ static void harvest_dead_objs(void)
 	/* Move all of the dead items from allocated list to freed list */
 	/* interrupts are disabled for a while ( O(n) ) */
 	write_lock_irqsave(&object_list_spinlock, flags);
-	list_for_each_safe(p, tmp, &object_allocated_list) {
+	list_for_each_safe(p, tmp, &memorizer_object_allocated_list) {
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
 		/* Iff free_index is 0 then this object is live */
 		if (kobj->free_index != 0) {
 			/* TODO robadams@illinois.edu - can lt do this for us? */
-			list_move(p, &object_freed_list);
+			list_move(p, &memorizer_object_freed_list);
 		}
 	}
 	write_unlock_irqrestore(&object_list_spinlock, flags);
@@ -973,7 +940,7 @@ static void free_kobj(struct memorizer_kobj * kobj)
 
 	/* Free the kobj */
 	write_lock_irqsave(&object_list_spinlock, flags);
-	list_add(&kobj->object_list, &object_reuse_list);
+	list_add(&kobj->object_list, &memorizer_object_reuse_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
 
 	/* let everyone know */
@@ -1005,7 +972,7 @@ static void clear_dead_objs(bool only_printed_items)
 
 	/* Move all of the dead items from freed list to our local copy */
 	write_lock_irqsave(&object_list_spinlock, flags);
-	list_replace_init(&object_freed_list, &object_list);
+	list_replace_init(&memorizer_object_freed_list, &object_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
 	wake_up_interruptible(&object_list_wq);
 
@@ -1024,7 +991,7 @@ static void clear_dead_objs(bool only_printed_items)
 
 	/* Move free'd-but-not-printed objects back to gloal list */
 	write_lock_irqsave(&object_list_spinlock, flags);
-	list_splice(&object_list, &object_freed_list);
+	list_splice(&object_list, &memorizer_object_freed_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
 	wake_up_interruptible(&object_list_wq);
 }
@@ -1070,7 +1037,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 
 		/* Move the object from allocated list to freed list */
 		write_lock_irqsave(&object_list_spinlock, flags);
-		list_move(&kobj->object_list, &object_freed_list);
+		list_move(&kobj->object_list, &memorizer_object_freed_list);
 		write_unlock_irqrestore(&object_list_spinlock, flags);
 
 		wake_up_interruptible(&object_list_wq);
@@ -1144,12 +1111,12 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site,
 	lt_insert_kobj(kobj);
 
 	/* TODO robadams@illinois.edu is there a race here?
-	 * Does anyone expect that lt and object_allocated_list will be in sync?
+	 * Does anyone expect that lt and memorizer_object_allocated_list will be in sync?
 	*/
 
-	/* Grab the writer lock for the object_allocated_list and insert into object list */
+	/* Grab the writer lock for the memorizer_object_allocated_list and insert into object list */
 	write_lock_irqsave(&object_list_spinlock, flags);
-	list_add_tail(&kobj->object_list, &object_allocated_list);
+	list_add_tail(&kobj->object_list, &memorizer_object_allocated_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
 	wake_up_interruptible(&object_list_wq);
 
@@ -1465,520 +1432,6 @@ void memorizer_register_global(const void *ptr, size_t size)
 	__memorizer_kmalloc(0, ptr, size, size, 0, MEM_GLOBAL);
 }
 
-
-//==-- Memorizer Data Export ----------------------------------------------==//
-extern struct list_head *seq_list_start(struct list_head *head, loff_t pos);
-extern struct list_head *seq_list_next(void *v, struct list_head *head, loff_t
-		*ppos);
-
-/*
- * kmap_seq_start() --- set up the next 'session' of the seq_file. N.b.
- *                      this function is called rougly once per `read()` syscall.
- *
- * We must not call seq_list_start(). On every call to seq_list_start, other
- * than the first, seq_list_next() is called pos times. Since
- * seq_list_start() is called roughly once per read(), this means that
- * seq_list_next is called O(n^2) times. 
- *
- * We are inside the memorizer_enter exclusion, so no locks are required. In fact,
- * the memorizer_enter exclusion goes from the open() to the release(), including
- * several read system calls in between. [I know that isn't what memorizer_enter
- * was written for. Maybe we should use some other exclusion device. Maybe
- * {kmap,clear_dead_obj,clear_printed_list} each set memorizer_enabled to 0?]
- */
-static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
-{
-	/*
-	 * The first time through, private and pos are both zero.
-	 * The subsequent times before EOF, private and pos are both non-zero.
-	 * At EOF, private is zero, pos is non-zero.
-	 */
-	if (!seq->private && !*pos) {
-		/* BUG TODO robadams@illinois.edu */
-		seq->private = object_allocated_list.next;
-		return SEQ_START_TOKEN;
-	}
-	return seq->private;
-}
-
-/*
- * kmap_seq_next() --- move the head pointer in the list or return null
- */
-static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
-{
-	/* we are at the end */
-	if (list_is_head(v, &object_allocated_list)) {
-		++*pos;
-		return NULL;
-	}
-
-	/* we are at the beginning */
-	if (v == SEQ_START_TOKEN) {
-		++*pos;
-		return seq->private;
-	}
-
-	/* BUG TODO robadams@illinois.edu */
-	/* This will only do 1 list, I need to do 2. */
-	// return seq_list_next(v, &object_list, pos);
-	return seq_list_next(v, &object_allocated_list, pos);
-}
-
-/*
- * kmap_seq_show() - print out the object including access info
- */
-static int kmap_seq_show(struct seq_file *seq, void *v)
-{
-	struct access_from_counts *afc;
-	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
-			object_list);
-	char *new_alloc_type = 0;
-	uintptr_t free_ip = 0;
-
-	if (v == SEQ_START_TOKEN) {
-		/* kmap file doesn't have a header */
-		return 0;
-	}
-
-	read_lock(&kobj->rwlock);
-	/* Iff free_index is 0 then this object is live */
-	if (!print_live_obj.value && kobj->free_index == 0) {
-		read_unlock(&kobj->rwlock);
-		return 0;
-	}
-	kobj->printed = true;
-
-	/* Print object allocation info */
-	if((kobj->free_ip >> 32) == 0xdeadbeef) {
-		/* This allocation was replaced by another
-		 * allocation with no interveing `free()`
-		 * for reasons unknown. The subsequent
-		 * allocator is in `free_ip`.
-		 */
-		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
-		/* Some post-processing scripts expect to
-		 * see "DEADBEEF" in this case.
-		 */
-		free_ip = 0xdeadbeef;
-	} else if ((kobj->free_ip >> 32) == 0xfeed) {
-		/* This allocation was replaced by another
-		 * allocation with no intervening `free()` due
-		 * to a nested allocation. The subsequent allocator
-		 * is in `free_ip`.
-		 * */
-		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
-		free_ip = 0xfedbeef;
-	} else {
-		/* Normal allocation */
-		new_alloc_type = "";
-		free_ip = kobj->free_ip;
-	}
-	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s,%s\n",
-			(void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
-			kobj->size, kobj->alloc_index, kobj->free_index, (void*)
-			free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
-			kobj->slabname,new_alloc_type);
-
-	/* print each access IP with counts and remove from list */
-	list_for_each_entry(afc, &kobj->access_counts, list) {
-		if (kobj->alloc_type == MEM_NONE && track_calling_context.value) {
-			seq_printf(seq, "  from:%p,caller:%p,%llu,%llu\n",
-					(void *) afc->ip, (void *)afc->caller,
-					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads);
-		} else
-			seq_printf(seq, "  %p,%llu,%llu,%lld\n",
-					(void *) afc->ip,
-					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads,
-					(unsigned long long) afc->pid);
-	}
-
-	read_unlock(&kobj->rwlock);
-	return 0;
-}
-
-/*
- * allocs_seq_show() - print out the object
- */
-static int allocs_seq_show(struct seq_file *seq, void *v)
-{
-	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
-			object_list);
-	char *new_alloc_type = 0;
-	uintptr_t free_ip = 0;
-
-	if (v == SEQ_START_TOKEN) {
-		/* first time through, print the header */
-		char *index_column = "serial";
-		if(index_column_type == COLUMN_TIME)
-			index_column = "time";
-
-		seq_printf(seq, "alloc_ip,pid,ptr,size,alloc_%s,free_%s,free_ip,type,slab,new_type\n", index_column, index_column);
-		return 0;
-	}
-	read_lock(&kobj->rwlock);
-	/* If free_index is 0 then this object is live */
-	if (!print_live_obj.value && kobj->free_index == 0) {
-		read_unlock(&kobj->rwlock);
-		return 0;
-	}
-	kobj->printed = true;
-
-	/* Print object allocation info */
-	if((kobj->free_ip >> 32) == 0xdeadbeef) {
-		/* This allocation was replaced by another
-		 * allocation with no interveing `free()`
-		 * for reasons unknown. The subsequent
-		 * allocator is in `free_ip`.
-		 */
-		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
-		/* Some post-processing scripts expect to
-		 * see "DEADBEEF" in this case.
-		 */
-		free_ip = 0xdeadbeef;
-	} else if ((kobj->free_ip >> 32) == 0xfeed) {
-		/* This allocation was replaced by another
-		 * allocation with no intervening `free()` due
-		 * to a nested allocation. The subsequent allocator
-		 * is in `free_ip`.
-		 * */
-		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
-		free_ip = 0xfedbeef;
-	} else {
-		/* Normal allocation */
-		new_alloc_type = "";
-		free_ip = kobj->free_ip;
-	}
-	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s,%s\n",
-			(void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
-			kobj->size, kobj->alloc_index, kobj->free_index, (void*)
-			free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
-			kobj->slabname,new_alloc_type);
-
-	read_unlock(&kobj->rwlock);
-	return 0;
-}
-
-/*
- * accesses_seq_show() - print out the access info
- */
-static int accesses_seq_show(struct seq_file *seq, void *v)
-{
-	struct access_from_counts *afc;
-	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
-			object_list);
-
-	if (v == SEQ_START_TOKEN) {
-		/* first time through, print the header */
-		seq_printf(seq,
-			"alloc_index,access_ip,"
-#ifdef CONFIG_MEMORIZER_TRACKPIDS
-			"pid,"
-#endif
-			"writes,reads\n");
-		return 0;
-	}
-
-	read_lock(&kobj->rwlock);
-	/* If free_index is 0 then this object is live */
-	if (!print_live_obj.value && kobj->free_index == 0) {
-		read_unlock(&kobj->rwlock);
-		return 0;
-	}
-	kobj->printed = true;
-
-	/* print each access IP with counts and remove from list */
-	list_for_each_entry(afc, &kobj->access_counts, list) {
-		if (kobj->alloc_type == MEM_NONE && track_calling_context.value) {
-			seq_printf(seq, "  from:%p,caller:%p,%llu,%llu\n",
-					(void *) afc->ip, (void *)afc->caller,
-					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads);
-		} else
-			seq_printf(seq,
-#ifdef CONFIG_MEMORIZER_TRACKPIDS
-				"%llu,%p,%llu,%llu,%llu\n",
-#else
-				"%llu,%p,%llu,%llu\n",
-#endif
-				(unsigned long long)kobj->alloc_index,
-				(void *) afc->ip,
-#ifdef CONFIG_MEMORIZER_TRACKPIDS
-				(unsigned long long)afc->pid,
-#endif
-				(unsigned long long) afc->writes,
-				(unsigned long long) afc->reads);
-	}
-
-	read_unlock(&kobj->rwlock);
-	return 0;
-}
-
-/*
- * kmap_seq_stop() --- clean up on end of single read session.
- */
-static void kmap_seq_stop(struct seq_file *seq, void *v)
-{
-	/*
-	 * We are exiting the read syscall. We need a place
-	 * to store our list pointer until the next read syscall.
-	 */
-	seq->private = v;
-}
-
-/* TODO robadams@illinois.edu delete this
- * after proving that the other operations are never invoked */
-static const struct seq_operations kmap_stream_seq_ops = {
-	.show = kmap_seq_show,
-};
-static const struct seq_operations kmap_seq_ops = {
-	.start = kmap_seq_start,
-	.next  = kmap_seq_next,
-	.stop  = kmap_seq_stop,
-	.show  = kmap_seq_show,
-};
-static const struct seq_operations allocs_seq_ops = {
-	.start = kmap_seq_start,
-	.next  = kmap_seq_next,
-	.stop  = kmap_seq_stop,
-	.show  = allocs_seq_show,
-};
-static const struct seq_operations accesses_seq_ops = {
-	.start = kmap_seq_start,
-	.next  = kmap_seq_next,
-	.stop  = kmap_seq_stop,
-	.show  = accesses_seq_show,
-};
-
-static int kmap_open(struct inode *inode, struct file *file)
-{
-	/* TODO robadams@illinois.edu
-	 * We need to temporarily stop memorizer so that
-	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and need to
-	 * be replaced.]
-	 */
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
-	return seq_open(file, &kmap_seq_ops);
-
-	/* __memorizer_exit to be called in kmap_release()  */
-}
-
-static int stream_open_(struct inode *inode,
-	struct file *file,
-	struct list_head* lh,
-	struct seq_operations const *op)
-{
-	struct seq_file *seq;
-	int rc = seq_open(file, op);
-	if(rc < 0)
-		return rc;
-
-	seq = file->private_data;
-	seq->private = lh;
-
-	return rc;
-}
-
-static int kmap_stream_open(struct inode *inode, struct file *file)
-{
-	return stream_open_(inode, file, &object_freed_list, &kmap_stream_seq_ops);
-}
-
-static int kmap_release(struct inode *inode, struct file *file)
-{
-	/* __memorizer_enter called in kmap_open() */
-	int ret = seq_release(inode, file);
-	__memorizer_exit();
-	return ret;
-}
-
-#define pop_or_null(head__) ({ \
-	struct list_head *pos__ = READ_ONCE(head__->next); \
-	if(pos__ != head__) { \
-		list_del_init(pos__); \
-	} else { \
-		pos__ = NULL; \
-	} \
-	pos__; \
-})
-
-#define push(lh, p) list_add(p, lh)
-
-
-/*
- * Specialized seq_read for kmap. Ignore the file offset, always
- * return the next item.
- */
-static ssize_t 
-stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
-{
-	struct seq_file *m = file->private_data;
-	struct list_head *lh = m->private;
-	struct list_head *p;
-	size_t count;
-	int err;
-
-	pr_info("stream_seq_read, lh=%p, &object_reuse_list=%p\n", lh, &object_reuse_list);
-
-	if(!size)
-		return 0;
-
-	if(!m->buf) {
-		m->size = PAGE_SIZE;
-		m->buf = kvmalloc(m->size, GFP_KERNEL_ACCOUNT);
-	}
-
-	/* There may be leftover bytes from the previous read */
-	if(m->count) {
-		goto Drain;
-	}
-
-	m->from = 0;
-		
-	/* wait for data to be available */
-	do {
-		long err = wait_event_interruptible_timeout(object_list_wq, !list_empty(lh), HZ);
-		pr_info("weit: %ld\n", err);
-		if(err < 0)
-			return err;
-		p = pop_or_null(lh);
-		pr_info("p: %p\n", p);
-		if(!p) {
-			pr_info("harvest\n");
-			harvest_dead_objs();
-		}
-	} while(!p);
-
-	/* First, grab one result, resizing the buffer as required */
-	while(1) {
-		err = m->op->show(m, p);
-		if(err < 0) {
-			push(lh, p);
-			return err;
-		}
-		if(seq_has_overflowed(m)) {
-			/* You're gonna need a bigger boat */
-			kvfree(m->buf);
-			m->size <<= 1;
-			m->buf = kvmalloc(m->size, GFP_KERNEL_ACCOUNT);
-			if(!m->buf) {
-				push(lh, p);
-				return -ENOMEM;
-			}
-			continue;
-		}
-		break;
-	}
-	push(p, &object_reuse_list);
-
-	/* Next, grab as many results as will fit in the remaining buffer */
-	while(1) {
-		p = pop_or_null(lh);
-		if(!p) {
-			/* all of the source material is consumed */
-			break;
-		}
-		size_t count = m->count;
-		err = m->op->show(m, p);
-		if(err < 0) {
-			m->count = count;
-			push(lh, p);
-			return err;
-		}
-		if(seq_has_overflowed(m)) {
-			/* If it doesn't fit, put it back */
-			m->count = count;
-			push(lh, p);
-			break;
-		}
-		push(p, &object_reuse_list);
-	}
-
-Drain:
-	count = m->count;
-	if(count > size) {
-		count = size;
-	}
-	if(copy_to_user(buf, m->buf + m->from, count)) {
-		return -EFAULT;
-	}
-	m->count -= count;
-	m->from += count;
-	return count;
-}
-
-static const struct file_operations kmap_stream_fops = {
-	.owner		= THIS_MODULE,
-	.open		= kmap_stream_open,
-	.read		= stream_seq_read,
-	.release	= seq_release,
-};
-
-static const struct file_operations kmap_fops = {
-	.owner		= THIS_MODULE,
-	.open		= kmap_open,
-	.read		= seq_read,
-	.release	= kmap_release,
-};
-
-static int allocs_open(struct inode *inode, struct file *file)
-{
-	/* We need to temporarily stop memorizer so that
-	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and need to
-	 * be replaced.]
-	 */
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
-	return seq_open(file, &allocs_seq_ops);
-
-	/* __memorizer_exit to be called in kmap_release()  */
-}
-static const struct file_operations allocs_fops = {
-	.owner		= THIS_MODULE,
-	.open		= allocs_open,
-	.read		= seq_read,
-	.release	= kmap_release,
-};
-
-static int accesses_open(struct inode *inode, struct file *file)
-{
-	/* We need to temporarily stop memorizer so that
-	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and need to
-	 * be replaced.]
-	 */
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
-	return seq_open(file, &accesses_seq_ops);
-
-	/* __memorizer_exit to be called in kmap_release()  */
-}
-static const struct file_operations accesses_fops = {
-	.owner		= THIS_MODULE,
-	.open		= accesses_open,
-	.read		= seq_read,
-	.release	= kmap_release,
-};
-
 /*
  * clear_free_list_write() - call the function to clear the free'd kobjs
  */
@@ -2029,46 +1482,6 @@ static const struct file_operations clear_printed_list_fops = {
 	.write		= clear_printed_list_write,
 };
 
-static ssize_t cfgmap_write(struct file *file, const char __user
-		*user_buf, size_t size, loff_t *ppos)
-{
-	unsigned long flags;
-	if (__memorizer_enter()) {
-		return -EBUSY;
-	}
-	local_irq_save(flags);
-	cfgmap_clear(cfgtbl);
-	local_irq_restore(flags);
-	__memorizer_exit();
-	*ppos += size;
-	return size;
-}
-
-static int cfgmap_seq_show(struct seq_file *seq, void *v)
-{
-	struct EdgeBucket * b;
-	int index;
-	for (index = 0; index < cfgtbl -> number_buckets; index++) {
-		b = cfgtbl -> buckets[index];
-		while (b != NULL) {
-			seq_printf(seq,"%lx %lx %ld\n", b -> from, b -> to, atomic_long_read(&b -> count));
-			b = b -> next;
-		}
-	}
-	return 0;
-}
-
-static int cfgmap_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, &cfgmap_seq_show, NULL);
-}
-
-static const struct file_operations cfgmap_fops = {
-	.owner		= THIS_MODULE,
-	.write		= cfgmap_write,
-	.open		= cfgmap_open,
-	.read		= seq_read,
-};
 
 static int stats_seq_show(struct seq_file *seq, void *v)
 {
@@ -2083,32 +1496,6 @@ static int show_stats_open(struct inode *inode, struct file *file)
 static const struct file_operations show_stats_fops = {
 	.owner		= THIS_MODULE,
 	.open		= show_stats_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-/* The debugging info generated by gcc doesn't quite include *everything*,
- * even when using -g3 for most debugging info. As far as I can tell, the
- * only things missing are some string constants, etc that are not very
- * interesting. However, on the uSCOPE analysis side, we really want to map
- * these back to files / folders for analysis. This interface lets you print
- * the entire global table exactly as KASAN sees it, so that everything matches
- * up and we get complete debug info for all globals. */
-static int globaltable_seq_show(struct seq_file *seq, void *v)
-{
-  seq_printf(seq, "%s\n", global_table_text);
-  return 0;
-}
-
-static int globaltable_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, &globaltable_seq_show, NULL);
-}
-
-static const struct file_operations globaltable_fops = {
-	.owner		= THIS_MODULE,
-	.open		= globaltable_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -2206,7 +1593,7 @@ void __init memorizer_init(void)
 			panic("Memorizer could not allocate catch-all kobjs");
 		init_kobj(general_kobjs[i], 0, 0, 0, i);
 		write_lock(&object_list_spinlock);
-		list_add_tail(&general_kobjs[i]->object_list, &object_allocated_list);
+		list_add_tail(&general_kobjs[i]->object_list, &memorizer_object_allocated_list);
 		write_unlock(&object_list_spinlock);
 	}
 	wake_up_interruptible(&object_list_wq);
@@ -2298,22 +1685,8 @@ static int memorizer_late_init(void)
 		pr_warn("Failed to create debugfs memorizer dir\n");
 
 	// robadams@illinois.edu memorizer_stats_late_init(dentryMemDir);
-	// robadams@illinois.edu memorizer_data_late_init(dentryMemDir);
+	memorizer_data_late_init(dentryMemDir);
 	// robadams@illinois.edu memorizer_control_late_init(dentryMemDir);
-
-	// data
-	debugfs_create_file("kmap", S_IRUGO, dentryMemDir,
-			NULL, &kmap_fops);
-	debugfs_create_file("kmap_stream", S_IRUGO, dentryMemDir,
-			NULL, &kmap_stream_fops);
-	debugfs_create_file("allocs", S_IRUGO, dentryMemDir,
-			NULL, &allocs_fops);
-	debugfs_create_file("accesses", S_IRUGO, dentryMemDir,
-			NULL, &accesses_fops);
-	debugfs_create_file("cfgmap", S_IRUGO|S_IWUGO, dentryMemDir,
-			NULL, &cfgmap_fops);
-	debugfs_create_file("global_table", S_IRUGO, dentryMemDir,
-				     NULL, &globaltable_fops);
 
 	// stats interface 
 	debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,

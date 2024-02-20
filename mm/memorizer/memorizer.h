@@ -40,4 +40,55 @@
 
 unsigned long get_index(void);
 struct memorizer_kobj *create_kobj(uintptr_t call_site, uintptr_t ptr, uint64_t size, enum AllocType AT);
+
+extern int memorizer_data_late_init(struct dentry *dentryMemDir);
+extern struct wait_queue_head object_list_wq;
+
+extern struct list_head memorizer_object_allocated_list;
+extern struct list_head memorizer_object_freed_list;
+extern struct list_head memorizer_object_reuse_list;
+
+struct bool_name {
+	bool value;
+	char* name;
+};
+extern struct bool_name track_calling_context;
+extern struct bool_name print_live_obj;
+
+enum column_type {
+	COLUMN_SERIAL,
+	COLUMN_TIME,
+};
+
+/* RW Spinlock for access to any kobject list */
+extern rwlock_t object_list_spinlock;
+
+extern enum column_type index_column_type;
+/**
+ * __memorizer_enter() - set recursion flag for entry into memorizer
+ *
+ * Return value: 0 for success. Any other value for failure.
+ *
+ * The primary goal of this is to stop recursive handling of events. Memorizer
+ * by design tracks two types of events: allocations and accesses. Effectively,
+ * while tracking either type we do not want to re-enter and track memorizer
+ * events that are sources from within memorizer. Yes this means we may not
+ * track legitimate access of some types, but these are caused by memorizer and
+ * we want to ignore them.
+ *
+ * N.b. There is no way yet to wait for memorizer to be available. Before
+ * you try `while(__memorizer_enter()) yield();`, look at the comment
+ * for `yield()` in kernel/sched/core.c
+ */
+DECLARE_PER_CPU(unsigned long, inmem);
+static inline int __memorizer_enter(void)
+{
+    return this_cpu_cmpxchg(inmem, 0, 1);
+}
+
+static __always_inline void __memorizer_exit(void)
+{
+    this_cpu_write(inmem, 0);
+}
+extern struct FunctionHashTable * cfgtbl;
 #endif /* __MEMORIZER_H_ */

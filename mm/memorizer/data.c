@@ -457,17 +457,6 @@ static int kmap_release(struct inode *inode, struct file *file)
 	return ret;
 }
 
-#define pop_or_null(head__) ({ \
-	struct list_head *pos__ = READ_ONCE(head__->next); \
-	if(pos__ != head__) { \
-		list_del_init(pos__); \
-	} else { \
-		pos__ = NULL; \
-	} \
-	pos__; \
-})
-
-#define push(lh, p) list_add(p, lh)
 
 
 /*

@@ -1082,6 +1082,21 @@ struct memorizer_kobj *create_kobj(uintptr_t call_site, uintptr_t ptr, uint64_t 
 	return __create_kobj(call_site, ptr, size, AT);
 }
 
+static inline struct memorizer_kobj *__alloc_kobj(void)
+{
+	struct list_head *p;
+	unsigned long flags;
+
+	/* First try the recycle bin */
+	write_lock_irqsave(&object_list_spinlock, flags);
+	p = pop_or_null(&memorizer_object_reuse_list);
+	write_unlock_irqrestore(&object_list_spinlock, flags);
+
+	if(p) {
+		return list_entry(p, struct memorizer_kobj, object_list);
+	}
+	return memalloc(sizeof(struct memorizer_kobj));
+}
 /**
  * __create_kobj() - allocate and init kobj assuming locking and rentrance
  *	protections already enabled.
@@ -1097,8 +1112,7 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site,
 	struct memorizer_kobj *kobj;
 	unsigned long flags;
 
-	/* inline parsing */
-	kobj = memalloc(sizeof(struct memorizer_kobj));
+	kobj = __alloc_kobj();
 	if (!kobj) {
 		track_failed_kobj_alloc();
 		return NULL;

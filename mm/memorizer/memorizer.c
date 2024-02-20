@@ -912,7 +912,7 @@ static void harvest_dead_objs(void)
 }
 
 /**
- * free_kobj() --- free the kobj from the kmem_cache
+ * memorizer_discard_kobj() --- free the kobj from the kmem_cache
  * @kobj:	The memorizer kernel object metadata
  *
  * This FIXME seems out of date. robadams@illinois.edu :
@@ -923,8 +923,11 @@ static void harvest_dead_objs(void)
  *
  * TODO robadams@illinois.edu - some of these locks might be redundant. Consider
  * how this is used.
+ *
+ * TODO robadams@illinois.edu - this (free_kobj) and memorizer_free_kobj have similar
+ * names but different missions.
  */
-static void free_kobj(struct memorizer_kobj * kobj)
+void memorizer_discard_kobj(struct memorizer_kobj * kobj)
 {
 	unsigned long flags;
 
@@ -940,7 +943,7 @@ static void free_kobj(struct memorizer_kobj * kobj)
 
 	/* Free the kobj */
 	write_lock_irqsave(&object_list_spinlock, flags);
-	list_add(&kobj->object_list, &memorizer_object_reuse_list);
+	list_add_tail(&kobj->object_list, &memorizer_object_reuse_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
 
 	/* let everyone know */
@@ -985,11 +988,11 @@ static void clear_dead_objs(bool only_printed_items)
 		/* TODO robadams@illinois.edu - do we need to lock kobj->rwlock? */
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
 		if((!only_printed_items) || kobj->printed) {
-			free_kobj(kobj);
+			memorizer_discard_kobj(kobj);
 		}
 	}
 
-	/* Move free'd-but-not-printed objects back to gloal list */
+	/* Move free'd-but-not-printed objects back to global list */
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_splice(&object_list, &memorizer_object_freed_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);

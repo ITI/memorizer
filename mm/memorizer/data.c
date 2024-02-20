@@ -540,7 +540,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		}
 		break;
 	}
-	push(p, &memorizer_object_reuse_list);
+	memorizer_discard_kobj(list_entry(p, struct memorizer_kobj, object_list));
 
 	/* Next, grab as many results as will fit in the remaining buffer */
 	while(1) {
@@ -562,7 +562,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 			push(lh, p);
 			break;
 		}
-		push(p, &memorizer_object_reuse_list);
+		memorizer_discard_kobj(list_entry(p, struct memorizer_kobj, object_list));
 	}
 
 Drain:

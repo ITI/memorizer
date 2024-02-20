@@ -91,4 +91,5 @@ static __always_inline void __memorizer_exit(void)
     this_cpu_write(inmem, 0);
 }
 extern struct FunctionHashTable * cfgtbl;
+void memorizer_discard_kobj(struct memorizer_kobj * kobj);
 #endif /* __MEMORIZER_H_ */

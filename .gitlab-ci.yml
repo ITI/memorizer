@@ -3,6 +3,7 @@
 stages:
   - setup
   - compile
+  - test
   - upload
   - release
   - announce
@@ -71,6 +72,18 @@ patch_job:
     expire_in: 1 week
     paths:
       - $CI_COMMIT_TAG.patch
+
+test_job:
+  tags: ["shell"]
+  stage: test
+  script:
+    - cd scripts/memorizer/testVM
+    - cp -r ~/mz-img-hack/* .
+    - python3 ./qemu_test.py
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - ./scripts/memorizer/testVM/kmap
 
 upload_job:
   tags: ["docker"]

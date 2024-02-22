@@ -501,6 +501,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		pr_info("weit: %ld\n", err);
 		if(err < 0)
 			return err;
+		/* TODO robadams@illinois.edu add locking protocol */
 		p = pop_or_null(lh);
 		pr_info("p: %p\n", p);
 		if(!p) {
@@ -509,11 +510,11 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		}
 	} while(!p);
 
-	/* First, grab one result, resizing the buffer as required */
+	/* Format the data, resizing the buffer as required */
 	while(1) {
 		err = m->op->show(m, p);
 		if(err < 0) {
-			push(lh, p);
+			list_add(p, lh);
 			return err;
 		}
 		if(seq_has_overflowed(m)) {
@@ -522,7 +523,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 			m->size <<= 1;
 			m->buf = kvmalloc(m->size, GFP_KERNEL_ACCOUNT);
 			if(!m->buf) {
-				push(lh, p);
+				list_add(p, lh);
 				return -ENOMEM;
 			}
 			continue;
@@ -533,6 +534,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 
 	/* Next, grab as many results as will fit in the remaining buffer */
 	while(1) {
+		/* TODO robadams@illinois.edu add locking protocol */
 		p = pop_or_null(lh);
 		if(!p) {
 			/* all of the source material is consumed */
@@ -542,13 +544,13 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		err = m->op->show(m, p);
 		if(err < 0) {
 			m->count = count;
-			push(lh, p);
+			list_add(p, lh);
 			return err;
 		}
 		if(seq_has_overflowed(m)) {
 			/* If it doesn't fit, put it back */
 			m->count = count;
-			push(lh, p);
+			list_add(p, lh);
 			break;
 		}
 		memorizer_discard_kobj(list_entry(p, struct memorizer_kobj, object_list));

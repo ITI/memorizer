@@ -6,6 +6,7 @@
  *    http://web.engr.illinois.edu/~vadve/Home.html
  *
  * Copyright (c) 2015, Nathan Dautenhahn
+ * Copyright 2024 Board of Trustees of the University of Illinois
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -38,32 +39,97 @@
 /* mask to apply to memorizer allocations TODO: verify the list */
 #define gfp_memorizer_mask(gfp)	((GFP_ATOMIC | __GFP_NOTRACK | __GFP_NORETRY | GFP_NOWAIT))
 
-unsigned long get_index(void);
-struct memorizer_kobj *create_kobj(uintptr_t call_site, uintptr_t ptr, uint64_t size, enum AllocType AT);
+/**
+ * pop_or_null - extract first item from a list
+ * @head__: the list from which to extract
+ *
+ * Removes the first item from a non-empty list. Returns
+ * NULL for an empty list. Caller must own any required locks.
+ */
+#define pop_or_null(head__) ({ \
+	struct list_head *pos__ = READ_ONCE((head__)->next); \
+	if(pos__ != head__) { \
+		list_del_init(pos__); \
+	} else { \
+		pos__ = NULL; \
+	} \
+	pos__; \
+})
 
-extern int memorizer_data_late_init(struct dentry *dentryMemDir);
-extern struct wait_queue_head object_list_wq;
-
-extern struct list_head memorizer_object_allocated_list;
-extern struct list_head memorizer_object_freed_list;
-extern struct list_head memorizer_object_reuse_list;
-
+/* Named boolean so that memorizer_write_file_bool can print the right name */
 struct bool_name {
 	bool value;
 	char* name;
 };
-extern struct bool_name track_calling_context;
-extern struct bool_name print_live_obj;
 
+/* What goes in the kmap "index" column? Time or a serial number? */
 enum column_type {
 	COLUMN_SERIAL,
 	COLUMN_TIME,
 };
 
-/* RW Spinlock for access to any kobject list */
+
+/**
+ * object_list_wq - notice when we change any kobject list.
+ */
+extern struct wait_queue_head object_list_wq;
+
+/**
+ * object_list_spinlock - grab this before you edit any kobject list.
+ */
 extern rwlock_t object_list_spinlock;
 
+/* The object lists */
+extern struct list_head memorizer_object_allocated_list;
+extern struct list_head memorizer_object_freed_list;
+extern struct list_head memorizer_object_reuse_list;
+
+/* state variables edited by /sys/kernel/debug/memorizer */
+extern struct bool_name track_calling_context;
+extern struct bool_name print_live_obj;
+
+/* sets the output format - jiffies or serial? */
 extern enum column_type index_column_type;
+
+/* a graph of all caller/callee relations */
+extern struct FunctionHashTable * cfgtbl;
+
+/* flag to enforce non-reentrancy of memorizer */
+DECLARE_PER_CPU(unsigned long, inmem);
+
+/**
+ * get_index - retrieve the current index value
+ *
+ * Returns either the current jiffies time, or a serial number
+ * from a strictly-increasing series.
+ */
+extern unsigned long get_index(void);
+
+/**
+ * create_kobj - create the shadow object of an allocation
+ * @call_site: the location of the allocator call
+ * @ptr: a pointer to the newly-allocated region
+ * @size: the size of the allocation
+ * @AT: the name of the allocator
+ */
+extern struct memorizer_kobj *create_kobj(
+	uintptr_t call_site,
+	uintptr_t ptr,
+	uint64_t size,
+	enum AllocType AT);
+
+/* For creating the debugfs files */
+extern int memorizer_data_late_init(struct dentry *dentryMemDir);
+extern int memorizer_control_late_init(struct dentry *dentryMemDir);
+extern int memorizer_stats_late_init(struct dentry *dentryMemDir);
+
+/**
+ * memorizer_discard_kobj - free the memory previously used by a kernel object
+ *
+ * @kobj: - no-longer-used description of a kernel allocation.
+ */
+void memorizer_discard_kobj(struct memorizer_kobj * kobj);
+
 /**
  * __memorizer_enter() - set recursion flag for entry into memorizer
  *
@@ -80,28 +146,18 @@ extern enum column_type index_column_type;
  * you try `while(__memorizer_enter()) yield();`, look at the comment
  * for `yield()` in kernel/sched/core.c
  */
-DECLARE_PER_CPU(unsigned long, inmem);
 static inline int __memorizer_enter(void)
 {
     return this_cpu_cmpxchg(inmem, 0, 1);
 }
 
+/**
+ * __memorizer_exit - clear recursion flag 
+ *
+ * See __memorizer_enter()
+ */
 static __always_inline void __memorizer_exit(void)
 {
     this_cpu_write(inmem, 0);
 }
-extern struct FunctionHashTable * cfgtbl;
-void memorizer_discard_kobj(struct memorizer_kobj * kobj);
-#define pop_or_null(head__) ({ \
-	struct list_head *pos__ = READ_ONCE((head__)->next); \
-	if(pos__ != head__) { \
-		list_del_init(pos__); \
-	} else { \
-		pos__ = NULL; \
-	} \
-	pos__; \
-})
-
-#define push(lh, p) list_add(p, lh)
-
 #endif /* __MEMORIZER_H_ */

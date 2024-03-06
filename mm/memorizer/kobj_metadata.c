@@ -272,6 +272,31 @@ bool is_induced_obj(uintptr_t addr)
 }
 
 /**
+ * lt_check_kobj() - search for @kobj in the tree
+ * @kobj - value to search for.
+ */
+bool lt_check_kobj(const char* id, struct memorizer_kobj *kobj)
+{
+	int i3, i2, i1;
+	for(i3=0; i3<LT_L3_ENTRIES; i3++) {
+		struct lt_l2_tbl *l2_tbl = kobj_l3_tbl.l2_tbls[i3];
+		if(!l2_tbl) continue;
+		for(i2=0; i2<LT_L2_ENTRIES; i2++) {
+			struct lt_l1_tbl *l1_tbl = l2_tbl->l1_tbls[i2];
+			if(!l1_tbl) continue;
+			for(i1=0; i1<LT_L1_ENTRIES; i1++) {
+				struct memorizer_kobj* p = l1_tbl->kobj_ptrs[i1];
+				if(p == kobj) {
+					pr_info("%s: kobj=%p i3=%d i2=%d i1=%d\n", id, kobj, i3, i2, i1);
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+			
+/**
  * lt_remove_kobj() --- remove object from the table
  * @addr: pointer to the beginning of the object
  *
@@ -306,7 +331,8 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t addr)
 		nextobj = kobj->va_ptr + kobj->size;
 
     /* For each byte in the object set the l1 entry to NULL */
-    while(nextobj > (uintptr_t)*l1e)
+    /* This loop will run crazy slow. maybe invoke tbl_get_l1_entry less often? TODO robadams@illinois.edu */
+    while(nextobj > addr)
     {
             /* *free* the byte by setting NULL */
             *l1e = 0;

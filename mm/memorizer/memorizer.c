@@ -41,6 +41,8 @@
  * 		- Global objects: object_list, memorizer_kobj, pool_next_avail_byte,
  * 		  function hash table, and lookup table.
  *
+ *	TODO robadams@illinois.edu write up how memorizer_enter is used as a lock.
+ *
  *     Therefore, we have the following locks:
  *		- object_list_spinlock:
  *
@@ -130,6 +132,7 @@
 // #include <linux/bootmem.h>
 #include <linux/kasan-checks.h>
 #include <linux/mempool.h>
+#include <linux/delay.h>
 
 #include<asm/fixmap.h>
 
@@ -304,6 +307,12 @@ LIST_HEAD(memorizer_object_allocated_list);
 LIST_HEAD(memorizer_object_freed_list);
 LIST_HEAD(memorizer_object_reuse_list);
 
+/* Either an afc is stitched into a kobj
+ * or it isn't. If it isn't, then it lives
+ * on the cache list. */
+LIST_HEAD(memorizer_afc_reuse_list);
+
+
 /*
  * A wait queue that gets poked every time the lists change in a
  * non-atomic context.
@@ -418,6 +427,14 @@ EXPORT_SYMBOL(memorizer_print_stats);
 static struct access_from_counts *
 __alloc_afc(void)
 {
+	struct list_head *p;
+
+	/* First try the recycle bin */
+	p = pop_or_null(&memorizer_afc_reuse_list);
+	if(p) {
+		return list_entry(p, struct access_from_counts, list);
+	}
+
 	return memalloc(sizeof(struct access_from_counts));
 }
 
@@ -594,6 +611,7 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 		track_access(kobj->alloc_type, size);
 	}
 
+	/* TODO robadams@illinois.edu - is rwlock redundant here? Doesn't mementer() cover this case? */
 	/* Grab the object lock here */
 	write_lock(&kobj->rwlock);
 
@@ -647,6 +665,7 @@ void __always_inline memorizer_mem_access(const void* addr, size_t size, bool
 	}
 
 	if (__memorizer_enter()) {
+		/* Can't sleep, have to punt */
 		track_induced_access();
 		return;
 	}
@@ -853,67 +872,10 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 #endif
 }
 
-/**
- * free_access_from_entry() --- free the entry from the kmem_cache
- */
-static void free_access_from_entry(struct access_from_counts *afc)
-{
-	//TODO clean up all the kmem_cache_free stuff
-	//kmem_cache_free(access_from_counts_cache, afc);
-	//TODO Create Free function here with new memalloc allocator
-}
 
 /**
- * free_access_from_list() --- for each element remove from list and free
- */
-static void free_access_from_list(struct list_head *afc_lh)
-{
-	struct access_from_counts *afc;
-	struct list_head *p;
-	struct list_head *tmp;
-	list_for_each_safe(p, tmp, afc_lh) {
-		afc = list_entry(p, struct access_from_counts, list);
-		list_del(&afc->list);
-		free_access_from_entry(afc);
-	}
-}
-
-/**
- * harvest_dead_objs --- move all dead objets to memorizer_object_freed_list
- *
- * holds the object_list_spinlock for a long time. O(n)
- *
- * This function is required because some objects are marked dead
- * inside memorizer_access(), which can't safely do a
- * list operation(?).
- * 
- * TODO robadams@illinois.edu confirm that memorizer_access can't do list ops.
- */
-static void harvest_dead_objs(void)
-{
-	struct memorizer_kobj *kobj;
-	struct list_head *tmp;
-	struct list_head *p;
-	unsigned long flags;
-
-	/* Move all of the dead items from allocated list to freed list */
-	/* interrupts are disabled for a while ( O(n) ) */
-	write_lock_irqsave(&object_list_spinlock, flags);
-	list_for_each_safe(p, tmp, &memorizer_object_allocated_list) {
-		kobj = list_entry(p, struct memorizer_kobj, object_list);
-		/* Iff free_index is 0 then this object is live */
-		if (kobj->free_index != 0) {
-			/* TODO robadams@illinois.edu - can lt do this for us? */
-			list_move(p, &memorizer_object_freed_list);
-		}
-	}
-	write_unlock_irqrestore(&object_list_spinlock, flags);
-	wake_up_interruptible(&object_list_wq);
-}
-
-/**
- * memorizer_discard_kobj() --- free the kobj from the kmem_cache
- * @kobj:	The memorizer kernel object metadata
+ * __memorizer_discard_kobj()
+ * @kobj:	The memorizer kernel object to discard.
  *
  * This FIXME seems out of date. robadams@illinois.edu :
  * FIXME: there might be a small race here between the write unlock and the
@@ -924,33 +886,35 @@ static void harvest_dead_objs(void)
  * TODO robadams@illinois.edu - some of these locks might be redundant. Consider
  * how this is used.
  *
- * TODO robadams@illinois.edu - this (free_kobj) and memorizer_free_kobj have similar
- * names but different missions.
+ * This must be called with @inmem locked.
  */
-void memorizer_discard_kobj(struct memorizer_kobj * kobj)
+void __memorizer_discard_kobj(struct memorizer_kobj * kobj)
 {
-	unsigned long flags;
-
 	/* Remove from (likely) object_list_freed */
-	write_lock_irqsave(&object_list_spinlock, flags);
-	list_del_init(&kobj->object_list);
-	write_unlock_irqrestore(&object_list_spinlock, flags);
+	list_del(&kobj->object_list);
 
-	/* Free the access list */
-	write_lock(&kobj->rwlock);
-	free_access_from_list(&kobj->access_counts);
-	write_unlock(&kobj->rwlock);
+	/* TODO robadams@illinois.edu - memory leak */
+	/* Add afc to the cache list */
+	list_splice_init(&kobj->access_counts, &memorizer_afc_reuse_list);
+	kobj->access_counts.next = LIST_POISON1;
+	kobj->access_counts.prev = LIST_POISON2;
 
-	/* Free the kobj */
-	write_lock_irqsave(&object_list_spinlock, flags);
+	/* Add kernel object to the cache list */
 	list_add_tail(&kobj->object_list, &memorizer_object_reuse_list);
-	write_unlock_irqrestore(&object_list_spinlock, flags);
-
-	/* let everyone know */
-	wake_up_interruptible(&object_list_wq);
 
 	/* stats */
 	track_kobj_free();
+}
+
+void memorizer_discard_kobj(struct memorizer_kobj * kobj)
+{
+	int err = __memorizer_enter_wait(1);
+	if(!err) {
+		__memorizer_discard_kobj(kobj);
+		__memorizer_exit();
+		return;
+	}
+	return;
 }
 
 
@@ -959,31 +923,27 @@ void memorizer_discard_kobj(struct memorizer_kobj * kobj)
  *
  * @only_printed_items - limit clearance to certain dead items.
  * 
- * Caller should have already called __memorizer_enter() successfully.
+ * This must be called in process context, without acquiring inmem.
  */
-static void clear_dead_objs(bool only_printed_items)
+static int clear_dead_objs(bool only_printed_items)
 {
 	struct memorizer_kobj *kobj;
-	struct list_head object_list;
+	LIST_HEAD(object_list);
 	struct list_head *tmp;
 	struct list_head *p;
-	unsigned long flags;
-	INIT_LIST_HEAD(&object_list);
-
-	/* Move all dead items from live list onto the freed list */
-	harvest_dead_objs();
+	int err;
 
 	/* Move all of the dead items from freed list to our local copy */
-	write_lock_irqsave(&object_list_spinlock, flags);
+	err = __memorizer_enter_wait(1);
+	if(err)
+		return err;
 	list_replace_init(&memorizer_object_freed_list, &object_list);
-	write_unlock_irqrestore(&object_list_spinlock, flags);
+	__memorizer_exit();
+
 	wake_up_interruptible(&object_list_wq);
 
 	
-	/* Now that all of our targets are on our local object list,
-	 * we can take our time--and there is no need for any
-	 * further locking.
-         */
+	/* Now we can take all the time in the world with no locks to worry about */
 	list_for_each_safe(p, tmp, &object_list) {
 		/* TODO robadams@illinois.edu - do we need to lock kobj->rwlock? */
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
@@ -993,14 +953,19 @@ static void clear_dead_objs(bool only_printed_items)
 	}
 
 	/* Move free'd-but-not-printed objects back to global list */
-	write_lock_irqsave(&object_list_spinlock, flags);
+	err = __memorizer_enter_wait(1);
+	if(err)
+		return err;
 	list_splice(&object_list, &memorizer_object_freed_list);
-	write_unlock_irqrestore(&object_list_spinlock, flags);
+	__memorizer_exit();
+
 	wake_up_interruptible(&object_list_wq);
+
+	return 0;
 }
 
 /**
- * __memorizer_free_kobj - move the specified objec to free list
+ * __memorizer_free_kobj - move the specified object to free list
  *
  * @call_site:	Call site requesting the original free
  * @ptr:	Address of the object to be freed
@@ -1010,9 +975,10 @@ static void clear_dead_objs(bool only_printed_items)
  *	2) record free details in the kobj
  *	3) move kobj from allocated list to free'd list
  *
+ * The caller should have already acquired @inmem.
+ *
  * Maybe TODO: Do some processing here as opposed to later? This depends on when
  * we want to add our filtering.
- * 0xvv
  */
 void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
@@ -1025,12 +991,10 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	kobj = lt_remove_kobj(kobj_ptr);
 
 	/*
-	 *   * If this is null it means we are freeing something we did
-	 *   not insert
-	 *       * into our tree and we have a missed alloc track,
-	 *       otherwise we update
-	 *           * some of the metadata for free.
-	 *               */
+	 * If this is null it means we are freeing something we did not insert
+	 * into our tree and we have a missed alloc track, otherwise we update
+	 * some of the metadata for free.
+	 */
 	if (kobj) {
 		/* Update the free_index for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
@@ -1038,12 +1002,8 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		kobj->free_ip = call_site;
 		write_unlock_irqrestore(&kobj->rwlock, flags);
 
-		/* Move the object from allocated list to freed list */
-		write_lock_irqsave(&object_list_spinlock, flags);
+		/* Move the object from (likely) allocated list to freed list */
 		list_move(&kobj->object_list, &memorizer_object_freed_list);
-		write_unlock_irqrestore(&object_list_spinlock, flags);
-
-		wake_up_interruptible(&object_list_wq);
 
 		track_free();
 	}
@@ -1082,21 +1042,24 @@ struct memorizer_kobj *create_kobj(uintptr_t call_site, uintptr_t ptr, uint64_t 
 	return __create_kobj(call_site, ptr, size, AT);
 }
 
+/**
+ * __alloc_kobj() - alloc the memory for a kobj.
+ *
+ * Must be called with @inmem locked.
+ */
 static inline struct memorizer_kobj *__alloc_kobj(void)
 {
 	struct list_head *p;
-	unsigned long flags;
 
 	/* First try the recycle bin */
-	write_lock_irqsave(&object_list_spinlock, flags);
 	p = pop_or_null(&memorizer_object_reuse_list);
-	write_unlock_irqrestore(&object_list_spinlock, flags);
-
 	if(p) {
 		return list_entry(p, struct memorizer_kobj, object_list);
 	}
+
 	return memalloc(sizeof(struct memorizer_kobj));
 }
+
 /**
  * __create_kobj() - allocate and init kobj assuming locking and rentrance
  *	protections already enabled.
@@ -1135,7 +1098,7 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site,
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_add_tail(&kobj->object_list, &memorizer_object_allocated_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
-	wake_up_interruptible(&object_list_wq);
+	// TODO robadams@illinois.edu wake_up_interruptible(&object_list_wq);
 
 	return kobj;
 }
@@ -1455,17 +1418,12 @@ void memorizer_register_global(const void *ptr, size_t size)
 static ssize_t clear_dead_objs_write(struct file *file, const char __user
 		*user_buf, size_t size, loff_t *ppos)
 {
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
+	int err;
 	pr_info("clear_dead_objs: Clearing the free'd kernel objects\n");
-	clear_dead_objs(false);
+	err = clear_dead_objs(false);
+	if(err)
+		return err;
 	*ppos += size;
-	__memorizer_exit();
 	return size;
 }
 
@@ -1480,17 +1438,12 @@ static const struct file_operations clear_dead_objs_fops = {
 static ssize_t clear_printed_list_write(struct file *file, const char __user
 		*user_buf, size_t size, loff_t *ppos)
 {
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
+	int err;
 	pr_info("clear_printed_list: Clearing the free'd and printed kernel objects\n");
-	clear_dead_objs(true);
+	err = clear_dead_objs(true);
+	if(err)
+		return err;
 	*ppos += size;
-	__memorizer_exit();
 	return size;
 }
 
@@ -1613,7 +1566,7 @@ void __init memorizer_init(void)
 		list_add_tail(&general_kobjs[i]->object_list, &memorizer_object_allocated_list);
 		write_unlock(&object_list_spinlock);
 	}
-	wake_up_interruptible(&object_list_wq);
+	// TODO robadams@illinois.edu wake_up_interruptible(&object_list_wq);
 
 	/* Allocate memory for the global metadata table.
 	 * Not used by Memorizer, but used in processing globals offline. */

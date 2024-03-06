@@ -190,6 +190,7 @@ static inline struct pid_obj * lt_pid(struct lt_pid_tbl *pid_tbl,  uint32_t key)
 //==-- External Interface -------------------------------------------------==//
 void lt_init(void);
 int lt_insert_kobj(struct memorizer_kobj *kobj);
+bool lt_check_kobj(const char* id, struct memorizer_kobj *kobj);
 struct memorizer_kobj * lt_remove_kobj(uintptr_t va);
 struct memorizer_kobj * lt_get_kobj(uintptr_t va);
 int lt_insert_induced(void * vaddr, size_t size);

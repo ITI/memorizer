@@ -88,38 +88,6 @@ extern struct list_head memorizer_object_allocated_list;
 extern struct list_head memorizer_object_freed_list;
 extern struct list_head memorizer_object_reuse_list;
 
-/**
- * harvest_dead_objs --- move all dead objets to object_freed_list
- *
- * holds the object_list_spinlock for a long time. O(n)
- *
- * This function is required because some objects are marked dead
- * inside memorizer_access(), which can't safely do a
- * list operation(?).
- * 
- * TODO robadams@illinois.edu confirm that memorizer_access can't do list ops.
- */
-static void harvest_dead_objs(void)
-{
-	struct memorizer_kobj *kobj;
-	struct list_head *tmp;
-	struct list_head *p;
-	unsigned long flags;
-
-	/* Move all of the dead items from allocated list to freed list */
-	/* interrupts are disabled for a while ( O(n) ) */
-	write_lock_irqsave(&object_list_spinlock, flags);
-	list_for_each_safe(p, tmp, &memorizer_object_allocated_list) {
-		kobj = list_entry(p, struct memorizer_kobj, object_list);
-		/* Iff free_index is 0 then this object is live */
-		if (kobj->free_index != 0) {
-			/* TODO robadams@illinois.edu - can lt do this for us? */
-			list_move(p, &memorizer_object_freed_list);
-		}
-	}
-	write_unlock_irqrestore(&object_list_spinlock, flags);
-	wake_up_interruptible(&object_list_wq);
-}
 
 /*
  * kmap_seq_start() --- set up the next 'session' of the seq_file. N.b.
@@ -419,9 +387,6 @@ static int kmap_open(struct inode *inode, struct file *file)
 		return -EBUSY;
 	}
 
-	/* Move all dead items from live list onto the freed list */
-	harvest_dead_objs();
-
 	return seq_open(file, &kmap_seq_ops);
 
 	/* __memorizer_exit to be called in kmap_release()  */
@@ -472,8 +437,6 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 	size_t count;
 	int err;
 
-	pr_info("stream_seq_read, lh=%p, &memorizer_object_reuse_list=%p\n", lh, &memorizer_object_reuse_list);
-
 	if(!size)
 		return 0;
 
@@ -498,23 +461,20 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 	/* wait for data to be available */
 	do {
 		long err = wait_event_interruptible_timeout(object_list_wq, !list_empty(lh), HZ);
-		pr_info("weit: %ld\n", err);
 		if(err < 0)
 			return err;
-		/* TODO robadams@illinois.edu add locking protocol */
-		p = pop_or_null(lh);
-		pr_info("p: %p\n", p);
-		if(!p) {
-			pr_info("harvest\n");
-			harvest_dead_objs();
-		}
+		p = pop_or_null_mementer(lh);
 	} while(!p);
+	INIT_LIST_HEAD(p);
 
 	/* Format the data, resizing the buffer as required */
 	while(1) {
 		err = m->op->show(m, p);
 		if(err < 0) {
-			list_add(p, lh);
+			if(!__memorizer_enter_wait(1)) {
+				list_add(p, lh);
+				__memorizer_exit();
+			}
 			return err;
 		}
 		if(seq_has_overflowed(m)) {
@@ -523,7 +483,10 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 			m->size <<= 1;
 			m->buf = kvmalloc(m->size, GFP_KERNEL_ACCOUNT);
 			if(!m->buf) {
-				list_add(p, lh);
+				if(!__memorizer_enter_wait(1)) {
+					list_add(p, lh);
+					__memorizer_exit();
+				}
 				return -ENOMEM;
 			}
 			continue;
@@ -532,6 +495,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 	}
 	memorizer_discard_kobj(list_entry(p, struct memorizer_kobj, object_list));
 
+#if 0
 	/* Next, grab as many results as will fit in the remaining buffer */
 	while(1) {
 		/* TODO robadams@illinois.edu add locking protocol */
@@ -555,6 +519,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		}
 		memorizer_discard_kobj(list_entry(p, struct memorizer_kobj, object_list));
 	}
+#endif
 
 Drain:
 	count = m->count;

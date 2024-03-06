@@ -35,6 +35,7 @@
 #define __MEMORIZER_H_
 
 #include <linux/gfp.h>
+#include <linux/delay.h>
 
 /* mask to apply to memorizer allocations TODO: verify the list */
 #define gfp_memorizer_mask(gfp)	((GFP_ATOMIC | __GFP_NOTRACK | __GFP_NORETRY | GFP_NOWAIT))
@@ -55,6 +56,34 @@
 	} \
 	pos__; \
 })
+
+/**
+ * pop_or_null_mementer - extract first item from a list,
+ * but only after acquiring memorizer_enter lock.
+ *
+ */
+#define pop_or_null_mementer(head__) ({            \
+	struct list_head *pos__;                   \
+	int err = __memorizer_enter_wait(1);       \
+	if(err) {                                  \
+		pos__ = ERR_PTR(err);              \
+	} else {                                   \
+		pos__ = pop_or_null(head__);       \
+		__memorizer_exit();                \
+	}                                          \
+	pos__;                                     \
+})
+
+/**
+ * list_move_mementer - list_move, but protected with @inmem
+ */
+#define list_move_mementer(list, head)             \
+	do                                         \
+	{                                          \
+		(void)__memorizer_enter_wait(1);   \
+		list_move(list, head);             \
+		__memorizer_exit();                \
+	} while(0);
 
 /* Named boolean so that memorizer_write_file_bool can print the right name */
 struct bool_name {
@@ -127,8 +156,16 @@ extern int memorizer_stats_late_init(struct dentry *dentryMemDir);
  * memorizer_discard_kobj - free the memory previously used by a kernel object
  *
  * @kobj: - no-longer-used description of a kernel allocation.
+ *
+ * Must be called from process context, @inmem must not be acquired.
  */
 void memorizer_discard_kobj(struct memorizer_kobj * kobj);
+/**
+ * __memorizer_discard_obj - free the memory previously used by a kernel object
+ *
+ * Must be called with @inmem acquired.
+ */
+void __memorizer_discard_kobj(struct memorizer_kobj * kobj);
 
 /**
  * __memorizer_enter() - set recursion flag for entry into memorizer
@@ -152,6 +189,25 @@ static inline int __memorizer_enter(void)
 }
 
 /**
+ * __memorizer_enter_wait() - set recursion flag for entyr into memorizer
+ *
+ * Keep trying to set the recursion flag, sleep @msecs each time.
+ * This implements a lock based on the @inmem flag. This feels like
+ * an obscene hack that needs to be reconsidered, rewritten, or more
+ * fully justified. TODO robadams@illinois.edu
+ */
+static inline int __memorizer_enter_wait(unsigned int msecs)
+{
+	while(__memorizer_enter() != 0) {
+		msleep(msecs);
+		if(signal_pending(current)) {
+			return -EINTR;
+		}
+	}
+	return 0;
+}
+
+/**
  * __memorizer_exit - clear recursion flag 
  *
  * See __memorizer_enter()
@@ -160,4 +216,5 @@ static __always_inline void __memorizer_exit(void)
 {
     this_cpu_write(inmem, 0);
 }
+
 #endif /* __MEMORIZER_H_ */

@@ -42,6 +42,10 @@
 #ifdef CONFIG_MEMORIZER_STATS
 char * alloc_type_str(enum AllocType AT);
 void track_alloc(enum AllocType AT);
+void track_kobj_alloc_reuse(void);
+void track_kobj_alloc_memalloc(void);
+void track_afc_alloc_reuse(void);
+void track_afc_alloc_memalloc(void);
 void track_disabled_alloc(void);
 void track_induced_alloc(void);
 void track_failed_kobj_alloc(void);
@@ -63,6 +67,10 @@ int seq_print_stats(struct seq_file *seq);
 #else
 static inline char * alloc_type_str(enum AllocType AT){return "";}
 static inline void track_alloc(enum AllocType AT){}
+static inline void track_kobj_alloc_reuse(void);
+static inline void track_kobj_alloc_memalloc(void);
+static inline void track_afc_alloc_reuse(void);
+static inline void track_afc_alloc_memalloc(void);
 static inline void track_disabled_alloc(void){}
 static inline void track_induced_alloc(void){}
 static inline void track_failed_kobj_alloc(void){}

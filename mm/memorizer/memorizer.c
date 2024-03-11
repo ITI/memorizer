@@ -432,9 +432,11 @@ __alloc_afc(void)
 	/* First try the recycle bin */
 	p = pop_or_null(&memorizer_afc_reuse_list);
 	if(p) {
+		track_afc_alloc_reuse();
 		return list_entry(p, struct access_from_counts, list);
 	}
 
+	track_afc_alloc_memalloc();
 	return memalloc(sizeof(struct access_from_counts));
 }
 
@@ -1054,9 +1056,11 @@ static inline struct memorizer_kobj *__alloc_kobj(void)
 	/* First try the recycle bin */
 	p = pop_or_null(&memorizer_object_reuse_list);
 	if(p) {
+		track_kobj_alloc_reuse();
 		return list_entry(p, struct memorizer_kobj, object_list);
 	}
 
+	track_kobj_alloc_memalloc();
 	return memalloc(sizeof(struct memorizer_kobj));
 }
 

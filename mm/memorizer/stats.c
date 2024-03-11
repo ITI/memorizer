@@ -36,6 +36,7 @@
 #include <linux/memorizer.h>
 #include "stats.h"
 #include "kobj_metadata.h"
+#include "memalloc.h"
 
 #ifdef CONFIG_MEMORIZER_STATS
 
@@ -186,6 +187,10 @@ static atomic64_t stats_frees = ATOMIC_INIT(0);
 static atomic64_t num_induced_frees = ATOMIC_INIT(0);
 static atomic64_t stats_untracked_obj_frees = ATOMIC_INIT(0);
 static atomic64_t stats_kobj_frees = ATOMIC_INIT(0);
+static atomic64_t stats_kobj_alloc_reuse = ATOMIC_INIT(0);
+static atomic64_t stats_kobj_alloc_memalloc = ATOMIC_INIT(0);
+static atomic64_t stats_afc_alloc_reuse = ATOMIC_INIT(0);
+static atomic64_t stats_afc_alloc_memalloc = ATOMIC_INIT(0);
 static atomic64_t failed_kobj_allocs = ATOMIC_INIT(0);
 static atomic64_t num_access_counts = ATOMIC_INIT(0);
 
@@ -195,6 +200,10 @@ void __always_inline track_free(void) { inca(&stats_frees); }
 void __always_inline track_untracked_obj_free(void) { inca(&stats_untracked_obj_frees); }
 void __always_inline track_induced_free(void) { inca(&num_induced_frees); }
 void __always_inline track_kobj_free(void) { inca(&stats_kobj_frees); }
+void __always_inline track_kobj_alloc_reuse(void) { inca(&stats_kobj_alloc_reuse); }
+void __always_inline track_kobj_alloc_memalloc(void) { inca(&stats_kobj_alloc_memalloc); }
+void __always_inline track_afc_alloc_reuse(void) { inca(&stats_afc_alloc_reuse); }
+void __always_inline track_afc_alloc_memalloc(void) { inca(&stats_afc_alloc_memalloc); }
 void __always_inline track_failed_kobj_alloc(void) { inca(&failed_kobj_allocs); }
 void __always_inline track_access_counts_alloc(void) { inca(&num_access_counts); }
 
@@ -382,6 +391,7 @@ void print_stats(size_t pr_level)
                     geta(&num_access_counts), sizeof(struct access_from_counts),
                     geta(&num_access_counts)*sizeof(struct access_from_counts)>>20);
 
+
     lt_pr_stats(pr_level);
 }
 
@@ -443,15 +453,40 @@ int seq_print_stats(struct seq_file *seq)
 
 	seq_printf(seq,"------- Internal Allocs -------\n");
 	/* TODO: right now if we don't drain inline then this is total tracked */
-	seq_printf(seq,"  Live KOBJs: %10lld * %lu B = %6lld MB\n",
+	seq_printf(seq,"  Current Live KOBJs: %10lld allocs - %10lld frees = %10lld current\n",
+		_total_tracked(), geta(&stats_kobj_frees), 
+		   _total_tracked()-geta(&stats_kobj_frees));
+	seq_printf(seq,"  Current Live KOBJs: %10lld * %lu B = %6lld MB\n",
 		   _total_tracked()-geta(&stats_kobj_frees),
 		   sizeof(struct memorizer_kobj),
 		   (_total_tracked()-geta(&stats_kobj_frees)) * sizeof(struct memorizer_kobj) >> 20 );
+	seq_printf(seq,"  Total KOBJs: %lld raw (%6lld MB) + %lld reused = %lld\n",
+		geta(&stats_kobj_alloc_memalloc),
+		(geta(&stats_kobj_alloc_memalloc) * sizeof(struct memorizer_kobj))>>20,
+		geta(&stats_kobj_alloc_reuse),
+		geta(&stats_kobj_alloc_memalloc)+geta(&stats_kobj_alloc_reuse));
+
+	seq_printf(seq,"  Current AFCs: unknown\n");
+	seq_printf(seq,"  Total AFCs: %lld raw (%6lld MB) + %lld reused = %lld\n",
+		geta(&stats_afc_alloc_memalloc),
+		(geta(&stats_afc_alloc_memalloc) * sizeof(struct access_from_counts))>>20,
+		geta(&stats_afc_alloc_reuse),
+		geta(&stats_afc_alloc_memalloc)+geta(&stats_afc_alloc_reuse));
 
 	seq_printf(seq,"  Total Edges: %10lld * %lu B = %6llu MB\n",
 		   geta(&num_access_counts), sizeof(struct access_from_counts),
 		   geta(&num_access_counts) * sizeof(struct access_from_counts)>>20);
 	lt_pr_stats_seq(seq);
+
+	seq_printf(seq,"------- Memory Usage -------\n");
+	seq_printf(seq, "  Total memorizer memory: %6lld GB\n",
+		(unsigned long long)(pool_end - pool_base) >> 30);
+	seq_printf(seq, "  Used memorizer memory:  %6lld MB (%lld%%)\n",
+		(unsigned long long)(pool_next_avail_byte - pool_base) >> 20,
+		(100ull*(pool_next_avail_byte-pool_base)/(pool_end-pool_base)));
+	seq_printf(seq, "  Avail memorizer memory: %6lld MB (%lld%%)\n",
+		(unsigned long long)(pool_end - pool_next_avail_byte) >> 20,
+		(100ull*(pool_end-pool_next_avail_byte)/(pool_end-pool_base)));
 	return 0;
 }
 

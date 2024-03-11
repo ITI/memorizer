@@ -7,6 +7,8 @@
  *    http://web.engr.illinois.edu/~vadve/Home.html
  *
  * Copyright (c) 2015, Nathan Dautenhahn
+ * Copyright (c) 2024, Board of Trustees of the University of Illinois
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -36,6 +38,11 @@
 
 /* Start with minimally 3GB region else lookup tables will fail */
 #define MEMORIZER_POOL_SIZE     (_AC(1,UL) << 33)
+
+extern uintptr_t pool_base;
+extern uintptr_t pool_end;
+extern uintptr_t pool_next_avail_byte;
+
 void * memalloc(unsigned long size);
 void * zmemalloc(unsigned long size);
 void print_pool_info(void);

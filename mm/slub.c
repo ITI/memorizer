@@ -2053,8 +2053,7 @@ static struct slab *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 
 	setup_slab_debug(s, slab, start);
 
-	// For Memorizer, let's not shuffle slab. This way there's only one place where setup_object() is called.
-	// shuffle = shuffle_freelist(s, slab);
+	shuffle = shuffle_freelist(s, slab);
 	shuffle = false;
 
 	if (!shuffle) {

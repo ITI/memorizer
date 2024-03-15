@@ -37,7 +37,7 @@
 #include <linux/gfp.h>
 #include <linux/delay.h>
 
-/* mask to apply to memorizer allocations TODO: verify the list */
+/* mask to apply to memorizer allocations TODO: verify the list of bits */
 #define gfp_memorizer_mask(gfp)	((GFP_ATOMIC | __GFP_NOTRACK | __GFP_NORETRY | GFP_NOWAIT))
 
 /**
@@ -97,6 +97,28 @@ enum column_type {
 	COLUMN_TIME,
 };
 
+
+/**
+ * memorizer_enabled - determines whether, and how much, data is recorded.
+ * Controlled by the debugfs file of the same name.
+ *
+ * @memorizer_enabled can take on 1 of three values:
+ *
+ *   0: no activity is recorded. memorizer entry points should exit
+ *      as quickly as possible.
+ *
+ *   1: "all" activity is recorded, including activity in process-
+ *      interrupt-context code.
+ *
+ *   2: "all" activity is recorded in non-task context, but in-task contexts
+ *      are only recorded if the current process has been selected.
+ *
+ *   3: Only in-task activity of selected processes is recorded.
+ *
+ * Rougly speaking, the size of the data set, from largest to smallest, is
+ * 1, 2, 3, 0.
+ */
+extern int memorizer_enabled;
 
 /**
  * object_list_wq - notice when we change any kobject list.

@@ -382,7 +382,7 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
     struct memorizer_kobj *obj = lt_get_kobj(addr);
 
     /*
-     * If there is current obj, or the current object is already
+     * If there is no current obj, or the current object is already
      * marked free, there is no resolution required.
      *
      * If `free_index` is already set, that probably means
@@ -403,6 +403,7 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
         write_lock_irqsave(&obj->rwlock, flags);
 	obj->free_index = get_index();
 	obj->free_ip = MEM_INDUCED | 0xdeadbeef00000000;
+	list_move(&obj->object_list, &memorizer_object_freed_list);
         write_unlock_irqrestore(&obj->rwlock, flags);
 	return;
     }
@@ -421,10 +422,6 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
     }
     */
 
-    /*
-     * Note we don't need to free because the object is in the free list and
-     * will get expunged later.
-     */
     write_lock_irqsave(&obj->rwlock, flags);
     obj->free_index = new_kobj->alloc_index;
 
@@ -439,6 +436,7 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
 	    obj->free_ip = new_kobj->alloc_type | 0xdeadbeef00000000;
     }
 
+    list_move(&obj->object_list, &memorizer_object_freed_list);
     write_unlock_irqrestore(&obj->rwlock, flags);
 }
 

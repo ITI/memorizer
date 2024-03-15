@@ -630,13 +630,20 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 
 //==-- Memorizer memory access tracking -----------------------------------==//
 
+/**
+ * memorizer_is_enabled - return the current logical state of memorizer_enabled
+ *
+ * The memorizer_enabled variable has four states. 0 and 1 mean unconditionally
+ * false and true, respectively. 2 and 3 both filter out uninteresting processes,
+ * while 3 also filters out non-process contexts.
+ */
 static bool __always_inline memorizer_is_enabled(void) {
 	switch(memorizer_enabled) {
-	case 1: /* grab everything */
+	case 1: 
 		return true;
-	case 2: /* grab everything from test process plus out-of-task items */
+	case 2: 
 		return (!in_task()) || current->memorizer_enabled;
-	case 3: /* grab everything from test process only */
+	case 3: 
 		return in_task() && current->memorizer_enabled;
 	default:
 		return false;
@@ -651,6 +658,10 @@ static bool __always_inline memorizer_is_enabled(void) {
  * @ip:		IP of the invocing instruction
  *
  * Memorize, ie. log, the particular data access.
+ *
+ * Note that this can be called from any code stream, regardless of
+ * process state. We return quickly if @inmem is already taken, both to
+ * protect our data structures and to ignore induced results.
  */
 void __always_inline memorizer_mem_access(const void* addr, size_t size, bool
 		write, uintptr_t ip)
@@ -879,23 +890,13 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
  * __memorizer_discard_kobj()
  * @kobj:	The memorizer kernel object to discard.
  *
- * This FIXME seems out of date. robadams@illinois.edu :
- * FIXME: there might be a small race here between the write unlock and the
- * kmem_cache_free. If another thread is trying to read the kobj and is waiting
- * for the lock, then it could get it. I suppose the whole *free_kobj operation
- * needs to be atomic, which might be proivded by locking the list in general.
- *
- * TODO robadams@illinois.edu - some of these locks might be redundant. Consider
- * how this is used.
- *
  * This must be called with @inmem locked.
  */
 void __memorizer_discard_kobj(struct memorizer_kobj * kobj)
 {
-	/* Remove from (likely) object_list_freed */
+	/* Remove from (likely) memorizer_object_freed_list */
 	list_del(&kobj->object_list);
 
-	/* TODO robadams@illinois.edu - memory leak */
 	/* Add afc to the cache list */
 	list_splice_init(&kobj->access_counts, &memorizer_afc_reuse_list);
 	kobj->access_counts.next = LIST_POISON1;
@@ -979,8 +980,6 @@ static int clear_dead_objs(bool only_printed_items)
  *
  * The caller should have already acquired @inmem.
  *
- * Maybe TODO: Do some processing here as opposed to later? This depends on when
- * we want to add our filtering.
  */
 void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
@@ -1018,13 +1017,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
  * @call_site:	Call site requesting the original free
  * @ptr:	Address of the object to be freed
  *
- * Algorithm:
- *	1) recursion check
- *	2) call __memorizer_enter
-
- * Maybe TODO: Do some processing here as opposed to later? This depends on when
- * we want to add our filtering.
- * 0xvv
+ * Wrapper for __memorizer_free_obj that aquires @inmem first.
  */
 void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
@@ -1033,10 +1026,8 @@ void static memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		return;
 	}
 
-	// robadams@illinois.edu local_irq_save(flags);
 	__memorizer_free_kobj(call_site, kobj_ptr);
 
-	// robadams@illinois.edu local_irq_restore(flags);
 	__memorizer_exit();
 }
 
@@ -1071,6 +1062,7 @@ static inline struct memorizer_kobj *__alloc_kobj(void)
  * @ptr:	Pointer to location of data structure in memory
  * @size:	Size of the allocation
  * @AT:		Type of allocation
+ *
  */
 static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site,
 		uintptr_t ptr, uint64_t
@@ -1094,15 +1086,14 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site,
 	/* mark object as live and link in lookup table */
 	lt_insert_kobj(kobj);
 
-	/* TODO robadams@illinois.edu is there a race here?
-	 * Does anyone expect that lt and memorizer_object_allocated_list will be in sync?
-	*/
-
-	/* Grab the writer lock for the memorizer_object_allocated_list and insert into object list */
 	write_lock_irqsave(&object_list_spinlock, flags);
 	list_add_tail(&kobj->object_list, &memorizer_object_allocated_list);
 	write_unlock_irqrestore(&object_list_spinlock, flags);
-	// TODO robadams@illinois.edu wake_up_interruptible(&object_list_wq);
+
+	/*
+	 * We can't call @wake_up_interruptible(&object_list_wq) from
+	 * memorizer context. But, if we could, we would.
+	 */
 
 	return kobj;
 }
@@ -1131,9 +1122,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 		return;
 	}
 
-	// robadams@illinois.edu local_irq_save(flags);
 	__create_kobj((uintptr_t) call_site, (uintptr_t) ptr, bytes_alloc, AT);
-	// robadams@illinois.edu local_irq_restore(flags);
 	__memorizer_exit();
 }
 
@@ -1570,7 +1559,6 @@ void __init memorizer_init(void)
 		list_add_tail(&general_kobjs[i]->object_list, &memorizer_object_allocated_list);
 		write_unlock(&object_list_spinlock);
 	}
-	// TODO robadams@illinois.edu wake_up_interruptible(&object_list_wq);
 
 	/* Allocate memory for the global metadata table.
 	 * Not used by Memorizer, but used in processing globals offline. */
@@ -1658,9 +1646,9 @@ static int memorizer_late_init(void)
 	if (!dentryMemDir)
 		pr_warn("Failed to create debugfs memorizer dir\n");
 
-	// robadams@illinois.edu memorizer_stats_late_init(dentryMemDir);
+	// TODO upcoming feature robadams@illinois.edu memorizer_stats_late_init(dentryMemDir);
 	memorizer_data_late_init(dentryMemDir);
-	// robadams@illinois.edu memorizer_control_late_init(dentryMemDir);
+	// TODO upcoming feature robadams@illinois.edu memorizer_control_late_init(dentryMemDir);
 
 	// stats interface 
 	debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,

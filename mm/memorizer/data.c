@@ -103,6 +103,7 @@ extern struct list_head memorizer_object_reuse_list;
  * several read system calls in between. [I know that isn't what memorizer_enter
  * was written for. Maybe we should use some other exclusion device. Maybe
  * {kmap,clear_dead_obj,clear_printed_list} each set memorizer_enabled to 0?]
+ * TODO robadams@illinois.edu - fix this locking silliness.
  */
 static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
 {
@@ -112,7 +113,6 @@ static void *kmap_seq_start(struct seq_file *seq, loff_t *pos)
 	 * At EOF, private is zero, pos is non-zero.
 	 */
 	if (!seq->private && !*pos) {
-		/* BUG TODO robadams@illinois.edu */
 		seq->private = memorizer_object_allocated_list.next;
 		return SEQ_START_TOKEN;
 	}
@@ -376,7 +376,7 @@ static int kmap_open(struct inode *inode, struct file *file)
 	/* TODO robadams@illinois.edu
 	 * We need to temporarily stop memorizer so that
 	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and need to
+	 * syscalls. [Yes, I know. This is ugly and needs to
 	 * be replaced.]
 	 */
 	if(__memorizer_enter()) {
@@ -496,9 +496,15 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 	memorizer_discard_kobj(list_entry(p, struct memorizer_kobj, object_list));
 
 #if 0
+	/* TODO robadams@illinois.edu
+	 * Returning one object per loop seems wasteful. If we steal the rest
+	 * of the code from seq_read_iter, we need to be mindful of getting
+	 * too far ahead of the reader. What would happen if we consume
+	 * many more entries than the process can read?
+	 */
+
 	/* Next, grab as many results as will fit in the remaining buffer */
 	while(1) {
-		/* TODO robadams@illinois.edu add locking protocol */
 		p = pop_or_null(lh);
 		if(!p) {
 			/* all of the source material is consumed */

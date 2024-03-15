@@ -35,6 +35,7 @@
 #include <linux/memorizer.h>
 
 #include "memalloc.h"
+#include "memorizer.h"
 
 uintptr_t pool_base = 0;
 uintptr_t pool_end = 0;
@@ -78,8 +79,6 @@ void * memalloc(unsigned long size)
 	if (!pool_next_avail_byte)
 		return 0;
 	if (pool_next_avail_byte + size > pool_end) {
-		// TODO robadams@illinois.edu get rid of this extern.
-		extern int memorizer_enabled;
 		memorizer_enabled = 0;
 		write_unlock_irqrestore(&mem_rwlock, flags);
 		pr_warn("Memorizer ran out of internal heap: add more with kernel boot flag, e.g. memalloc_size=%lu", (memalloc_size>>30)*2);

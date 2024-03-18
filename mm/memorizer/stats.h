@@ -7,6 +7,7 @@
  *    http://web.engr.illinois.edu/~vadve/Home.html
  *
  * Copyright (c) 2015, Nathan Dautenhahn
+ * Copyright (c) 2024, Board of Trustees of the University of Illinois
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or

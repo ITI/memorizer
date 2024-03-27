@@ -324,6 +324,13 @@ struct memorizer_kobj * lt_remove_kobj(uintptr_t addr)
     /* the code is in the most significant bits so shift and compare */
     if (is_tracked_obj((uintptr_t)*l1e)) {
             kobj = *l1e;
+		if(kobj->state != KOBJ_STATE_ALLOCATED) {
+			pr_err("kobj(%p)->state(%d) != KOBJ_STATE_ALLOCATED\n",
+				kobj, kobj->state);
+			pr_err("kobj->va_ptr==%p\n", (void*)kobj->va_ptr);
+			pr_err("addr=%p\n", (void*)addr);
+			BUG();
+		}
     } else {
             kobj = NULL;
     }
@@ -395,6 +402,10 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
         return;
     if (obj->free_index)
         return;
+    if (obj->state != KOBJ_STATE_ALLOCATED) {
+	pr_err("kobj(%p)->state(%x) != KOBJ_STATE_ALLOCATED\n", obj, obj->state);
+	BUG();
+    }
 
     /*
      * If the value to be written is not an object, take care
@@ -402,9 +413,11 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
      */
     if( (!new_kobj) || (!is_tracked_obj((uintptr_t)new_kobj)) ) {
         write_lock_irqsave(&obj->rwlock, flags);
+	list_del(&obj->object_list);
 	obj->free_index = get_index();
 	obj->free_ip = MEM_INDUCED | 0xdeadbeef00000000;
-	list_move(&obj->object_list, &memorizer_object_freed_list);
+	obj->state = KOBJ_STATE_FREED;
+	list_add(&obj->object_list, &memorizer_object_freed_list);
         write_unlock_irqrestore(&obj->rwlock, flags);
 	return;
     }
@@ -424,7 +437,9 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
     */
 
     write_lock_irqsave(&obj->rwlock, flags);
+    list_del(&obj->object_list);
     obj->free_index = new_kobj->alloc_index;
+    obj->state = KOBJ_STATE_FREED;
 
     /* 
      * DANGER! Magic numbers ahead.
@@ -437,7 +452,7 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
 	    obj->free_ip = new_kobj->alloc_type | 0xdeadbeef00000000;
     }
 
-    list_move(&obj->object_list, &memorizer_object_freed_list);
+    list_add(&obj->object_list, &memorizer_object_freed_list);
     write_unlock_irqrestore(&obj->rwlock, flags);
 }
 
@@ -461,6 +476,10 @@ static int __klt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
 	uintptr_t addr = ptr;
 	uintptr_t kobjend = ptr + size;
 	static uintptr_t prev_addr = 0;
+
+	if(metadata && is_tracked_obj(metadata)) {
+		BUG_ON(((struct memorizer_kobj *)metadata)->state != KOBJ_STATE_ALLOCATED);
+	}
 
 	while (addr < kobjend) {
 		/* Pointer to the l3 entry for addr and alloc if needed */

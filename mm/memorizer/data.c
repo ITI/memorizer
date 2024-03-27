@@ -162,6 +162,14 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	}
 
 	read_lock(&kobj->rwlock);
+
+	if((kobj->free_index!=0) != (kobj->state==KOBJ_STATE_FREED)) {
+		pr_err("kobj(%p)->free_index==%lu, ->state==%d\n",
+			kobj, kobj->free_index, kobj->state);
+		read_unlock(&kobj->rwlock);
+		BUG();
+	}
+
 	/* Iff free_index is 0 then this object is live */
 	if (!print_live_obj.value && kobj->free_index == 0) {
 		read_unlock(&kobj->rwlock);

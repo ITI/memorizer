@@ -78,7 +78,17 @@ struct memorizer_kobj {
 	struct list_head    object_list;
 	struct list_head    access_counts;
 	struct memorizer_kobj *args_kobj;
+	unsigned short      state;
 };
+
+enum kobj_state_t {
+	KOBJ_STATE_NULL = 0,
+	KOBJ_STATE_ALLOCATED = 1,
+	KOBJ_STATE_FREED = 2,
+	KOBJ_STATE_REUSE = 3,
+};
+
+
 
 /**
  * access_counts - track reads/writes from single source IP

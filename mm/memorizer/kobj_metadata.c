@@ -43,7 +43,7 @@
 #include "stats.h"
 #include "memalloc.h"
 
-#define ALLOC_CODE_SHIFT    59
+#define ALLOC_CODE_SHIFT    58
 #define ALLOC_INDUCED_CODE	(_AC(MEM_INDUCED,UL) << ALLOC_CODE_SHIFT)
 
 /* atomic object counter */

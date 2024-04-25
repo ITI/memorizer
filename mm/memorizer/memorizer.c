@@ -638,7 +638,10 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
  * false and true, respectively. 2 and 3 both filter out uninteresting processes,
  * while 3 also filters out non-process contexts.
  */
-static bool __always_inline memorizer_is_enabled(void) {
+static bool __always_inline memorizer_is_enabled(bool filter) {
+	if(memorizer_enabled && !filter)
+		return true;
+
 	switch(memorizer_enabled) {
 	case 1: 
 		return true;
@@ -668,7 +671,7 @@ void __always_inline memorizer_mem_access(const void* addr, size_t size, bool
 		write, uintptr_t ip)
 {
 	unsigned long flags;
-	if (unlikely(!memorizer_log_access.value) || unlikely(!memorizer_is_enabled())) {
+	if (unlikely(!memorizer_log_access.value) || unlikely(!memorizer_is_enabled(true))) {
 		track_disabled_access();
 		return;
 	}
@@ -1012,6 +1015,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		BUG_ON(kobj->state != KOBJ_STATE_ALLOCATED);
 		BUG_ON(kobj->access_counts.next == LIST_POISON1);
 		BUG_ON(kobj->access_counts.prev == LIST_POISON2);
+		BUG_ON(kobj->va_ptr != kobj_ptr);
 	
 
 		/* Update the free_index for the object */
@@ -1126,7 +1130,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 	if (unlikely(ptr==NULL))
 		return;
 
-	if (unlikely(!memorizer_is_enabled())) {
+	if (unlikely(!memorizer_is_enabled(true))) {
 		track_disabled_alloc();
 		return;
 	}
@@ -1176,7 +1180,7 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	 * condition from include/trace/events/kmem.h for reason
 	 */
 	/* TODO robadams@illinois.edu should *free* depend on is_enabled? */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled(true)) {
 		return;
 	}
 
@@ -1291,7 +1295,7 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled(true)) {
 		return;
 	}
 
@@ -1341,7 +1345,7 @@ void memorizer_free_pages_exact (unsigned long call_site, struct page *page, uns
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled(true)) {
 		return;
 	}
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)
@@ -1388,7 +1392,7 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled(true)) {
 		return;
 	}
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)

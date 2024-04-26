@@ -3323,9 +3323,6 @@ again:
 	if (!ret)
 		goto fail;
 
-	// Memorizer hooking here
-	memorizer_vmalloc_alloc((unsigned long) caller, area->addr, size, gfp_mask);
-	// TODO memorizer : do we need other calls?
 
 
 	/*
@@ -3353,6 +3350,9 @@ again:
 	size = PAGE_ALIGN(size);
 	if (!(vm_flags & VM_DEFER_KMEMLEAK))
 		kmemleak_vmalloc(area, size, gfp_mask);
+
+	// Memorizer hooking here
+	memorizer_vmalloc_alloc((unsigned long) caller, area->addr, size, gfp_mask);
 
 	return area->addr;
 

@@ -242,6 +242,33 @@ static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t addr)
 }
 
 /**
+ * tbl_get_l1_entry_may_alloc() --- get the l1 entry
+ * @addr:	The address to lookup
+ *
+ * Typical table walk starting from top to bottom.
+ *
+ * Return: the return value is a pointer to the entry in the table, which means
+ * it is a double pointer to the object pointed to by the region. To simplify
+ * lookup and setting this returns a double pointer so access to both the entry
+ * and the object in the entry can easily be obtained.
+ */
+static struct memorizer_kobj **tbl_get_l1_entry_may_alloc(uint64_t addr)
+{
+	struct memorizer_kobj **l1e;
+	struct lt_l1_tbl **l2e;
+	struct lt_l2_tbl **l3e;
+
+	/* Do the lookup starting from the top */
+	l3e = l3_entry_may_alloc( addr);
+	if (!*l3e)
+		return NULL;
+	l2e = l2_entry_may_alloc(*l3e, addr);
+	if (!*l2e)
+		return NULL;
+	l1e = lt_l1_entry(*l2e, addr);
+	return l1e;
+}
+/**
  *
  */
 static bool is_tracked_obj(uintptr_t l1entry)
@@ -325,6 +352,7 @@ struct memorizer_kobj *lt_remove_kobj(uintptr_t addr)
 	/* the code is in the most significant bits so shift and compare */
 	if (is_tracked_obj((uintptr_t)*l1e)) {
 		kobj = *l1e;
+		BUG_ON(kobj->va_ptr != addr);
 		if (kobj->state != KOBJ_STATE_ALLOCATED) {
 			pr_err("kobj(%p)->state(%d) != KOBJ_STATE_ALLOCATED\n",
 			       kobj, kobj->state);
@@ -390,6 +418,8 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
 {
 	unsigned long flags;
 	struct memorizer_kobj *obj = lt_get_kobj(addr);
+	struct memorizer_kobj **l1e;
+	uint64_t l1_i;
 
 	/*
 	 * If there is no current obj, or the current object is already
@@ -408,6 +438,11 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
 		pr_err("kobj(%p)->state(%x) != KOBJ_STATE_ALLOCATED\n", obj,
 		       obj->state);
 		BUG();
+	}
+
+	klt_for_each_addr(obj->va_ptr, obj->va_ptr+obj->size, l1_i, l1e) {
+		if(*l1e == obj)  // paranoia
+			*l1e = 0;
 	}
 
 	/*
@@ -453,7 +488,10 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
 		/* The reason for this duplicate alloc is unknown */
 		obj->free_ip = new_kobj->alloc_type | 0xdeadbeef00000000;
 	}
+	// TEMP robadams@illinois.edu
+	// write_unlock_irqrestore(&obj->rwlock, flags);
 
+	// write_lock_irqsave(&obj->rwlock, flags);
 	list_add(&obj->object_list, &memorizer_object_freed_list);
 	write_unlock_irqrestore(&obj->rwlock, flags);
 }
@@ -472,11 +510,9 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
  */
 static int __klt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
 {
-	struct lt_l1_tbl **l2e;
-	struct lt_l2_tbl **l3e;
+	struct memorizer_kobj **l1e;
 	uint64_t l1_i = 0;
-	uintptr_t addr = ptr;
-	uintptr_t kobjend = ptr + size;
+	uintptr_t addr;
 	static uintptr_t prev_addr = 0;
 
 	if (metadata && is_tracked_obj(metadata)) {
@@ -484,43 +520,22 @@ static int __klt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
 		       KOBJ_STATE_ALLOCATED);
 	}
 
-	while (addr < kobjend) {
-		/* Pointer to the l3 entry for addr and alloc if needed */
-		l3e = l3_entry_may_alloc(addr);
+	klt_for_each_addr(ptr, ptr+size, l1_i, l1e) {
+		/* get the pointer to the l1_entry for this addr byte */
+		// struct memorizer_kobj **l1e = lt_l1_entry(*l2e, addr);
+		/* If it is not null then we are double allocating */
+		if (*l1e)
+			handle_overlapping_insert(
+				addr, prev_addr,
+				(struct memorizer_kobj *)metadata);
 
-		/* Pointer to the l2 entry for addr and alloc if needed */
-		l2e = l2_entry_may_alloc(*l3e, addr);
-
-		/*
-		 * Get the index for this addr for boundary on this l1 table;
-		 * however, TODO, this might not be needed as our table indices
-		 * are page aligned and it might be unlikely allocations are
-		 * page aligned and will not traverse the boundary of an l1
-		 * table. Note that I have not tested this condition yet.
-		 */
-		l1_i = lt_l1_tbl_index(addr);
-
-		while (l1_i < LT_L1_ENTRIES && addr < kobjend) {
-			/* get the pointer to the l1_entry for this addr byte */
-			struct memorizer_kobj **l1e = lt_l1_entry(*l2e, addr);
-
-			/* If it is not null then we are double allocating */
-			if (*l1e)
-				handle_overlapping_insert(
-					addr, prev_addr,
-					(struct memorizer_kobj *)metadata);
-
-			/* insert object pointer in the table for byte addr */
-			*l1e = (struct memorizer_kobj *)metadata;
-
-			/* Track end of the table and the object tracking */
-			addr += 1;
-			++l1_i;
-		}
+		/* insert object pointer in the table for byte addr */
+		*l1e = (struct memorizer_kobj *)metadata;
 	}
 	prev_addr = ptr;
 	return 0;
 }
+
 
 /**
  * We create a unique label for each induced allocated object so that we can

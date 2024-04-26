@@ -169,6 +169,33 @@ struct lt_pid_tbl {
 #define lt_l2_tbl_index(va)	((va >> LT_L1_SHIFT) & (LT_L2_ENTRIES - 1))
 #define lt_l3_tbl_index(va)	((va >> LT_L2_SHIFT) & (LT_L3_ENTRIES - 1))
 
+/* klt_for_each_addr() -- iterate over address [start, end).
+ *
+ * One loop invocation per address.
+ * @start - beginning address
+ * @end - one past final address
+ * @l1_i - u64 temp variable
+ * @l1e - memorizer_kobj** that holds the associated L1 entry 
+ *
+ * The @start and @end values are passed in as rvals. The other two
+ * variables are lvals.
+ */
+#define klt_for_each_addr(start, end, l1_i, l1e) \
+	for(	addr = (start),						\
+		l1_i = lt_l1_tbl_index(addr),				\
+		l1e = tbl_get_l1_entry_may_alloc(addr);			\
+		addr < (end);						\
+		({							\
+			++addr;						\
+			++l1_i;						\
+			if(l1_i < LT_L1_ENTRIES) {			\
+				l1e++;					\
+			} else {					\
+				l1_i = lt_l1_tbl_index(addr);		\
+				l1e = tbl_get_l1_entry_may_alloc(addr);	\
+			}						\
+		}) )
+
 /*
  * lt_l*_entry() --- get the table entry associated with the virtual address
  *

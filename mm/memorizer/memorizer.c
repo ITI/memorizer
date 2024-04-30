@@ -1015,7 +1015,11 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		BUG_ON(kobj->state != KOBJ_STATE_ALLOCATED);
 		BUG_ON(kobj->access_counts.next == LIST_POISON1);
 		BUG_ON(kobj->access_counts.prev == LIST_POISON2);
-		BUG_ON(kobj->va_ptr != kobj_ptr);
+		WARN(kobj->va_ptr != kobj_ptr,
+			"kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
+			kobj,
+			(void*)kobj->va_ptr,
+			(void*)kobj_ptr);
 	
 
 		/* Update the free_index for the object */

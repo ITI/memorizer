@@ -174,7 +174,7 @@ struct lt_pid_tbl {
  * One loop invocation per address.
  * @start - beginning address
  * @end - one past final address
- * @l1_i - u64 temp variable
+ * @l1_i - uint64_t temp variable
  * @l1e - memorizer_kobj** that holds the associated L1 entry 
  *
  * The @start and @end values are passed in as rvals. The other two
@@ -220,11 +220,27 @@ static inline struct lt_l2_tbl **lt_l3_entry(struct lt_l3_tbl *l3_tbl, uintptr_t
 	return &l3_tbl->l2_tbls[lt_l3_tbl_index(va)];
 }
 
+struct memorizer_kobj **tbl_get_l1_entry_may_alloc(uint64_t addr);
+
 static inline struct pid_obj * lt_pid(struct lt_pid_tbl *pid_tbl,  uint32_t key)
 {
 	return &(pid_tbl->pid_obj_list[key]);
 }
 
+/*
+ * klt_zero() -- clear all of the table entries covered by @kobj
+ */
+static inline void klt_zero(struct memorizer_kobj *kobj)
+{
+	uint64_t l1_i;
+	uintptr_t addr;
+	struct memorizer_kobj **l1e;
+	klt_for_each_addr(kobj->va_ptr, kobj->va_ptr+kobj->size, l1_i, l1e) {
+		if(*l1e == kobj) {
+			*l1e = 0;
+		}
+	}
+}
 //==-- External Interface -------------------------------------------------==//
 void lt_init(void);
 int lt_insert_kobj(struct memorizer_kobj *kobj);

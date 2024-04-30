@@ -252,7 +252,7 @@ static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t addr)
  * lookup and setting this returns a double pointer so access to both the entry
  * and the object in the entry can easily be obtained.
  */
-static struct memorizer_kobj **tbl_get_l1_entry_may_alloc(uint64_t addr)
+struct memorizer_kobj **tbl_get_l1_entry_may_alloc(uint64_t addr)
 {
 	struct memorizer_kobj **l1e;
 	struct lt_l1_tbl **l2e;
@@ -337,7 +337,6 @@ bool lt_check_kobj(const char *id, struct memorizer_kobj *kobj)
 struct memorizer_kobj *lt_remove_kobj(uintptr_t addr)
 {
 	struct memorizer_kobj **l1e, *kobj;
-	uintptr_t nextobj = 0;
 
 	/*
 	 * Get the l1 entry for the addr, if there is no entry then we not only
@@ -361,29 +360,9 @@ struct memorizer_kobj *lt_remove_kobj(uintptr_t addr)
 			pr_err("addr=%p\n", (void *)addr);
 			BUG();
 		}
-	} else {
-		kobj = NULL;
-	}
+		klt_zero(kobj);
+	} 
 
-	if (kobj)
-		nextobj = kobj->va_ptr + kobj->size;
-
-	/* For each byte in the object set the l1 entry to NULL */
-	/* This loop will run crazy slow. maybe invoke tbl_get_l1_entry less often? TODO robadams@illinois.edu */
-	while (nextobj > addr) {
-		/* *free* the byte by setting NULL */
-		*l1e = 0;
-
-		/* move l1e to the next entry */
-		l1e = tbl_get_l1_entry(++addr);
-
-		/*
-		 * we might get an object that ends at the end of a table and
-		 * therefore the next call will fail to get the l1 table.
-		 */
-		if (!l1e)
-			break;
-	}
 	return kobj;
 }
 
@@ -419,8 +398,6 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
 {
 	unsigned long flags;
 	struct memorizer_kobj *obj = lt_get_kobj(addr);
-	struct memorizer_kobj **l1e;
-	uint64_t l1_i;
 
 	/*
 	 * If there is no current obj, or the current object is already
@@ -441,10 +418,11 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
 		BUG();
 	}
 
-	klt_for_each_addr(obj->va_ptr, obj->va_ptr+obj->size, l1_i, l1e) {
-		if(*l1e == obj)  // paranoia
-			*l1e = 0;
-	}
+	// klt_for_each_addr(obj->va_ptr, obj->va_ptr+obj->size, l1_i, l1e) {
+	// 	if(*l1e == obj)  // paranoia
+	// 		*l1e = 0;
+	// }
+	klt_zero(obj);
 
 	/*
 	 * If the value to be written is not an object, take care

@@ -1022,12 +1022,12 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_index = get_index();
 		kobj->free_ip = call_site;
-		write_unlock_irqrestore(&kobj->rwlock, flags);
 
 		/* Move the object from (likely) allocated list to freed list */
 		list_del(&kobj->object_list);
 		kobj->state = KOBJ_STATE_FREED;
 		list_add(&kobj->object_list, &memorizer_object_freed_list);
+		write_unlock_irqrestore(&kobj->rwlock, flags);
 
 		track_free();
 	}

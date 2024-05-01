@@ -4,6 +4,7 @@ stages:
   - setup
   - compile
   - test
+  - patch
   - upload
   - release
   - announce
@@ -61,7 +62,7 @@ compile_tar_job:
 
 patch_job:
   tags: ["docker"]
-  stage: compile
+  stage: patch
   image: illinoisrobert/kernel-build
   script:
     - git fetch --depth=1 origin tag "$BASETAG"

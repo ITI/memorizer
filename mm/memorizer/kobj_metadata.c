@@ -336,7 +336,7 @@ bool lt_check_kobj(const char *id, struct memorizer_kobj *kobj)
  */
 struct memorizer_kobj *lt_remove_kobj(uintptr_t addr)
 {
-	struct memorizer_kobj **l1e, *kobj;
+	struct memorizer_kobj **l1e, *kobj = NULL;
 
 	/*
 	 * Get the l1 entry for the addr, if there is no entry then we not only

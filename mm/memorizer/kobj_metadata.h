@@ -78,7 +78,17 @@ struct memorizer_kobj {
 	struct list_head    object_list;
 	struct list_head    access_counts;
 	struct memorizer_kobj *args_kobj;
+	unsigned short      state;
 };
+
+enum kobj_state_t {
+	KOBJ_STATE_NULL = 0,
+	KOBJ_STATE_ALLOCATED = 1,
+	KOBJ_STATE_FREED = 2,
+	KOBJ_STATE_REUSE = 3,
+};
+
+
 
 /**
  * access_counts - track reads/writes from single source IP
@@ -159,6 +169,33 @@ struct lt_pid_tbl {
 #define lt_l2_tbl_index(va)	((va >> LT_L1_SHIFT) & (LT_L2_ENTRIES - 1))
 #define lt_l3_tbl_index(va)	((va >> LT_L2_SHIFT) & (LT_L3_ENTRIES - 1))
 
+/* klt_for_each_addr() -- iterate over address [start, end).
+ *
+ * One loop invocation per address.
+ * @start - beginning address
+ * @end - one past final address
+ * @l1_i - uint64_t temp variable
+ * @l1e - memorizer_kobj** that holds the associated L1 entry 
+ *
+ * The @start and @end values are passed in as rvals. The other two
+ * variables are lvals.
+ */
+#define klt_for_each_addr(start, end, l1_i, l1e) \
+	for(	addr = (start),						\
+		l1_i = lt_l1_tbl_index(addr),				\
+		l1e = tbl_get_l1_entry_may_alloc(addr);			\
+		addr < (end);						\
+		({							\
+			++addr;						\
+			++l1_i;						\
+			if(l1_i < LT_L1_ENTRIES) {			\
+				l1e++;					\
+			} else {					\
+				l1_i = lt_l1_tbl_index(addr);		\
+				l1e = tbl_get_l1_entry_may_alloc(addr);	\
+			}						\
+		}) )
+
 /*
  * lt_l*_entry() --- get the table entry associated with the virtual address
  *
@@ -183,11 +220,27 @@ static inline struct lt_l2_tbl **lt_l3_entry(struct lt_l3_tbl *l3_tbl, uintptr_t
 	return &l3_tbl->l2_tbls[lt_l3_tbl_index(va)];
 }
 
+struct memorizer_kobj **tbl_get_l1_entry_may_alloc(uint64_t addr);
+
 static inline struct pid_obj * lt_pid(struct lt_pid_tbl *pid_tbl,  uint32_t key)
 {
 	return &(pid_tbl->pid_obj_list[key]);
 }
 
+/*
+ * klt_zero() -- clear all of the table entries covered by @kobj
+ */
+static inline void klt_zero(struct memorizer_kobj *kobj)
+{
+	uint64_t l1_i;
+	uintptr_t addr;
+	struct memorizer_kobj **l1e;
+	klt_for_each_addr(kobj->va_ptr, kobj->va_ptr+kobj->size, l1_i, l1e) {
+		if(*l1e == kobj) {
+			*l1e = 0;
+		}
+	}
+}
 //==-- External Interface -------------------------------------------------==//
 void lt_init(void);
 int lt_insert_kobj(struct memorizer_kobj *kobj);

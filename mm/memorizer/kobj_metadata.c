@@ -43,8 +43,8 @@
 #include "stats.h"
 #include "memalloc.h"
 
-#define ALLOC_CODE_SHIFT    59
-#define ALLOC_INDUCED_CODE	(_AC(MEM_INDUCED,UL) << ALLOC_CODE_SHIFT)
+#define ALLOC_CODE_SHIFT 58
+#define ALLOC_INDUCED_CODE (_AC(MEM_INDUCED, UL) << ALLOC_CODE_SHIFT)
 
 /* atomic object counter */
 static atomic_long_t global_kobj_id = ATOMIC_INIT(0);
@@ -58,10 +58,10 @@ static struct lt_pid_tbl pid_tbl;
 /* Emergency Pools for l1 + l2 pages */
 #define NUM_EMERGENCY_PAGES 200
 struct pages_pool {
-    uintptr_t base;  /* pointer to array of l1/l2 pages */
-    size_t next;        /* index of next available */
-    size_t entries;     /* number of entries to last page */
-    size_t pg_size;     /* size of object for indexing */
+	uintptr_t base; /* pointer to array of l1/l2 pages */
+	size_t next; /* index of next available */
+	size_t entries; /* number of entries to last page */
+	size_t pg_size; /* size of object for indexing */
 };
 
 //int test_and_set_bit(unsigned long nr, volatile unsigned long *addr);
@@ -79,12 +79,12 @@ volatile unsigned long inlt;
  */
 static inline int __klt_enter(void)
 {
-    return test_and_set_bit_lock(0,&inlt);
+	return test_and_set_bit_lock(0, &inlt);
 }
 
 static __always_inline void __klt_exit(void)
 {
-    return clear_bit_unlock (0,&inlt);
+	return clear_bit_unlock(0, &inlt);
 }
 
 /**
@@ -100,30 +100,28 @@ static __always_inline void __klt_exit(void)
  */
 uintptr_t get_pg_from_pool(struct pages_pool *pool)
 {
-    pr_info("Getting page from pool (%p). i=%d e=%d\n",
-            (void *)pool->base, (int)pool->next, (int)pool->entries);
-    if (pool->entries == pool->next)
-        return 0;
-    /* next * pg_size is the offset in bytes from the base of the pool */
-    return (uintptr_t) (pool->base + (pool->next++ * pool->pg_size));
+	pr_info("Getting page from pool (%p). i=%d e=%d\n", (void *)pool->base,
+		(int)pool->next, (int)pool->entries);
+	if (pool->entries == pool->next)
+		return 0;
+	/* next * pg_size is the offset in bytes from the base of the pool */
+	return (uintptr_t)(pool->base + (pool->next++ * pool->pg_size));
 }
 
 struct lt_l1_tbl l1_tbl_pool[NUM_EMERGENCY_PAGES];
-struct pages_pool l1_tbl_reserve =
-{
-    .base = (uintptr_t) &l1_tbl_pool,
-    .next = 0,
-    .entries = NUM_EMERGENCY_PAGES,
-    .pg_size = sizeof(struct lt_l1_tbl)
+struct pages_pool l1_tbl_reserve = {
+	.base		= (uintptr_t)&l1_tbl_pool,
+	.next		= 0,
+	.entries	= NUM_EMERGENCY_PAGES,
+	.pg_size	= sizeof(struct lt_l1_tbl),
 };
 
 struct lt_l2_tbl l2_tbl_pool[NUM_EMERGENCY_PAGES];
-struct pages_pool l2_tbl_reserve =
-{
-    .base = (uintptr_t) &l2_tbl_pool,
-    .next = 0,
-    .entries = NUM_EMERGENCY_PAGES,
-    .pg_size = sizeof(struct lt_l2_tbl)
+struct pages_pool l2_tbl_reserve = {
+	.base		= (uintptr_t)&l2_tbl_pool,
+	.next		= 0,
+	.entries	= NUM_EMERGENCY_PAGES,
+	.pg_size	= sizeof(struct lt_l2_tbl),
 };
 
 /**
@@ -159,56 +157,56 @@ static struct memorizer_kobj **tbl_get_l1_entry(uint64_t addr)
 /**
  * l1_alloc() --- allocate an l1 table
  */
-static struct lt_l1_tbl * l1_alloc(void)
+static struct lt_l1_tbl *l1_alloc(void)
 {
-    struct lt_l1_tbl *l1_tbl;
-    int i = 0;
+	struct lt_l1_tbl *l1_tbl;
+	int i = 0;
 
-    l1_tbl = memalloc(sizeof(struct lt_l1_tbl));
-    if (!l1_tbl) {
-        l1_tbl = (struct lt_l1_tbl *) get_pg_from_pool(&l1_tbl_reserve);
-        if (!l1_tbl) {
-            /* while in dev we want to print error and panic */
-            print_stats((size_t)KERN_CRIT);
-            panic("Failed to allocate L1 table for memorizer kobj\n");
-        }
-    }
+	l1_tbl = memalloc(sizeof(struct lt_l1_tbl));
+	if (!l1_tbl) {
+		l1_tbl = (struct lt_l1_tbl *)get_pg_from_pool(&l1_tbl_reserve);
+		if (!l1_tbl) {
+			/* while in dev we want to print error and panic */
+			print_stats((size_t)KERN_CRIT);
+			panic("Failed to allocate L1 table for memorizer kobj\n");
+		}
+	}
 
-    /* Zero out the memory */
-    for (i = 0; i < LT_L1_ENTRIES; ++i)
-        l1_tbl->kobj_ptrs[i] = 0;
+	/* Zero out the memory */
+	for (i = 0; i < LT_L1_ENTRIES; ++i)
+		l1_tbl->kobj_ptrs[i] = 0;
 
-    /* increment stats counter */
-    track_l1_alloc();
+	/* increment stats counter */
+	track_l1_alloc();
 
-    return l1_tbl;
+	return l1_tbl;
 }
 
 /**
  * l2_alloc() - alloc level 2 table
  */
-static struct lt_l2_tbl * l2_alloc(void)
+static struct lt_l2_tbl *l2_alloc(void)
 {
-    struct lt_l2_tbl *l2_tbl;
-    int i = 0;
+	struct lt_l2_tbl *l2_tbl;
+	int i = 0;
 
-    l2_tbl = memalloc(sizeof(struct lt_l2_tbl));
-    if (!l2_tbl) {
-        l2_tbl = (struct lt_l2_tbl *) get_pg_from_pool(&l2_tbl_reserve);
-        if (!l2_tbl) {
-            print_stats((size_t)KERN_CRIT);
-            panic("Failed to allocate L2 table for memorizer kobj\n");
-        }
-    }
+	l2_tbl = memalloc(sizeof(struct lt_l2_tbl));
+	if (!l2_tbl) {
+		l2_tbl = (struct lt_l2_tbl *)get_pg_from_pool(&l2_tbl_reserve);
+		if (!l2_tbl) {
+			print_stats((size_t)KERN_CRIT);
+			panic("Failed to allocate L2 table for memorizer kobj\n");
+		}
+	}
 
-    /* Zero out the memory */
-    for (i = 0; i < LT_L2_ENTRIES; ++i)
-        l2_tbl->l1_tbls[i] = 0;
+	/* Zero out the memory */
+	for (i = 0; i < LT_L2_ENTRIES; ++i)
+		l2_tbl->l1_tbls[i] = 0;
 
-    /* increment stats counter */
-    track_l2_alloc();
+	/* increment stats counter */
+	track_l2_alloc();
 
-    return l2_tbl;
+	return l2_tbl;
 }
 
 /**
@@ -218,8 +216,8 @@ static struct lt_l2_tbl * l2_alloc(void)
  *
  * Check if the l1 table exists, if not allocate.
  */
-static struct lt_l1_tbl **l2_entry_may_alloc(struct lt_l2_tbl *l2_tbl, uintptr_t
-					     addr)
+static struct lt_l1_tbl **l2_entry_may_alloc(struct lt_l2_tbl *l2_tbl,
+					     uintptr_t addr)
 {
 	struct lt_l1_tbl **l2e;
 	l2e = lt_l2_entry(l2_tbl, addr);
@@ -244,12 +242,38 @@ static struct lt_l2_tbl **l3_entry_may_alloc(uintptr_t addr)
 }
 
 /**
+ * tbl_get_l1_entry_may_alloc() --- get the l1 entry
+ * @addr:	The address to lookup
+ *
+ * Typical table walk starting from top to bottom.
+ *
+ * Return: the return value is a pointer to the entry in the table, which means
+ * it is a double pointer to the object pointed to by the region. To simplify
+ * lookup and setting this returns a double pointer so access to both the entry
+ * and the object in the entry can easily be obtained.
+ */
+struct memorizer_kobj **tbl_get_l1_entry_may_alloc(uint64_t addr)
+{
+	struct memorizer_kobj **l1e;
+	struct lt_l1_tbl **l2e;
+	struct lt_l2_tbl **l3e;
+
+	/* Do the lookup starting from the top */
+	l3e = l3_entry_may_alloc( addr);
+	if (!*l3e)
+		return NULL;
+	l2e = l2_entry_may_alloc(*l3e, addr);
+	if (!*l2e)
+		return NULL;
+	l1e = lt_l1_entry(*l2e, addr);
+	return l1e;
+}
+/**
  *
  */
 static bool is_tracked_obj(uintptr_t l1entry)
 {
-	return ((uint64_t) l1entry >> ALLOC_CODE_SHIFT) != (uint64_t)
-		MEM_INDUCED;
+	return ((uint64_t)l1entry >> ALLOC_CODE_SHIFT) != (uint64_t)MEM_INDUCED;
 }
 
 /**
@@ -266,29 +290,33 @@ static bool is_tracked_obj(uintptr_t l1entry)
  */
 bool is_induced_obj(uintptr_t addr)
 {
-    struct memorizer_kobj **l1e = tbl_get_l1_entry(addr);
-    if (!l1e)
-        return false;
-    return ((uint64_t) *l1e >> ALLOC_CODE_SHIFT) == (uint64_t) MEM_INDUCED;
+	struct memorizer_kobj **l1e = tbl_get_l1_entry(addr);
+	if (!l1e)
+		return false;
+	return ((uint64_t)*l1e >> ALLOC_CODE_SHIFT) == (uint64_t)MEM_INDUCED;
 }
 
 /**
  * lt_check_kobj() - search for @kobj in the tree
  * @kobj - value to search for.
  */
-bool lt_check_kobj(const char* id, struct memorizer_kobj *kobj)
+bool lt_check_kobj(const char *id, struct memorizer_kobj *kobj)
 {
 	int i3, i2, i1;
-	for(i3=0; i3<LT_L3_ENTRIES; i3++) {
+	for (i3 = 0; i3 < LT_L3_ENTRIES; i3++) {
 		struct lt_l2_tbl *l2_tbl = kobj_l3_tbl.l2_tbls[i3];
-		if(!l2_tbl) continue;
-		for(i2=0; i2<LT_L2_ENTRIES; i2++) {
+		if (!l2_tbl)
+			continue;
+		for (i2 = 0; i2 < LT_L2_ENTRIES; i2++) {
 			struct lt_l1_tbl *l1_tbl = l2_tbl->l1_tbls[i2];
-			if(!l1_tbl) continue;
-			for(i1=0; i1<LT_L1_ENTRIES; i1++) {
-				struct memorizer_kobj* p = l1_tbl->kobj_ptrs[i1];
-				if(p == kobj) {
-					pr_info("%s: kobj=%p i3=%d i2=%d i1=%d\n", id, kobj, i3, i2, i1);
+			if (!l1_tbl)
+				continue;
+			for (i1 = 0; i1 < LT_L1_ENTRIES; i1++) {
+				struct memorizer_kobj *p =
+					l1_tbl->kobj_ptrs[i1];
+				if (p == kobj) {
+					pr_info("%s: kobj=%p i3=%d i2=%d i1=%d\n",
+						id, kobj, i3, i2, i1);
 					return true;
 				}
 			}
@@ -296,7 +324,7 @@ bool lt_check_kobj(const char* id, struct memorizer_kobj *kobj)
 	}
 	return false;
 }
-			
+
 /**
  * lt_remove_kobj() --- remove object from the table
  * @addr: pointer to the beginning of the object
@@ -306,57 +334,44 @@ bool lt_check_kobj(const char* id, struct memorizer_kobj *kobj)
  *
  * Return: the kobject at the location that was removed.
  */
-struct memorizer_kobj * lt_remove_kobj(uintptr_t addr)
+struct memorizer_kobj *lt_remove_kobj(uintptr_t addr)
 {
-        struct memorizer_kobj **l1e, *kobj;
-        uintptr_t nextobj = 0;
+	struct memorizer_kobj **l1e, *kobj = NULL;
 
-    /*
-     * Get the l1 entry for the addr, if there is no entry then we not only
-     * haven't tracked the object, but we also haven't allocated a l1 page
-     * for the particular address
-     */
-    l1e = tbl_get_l1_entry(addr);
-    if (!l1e)
-        return NULL;
+	/*
+	 * Get the l1 entry for the addr, if there is no entry then we not only
+	 * haven't tracked the object, but we also haven't allocated a l1 page
+	 * for the particular address
+	 */
+	l1e = tbl_get_l1_entry(addr);
+	if (!l1e)
+		return NULL;
 
-    /* Setup the return: if it is an induced object then no kobj exists */
-    /* the code is in the most significant bits so shift and compare */
-    if (is_tracked_obj((uintptr_t)*l1e)) {
-            kobj = *l1e;
-    } else {
-            kobj = NULL;
-    }
+	/* Setup the return: if it is an induced object then no kobj exists */
+	/* the code is in the most significant bits so shift and compare */
+	if (is_tracked_obj((uintptr_t)*l1e)) {
+		kobj = *l1e;
+		WARN(kobj->va_ptr != addr, "kobj(%p)->va_ptr(%p) != addr(%p); kobj->state(%d)\n",
+			kobj, (void*)kobj->va_ptr, (void*)addr, kobj->state);
+		if (kobj->state != KOBJ_STATE_ALLOCATED) {
+			pr_err("kobj(%p)->state(%d) != KOBJ_STATE_ALLOCATED\n",
+			       kobj, kobj->state);
+			pr_err("kobj->va_ptr==%p\n", (void *)kobj->va_ptr);
+			pr_err("addr=%p\n", (void *)addr);
+			BUG();
+		}
+		klt_zero(kobj);
+	} 
 
-	if(kobj)
-		nextobj = kobj->va_ptr + kobj->size;
-
-    /* For each byte in the object set the l1 entry to NULL */
-    /* This loop will run crazy slow. maybe invoke tbl_get_l1_entry less often? TODO robadams@illinois.edu */
-    while(nextobj > addr)
-    {
-            /* *free* the byte by setting NULL */
-            *l1e = 0;
-
-            /* move l1e to the next entry */
-            l1e = tbl_get_l1_entry(++addr);
-
-            /*
-             * we might get an object that ends at the end of a table and
-             * therefore the next call will fail to get the l1 table.
-             */
-            if(!l1e)
-                    break;
-    }
-    return kobj;
+	return kobj;
 }
 
-inline struct memorizer_kobj * lt_get_kobj(uintptr_t addr)
+inline struct memorizer_kobj *lt_get_kobj(uintptr_t addr)
 {
-    struct memorizer_kobj **l1e = tbl_get_l1_entry(addr);
-    if (l1e && is_tracked_obj((uintptr_t)*l1e))
-        return *l1e;
-    return NULL;
+	struct memorizer_kobj **l1e = tbl_get_l1_entry(addr);
+	if (l1e && is_tracked_obj((uintptr_t)*l1e))
+		return *l1e;
+	return NULL;
 }
 
 /*
@@ -377,68 +392,87 @@ inline struct memorizer_kobj * lt_get_kobj(uintptr_t addr)
  * previous entry and set up its free times with a special code denoting it was
  * evicted from the table in an erroneous fasion.
  */
-static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_addr, struct memorizer_kobj* new_kobj)
+static void noinline handle_overlapping_insert(uintptr_t addr,
+					       uintptr_t prev_addr,
+					       struct memorizer_kobj *new_kobj)
 {
-    unsigned long flags;
-    struct memorizer_kobj *obj = lt_get_kobj(addr);
+	unsigned long flags;
+	struct memorizer_kobj *obj = lt_get_kobj(addr);
 
-    /*
-     * If there is no current obj, or the current object is already
-     * marked free, there is no resolution required.
-     *
-     * If `free_index` is already set, that probably means
-     * that this is the Nth address of an allocation, and we
-     * updated `obj` when we saw the first address of this
-     * allocation.
-     */
-    if ( (!obj) || (!is_tracked_obj((uintptr_t)obj)) )
-        return;
-    if (obj->free_index)
-        return;
+	/*
+	 * If there is no current obj, or the current object is already
+	 * marked free, there is no resolution required.
+	 *
+	 * If `free_index` is already set, that probably means
+	 * that this is the Nth address of an allocation, and we
+	 * updated `obj` when we saw the first address of this
+	 * allocation.
+	 */
+	if ((!obj) || (!is_tracked_obj((uintptr_t)obj)))
+		return;
+	if (obj->free_index)
+		return;
+	if (obj->state != KOBJ_STATE_ALLOCATED) {
+		pr_err("kobj(%p)->state(%x) != KOBJ_STATE_ALLOCATED\n", obj,
+		       obj->state);
+		BUG();
+	}
 
-    /*
-     * If the value to be written is not an object, take care
-     * not to dereference it.
-     */
-    if( (!new_kobj) || (!is_tracked_obj((uintptr_t)new_kobj)) ) {
-        write_lock_irqsave(&obj->rwlock, flags);
-	obj->free_index = get_index();
-	obj->free_ip = MEM_INDUCED | 0xdeadbeef00000000;
-	list_move(&obj->object_list, &memorizer_object_freed_list);
-        write_unlock_irqrestore(&obj->rwlock, flags);
-	return;
-    }
+	// klt_for_each_addr(obj->va_ptr, obj->va_ptr+obj->size, l1_i, l1e) {
+	// 	if(*l1e == obj)  // paranoia
+	// 		*l1e = 0;
+	// }
+	klt_zero(obj);
 
+	/*
+	 * If the value to be written is not an object, take care
+	 * not to dereference it.
+	 */
+	if ((!new_kobj) || (!is_tracked_obj((uintptr_t)new_kobj))) {
+		write_lock_irqsave(&obj->rwlock, flags);
+		list_del(&obj->object_list);
+		obj->free_index = get_index();
+		obj->free_ip = MEM_INDUCED | 0xdeadbeef00000000;
+		obj->state = KOBJ_STATE_FREED;
+		list_add(&obj->object_list, &memorizer_object_freed_list);
+		write_unlock_irqrestore(&obj->rwlock, flags);
+		return;
+	}
 
-    /*
-     * TODO robadams@illinois.edu
-    if(obj->alloc_type == new_kobj->alloc_type) {
-	    pr_info("memorizer: va_ptr re-allocated:\n  %p %p %p %s\n  %p %p %p %s\n",
-			    (void*)obj->va_ptr,
-			    (void*)obj->alloc_ip, (void*)obj->free_ip,
-			    alloc_type_str(obj->alloc_type),
-			    (void*)new_kobj->va_ptr,
-			    (void*)new_kobj->alloc_ip, (void*)new_kobj->free_ip,
-			    alloc_type_str(new_kobj->alloc_type));
-    }
-    */
+	/*
+	 * TODO robadams@illinois.edu
+	if(obj->alloc_type == new_kobj->alloc_type) {
+		pr_info("memorizer: va_ptr re-allocated:\n  %p %p %p %s\n  %p %p %p %s\n",
+			(void*)obj->va_ptr,
+			(void*)obj->alloc_ip, (void*)obj->free_ip,
+			alloc_type_str(obj->alloc_type),
+			(void*)new_kobj->va_ptr,
+			(void*)new_kobj->alloc_ip, (void*)new_kobj->free_ip,
+			alloc_type_str(new_kobj->alloc_type));
+	}
+	*/
 
-    write_lock_irqsave(&obj->rwlock, flags);
-    obj->free_index = new_kobj->alloc_index;
+	write_lock_irqsave(&obj->rwlock, flags);
+	list_del(&obj->object_list);
+	obj->free_index = new_kobj->alloc_index;
+	obj->state = KOBJ_STATE_FREED;
 
-    /* 
-     * DANGER! Magic numbers ahead.
-     */
-    if(addr == prev_addr) {
-	    /* This is a nested allocation */
-	    obj->free_ip = new_kobj->alloc_type | 0xfeed00000000;
-    } else {
-	    /* The reason for this duplicate alloc is unknown */
-	    obj->free_ip = new_kobj->alloc_type | 0xdeadbeef00000000;
-    }
+	/* 
+	 * DANGER! Magic numbers ahead.
+	 */
+	if (addr == prev_addr) {
+		/* This is a nested allocation */
+		obj->free_ip = new_kobj->alloc_type | 0xfeed00000000;
+	} else {
+		/* The reason for this duplicate alloc is unknown */
+		obj->free_ip = new_kobj->alloc_type | 0xdeadbeef00000000;
+	}
+	// TEMP robadams@illinois.edu
+	// write_unlock_irqrestore(&obj->rwlock, flags);
 
-    list_move(&obj->object_list, &memorizer_object_freed_list);
-    write_unlock_irqrestore(&obj->rwlock, flags);
+	// write_lock_irqsave(&obj->rwlock, flags);
+	list_add(&obj->object_list, &memorizer_object_freed_list);
+	write_unlock_irqrestore(&obj->rwlock, flags);
 }
 
 /**
@@ -455,48 +489,32 @@ static void noinline handle_overlapping_insert(uintptr_t addr, uintptr_t prev_ad
  */
 static int __klt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
 {
-	struct lt_l1_tbl **l2e;
-	struct lt_l2_tbl **l3e;
+	struct memorizer_kobj **l1e;
 	uint64_t l1_i = 0;
-	uintptr_t addr = ptr;
-	uintptr_t kobjend = ptr + size;
+	uintptr_t addr;
 	static uintptr_t prev_addr = 0;
 
-	while (addr < kobjend) {
-		/* Pointer to the l3 entry for addr and alloc if needed */
-		l3e = l3_entry_may_alloc(addr);
+	if (metadata && is_tracked_obj(metadata)) {
+		BUG_ON(((struct memorizer_kobj *)metadata)->state !=
+		       KOBJ_STATE_ALLOCATED);
+	}
 
-		/* Pointer to the l2 entry for addr and alloc if needed */
-		l2e = l2_entry_may_alloc(*l3e, addr);
+	klt_for_each_addr(ptr, ptr+size, l1_i, l1e) {
+		/* get the pointer to the l1_entry for this addr byte */
+		// struct memorizer_kobj **l1e = lt_l1_entry(*l2e, addr);
+		/* If it is not null then we are double allocating */
+		if (*l1e)
+			handle_overlapping_insert(
+				addr, prev_addr,
+				(struct memorizer_kobj *)metadata);
 
-		/*
-                 * Get the index for this addr for boundary on this l1 table;
-                 * however, TODO, this might not be needed as our table indices
-                 * are page aligned and it might be unlikely allocations are
-                 * page aligned and will not traverse the boundary of an l1
-                 * table. Note that I have not tested this condition yet.
-		 */
-		l1_i = lt_l1_tbl_index(addr);
-
-		while (l1_i < LT_L1_ENTRIES && addr < kobjend) {
-			/* get the pointer to the l1_entry for this addr byte */
-			struct memorizer_kobj **l1e = lt_l1_entry(*l2e,addr);
-
-			/* If it is not null then we are double allocating */
-			if (*l1e)
-				handle_overlapping_insert(addr, prev_addr, (struct memorizer_kobj *)metadata);
-
-			/* insert object pointer in the table for byte addr */
-			*l1e = (struct memorizer_kobj *)metadata;
-
-			/* Track end of the table and the object tracking */
-			addr += 1;
-			++l1_i;
-		}
+		/* insert object pointer in the table for byte addr */
+		*l1e = (struct memorizer_kobj *)metadata;
 	}
 	prev_addr = ptr;
 	return 0;
 }
+
 
 /**
  * We create a unique label for each induced allocated object so that we can
@@ -506,17 +524,17 @@ static int __klt_insert(uintptr_t ptr, size_t size, uintptr_t metadata)
  * way the free just finds all matching entries in the table.
  */
 size_t d = 0;
-int lt_insert_induced(void * ptr, size_t size)
+int lt_insert_induced(void *ptr, size_t size)
 {
-    uintptr_t label = ((uintptr_t) MEM_INDUCED << ALLOC_CODE_SHIFT) |
-        atomic_long_inc_return(&global_kobj_id);
-    __klt_insert((uintptr_t)ptr, size, label);
-    return 1;
+	uintptr_t label = ((uintptr_t)MEM_INDUCED << ALLOC_CODE_SHIFT) |
+			  atomic_long_inc_return(&global_kobj_id);
+	__klt_insert((uintptr_t)ptr, size, label);
+	return 1;
 }
 
 int lt_insert_kobj(struct memorizer_kobj *kobj)
 {
-        return __klt_insert(kobj->va_ptr, kobj->size, (uintptr_t)kobj);
+	return __klt_insert(kobj->va_ptr, kobj->size, (uintptr_t)kobj);
 }
 
 void plt_insert(struct pid_obj pobj)
@@ -524,7 +542,6 @@ void plt_insert(struct pid_obj pobj)
 	// Insert into the PID Table based on the Key of the Object
 	pid_tbl.pid_obj_list[pobj.key] = pobj;
 }
-
 
 void __init lt_init(void)
 {

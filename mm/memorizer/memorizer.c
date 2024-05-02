@@ -962,7 +962,7 @@ static int clear_dead_objs(bool only_printed_items)
 		/* TODO robadams@illinois.edu - do we need to lock kobj->rwlock? */
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
 		if(kobj->state != KOBJ_STATE_FREED) {
-			pr_err("Object %p: state(%x) != KOBJ_STATE_FREED", kobj, kobj->state);
+			pr_err("Object %p: state(%x) != KOBJ_STATE_FREED\n", kobj, kobj->state);
 			BUG();
 		}
 		if((!only_printed_items) || kobj->printed) {

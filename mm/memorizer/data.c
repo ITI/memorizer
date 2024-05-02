@@ -418,7 +418,14 @@ static int stream_open_(struct inode *inode,
 
 static int kmap_stream_open(struct inode *inode, struct file *file)
 {
+	pr_info("Starting kmap streaming\n");
 	return stream_open_(inode, file, &memorizer_object_freed_list, &kmap_stream_seq_ops);
+}
+
+static int kmap_stream_release(struct inode *inode, struct file *file)
+{
+	pr_info("Ending kmap streaming\n");
+	return seq_release(inode, file);
 }
 
 static int kmap_release(struct inode *inode, struct file *file)
@@ -551,7 +558,7 @@ static const struct file_operations kmap_stream_fops = {
 	.owner		= THIS_MODULE,
 	.open		= kmap_stream_open,
 	.read		= stream_seq_read,
-	.release	= seq_release,
+	.release	= kmap_stream_release,
 };
 
 static const struct file_operations kmap_fops = {

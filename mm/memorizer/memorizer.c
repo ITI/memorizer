@@ -638,7 +638,10 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
  * false and true, respectively. 2 and 3 both filter out uninteresting processes,
  * while 3 also filters out non-process contexts.
  */
-static bool __always_inline memorizer_is_enabled(void) {
+static bool __always_inline memorizer_is_enabled(bool filter) {
+	if(memorizer_enabled && !filter)
+		return true;
+
 	switch(memorizer_enabled) {
 	case 1: 
 		return true;
@@ -668,7 +671,7 @@ void __always_inline memorizer_mem_access(const void* addr, size_t size, bool
 		write, uintptr_t ip)
 {
 	unsigned long flags;
-	if (unlikely(!memorizer_log_access.value) || unlikely(!memorizer_is_enabled())) {
+	if (unlikely(!memorizer_log_access.value) || unlikely(!memorizer_is_enabled(true))) {
 		track_disabled_access();
 		return;
 	}
@@ -839,6 +842,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->args_kobj = NULL;
 	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->object_list);
+	kobj->state = KOBJ_STATE_ALLOCATED;
 
 	/* get the slab name */
 	cache = get_slab_cache((void *)(kobj->va_ptr));
@@ -886,7 +890,6 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 #endif
 }
 
-
 /**
  * __memorizer_discard_kobj()
  * @kobj:	The memorizer kernel object to discard.
@@ -895,6 +898,12 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
  */
 void __memorizer_discard_kobj(struct memorizer_kobj * kobj)
 {
+	BUG_ON(kobj->state != KOBJ_STATE_FREED);
+	BUG_ON(kobj->object_list.next == LIST_POISON1);
+	BUG_ON(kobj->object_list.prev == LIST_POISON2);
+	BUG_ON(kobj->access_counts.next == LIST_POISON1);
+	BUG_ON(kobj->access_counts.prev == LIST_POISON2);
+
 	/* Remove from (likely) memorizer_object_freed_list */
 	list_del(&kobj->object_list);
 
@@ -904,6 +913,7 @@ void __memorizer_discard_kobj(struct memorizer_kobj * kobj)
 	kobj->access_counts.prev = LIST_POISON2;
 
 	/* Add kernel object to the cache list */
+	kobj->state = KOBJ_STATE_REUSE;
 	list_add_tail(&kobj->object_list, &memorizer_object_reuse_list);
 
 	/* stats */
@@ -951,6 +961,10 @@ static int clear_dead_objs(bool only_printed_items)
 	list_for_each_safe(p, tmp, &object_list) {
 		/* TODO robadams@illinois.edu - do we need to lock kobj->rwlock? */
 		kobj = list_entry(p, struct memorizer_kobj, object_list);
+		if(kobj->state != KOBJ_STATE_FREED) {
+			pr_err("Object %p: state(%x) != KOBJ_STATE_FREED\n", kobj, kobj->state);
+			BUG();
+		}
 		if((!only_printed_items) || kobj->printed) {
 			memorizer_discard_kobj(kobj);
 		}
@@ -998,14 +1012,26 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	 * some of the metadata for free.
 	 */
 	if (kobj) {
+		BUG_ON(kobj->state != KOBJ_STATE_ALLOCATED);
+		BUG_ON(kobj->access_counts.next == LIST_POISON1);
+		BUG_ON(kobj->access_counts.prev == LIST_POISON2);
+		WARN(kobj->va_ptr != kobj_ptr,
+			"kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
+			kobj,
+			(void*)kobj->va_ptr,
+			(void*)kobj_ptr);
+	
+
 		/* Update the free_index for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_index = get_index();
 		kobj->free_ip = call_site;
-		write_unlock_irqrestore(&kobj->rwlock, flags);
 
 		/* Move the object from (likely) allocated list to freed list */
-		list_move(&kobj->object_list, &memorizer_object_freed_list);
+		list_del(&kobj->object_list);
+		kobj->state = KOBJ_STATE_FREED;
+		list_add(&kobj->object_list, &memorizer_object_freed_list);
+		write_unlock_irqrestore(&kobj->rwlock, flags);
 
 		track_free();
 	}
@@ -1108,7 +1134,7 @@ static void inline __memorizer_kmalloc(unsigned long call_site, const void
 	if (unlikely(ptr==NULL))
 		return;
 
-	if (unlikely(!memorizer_is_enabled())) {
+	if (unlikely(!memorizer_is_enabled(true))) {
 		track_disabled_alloc();
 		return;
 	}
@@ -1157,7 +1183,8 @@ void memorizer_kfree(unsigned long call_site, const void *ptr)
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
+	/* TODO robadams@illinois.edu should *free* depend on is_enabled? */
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled(true)) {
 		return;
 	}
 
@@ -1272,7 +1299,7 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr)
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled(true)) {
 		return;
 	}
 
@@ -1322,7 +1349,7 @@ void memorizer_free_pages_exact (unsigned long call_site, struct page *page, uns
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled(true)) {
 		return;
 	}
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)
@@ -1369,7 +1396,7 @@ void memorizer_free_pages(unsigned long call_site, struct page *page, unsigned
 	 * Condition for ensuring free is from online cpu: see trace point
 	 * condition from include/trace/events/kmem.h for reason
 	 */
-	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled()) {
+	if (unlikely(!cpu_online(raw_smp_processor_id())) || !memorizer_is_enabled(true)) {
 		return;
 	}
 	memorizer_free_kobj((uintptr_t) call_site, (uintptr_t)

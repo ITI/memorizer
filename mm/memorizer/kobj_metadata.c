@@ -351,8 +351,17 @@ struct memorizer_kobj *lt_remove_kobj(uintptr_t addr)
 	/* the code is in the most significant bits so shift and compare */
 	if (is_tracked_obj((uintptr_t)*l1e)) {
 		kobj = *l1e;
-		WARN(kobj->va_ptr != addr, "kobj(%p)->va_ptr(%p) != addr(%p); kobj->state(%d)\n",
-			kobj, (void*)kobj->va_ptr, (void*)addr, kobj->state);
+		if(verbose_warnings.value) {
+			WARN(kobj->va_ptr != addr, "kobj(%p)->va_ptr(%p) != addr(%p); kobj->state(%d)\n",
+				kobj, (void*)kobj->va_ptr, (void*)addr, kobj->state);
+		} else {
+			// TODO robadams@illinois.edu - figure out why this happens and delete this warning
+			if(kobj->va_ptr != addr) {
+				pr_warn("kobj(%p)->va_ptr(%p) != addr(%p); kobj->state(%d)\n",
+					kobj, (void*)kobj->va_ptr, (void*)addr, kobj->state);
+			}
+		}
+		
 		if (kobj->state != KOBJ_STATE_ALLOCATED) {
 			pr_err("kobj(%p)->state(%d) != KOBJ_STATE_ALLOCATED\n",
 			       kobj, kobj->state);

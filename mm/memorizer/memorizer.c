@@ -296,6 +296,9 @@ early_param("memorizer_index_type", early_index_column_type);
 /* flag enable/disable printing of live objects */
 BOOL_DECL(print_live_obj, true);
 
+/* Use WARN() macros if true */
+BOOL_DECL(verbose_warnings, false);
+
 /* Function has table */
 struct FunctionHashTable * cfgtbl;
 
@@ -1015,12 +1018,20 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		BUG_ON(kobj->state != KOBJ_STATE_ALLOCATED);
 		BUG_ON(kobj->access_counts.next == LIST_POISON1);
 		BUG_ON(kobj->access_counts.prev == LIST_POISON2);
-		WARN(kobj->va_ptr != kobj_ptr,
-			"kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
-			kobj,
-			(void*)kobj->va_ptr,
-			(void*)kobj_ptr);
-	
+		if(verbose_warnings.value) {
+			WARN(kobj->va_ptr != kobj_ptr,
+				"kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
+				kobj,
+				(void*)kobj->va_ptr,
+				(void*)kobj_ptr);
+		} else {
+			if(kobj->va_ptr != kobj_ptr) {
+				pr_warn("kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
+					kobj,
+					(void*)kobj->va_ptr,
+					(void*)kobj_ptr);
+			}
+		}
 
 		/* Update the free_index for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
@@ -1697,6 +1708,8 @@ static int memorizer_late_init(void)
 			dentryMemDir, &stack_trace_on);
 	memorizer_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
 			dentryMemDir, &print_live_obj);
+	memorizer_create_bool("verbose_warnings", S_IRUGO | S_IWUGO,
+			dentryMemDir, &verbose_warnings);
 
 #ifdef CONFIG_MEMORIZER_DEBUGFS_RAM
 	{

@@ -1,0 +1,60 @@
+name: Main
+
+on: push
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: illinoisrobert/kernel-build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+
+      - name: Set ownership
+        run: |
+          # this is to fix GIT not liking owner of the checkout dir
+          # see: https://github.com/actions/runner/issues/2033
+          chown -R $(id -u):$(id -g) $PWD
+
+      - name: Build
+        run: |
+          make  defconfig rob.config memorizer.config
+          make -j $(expr $(nproc) / 3 + 1)
+          make -j $(expr $(nproc) / 3 + 1) modules
+          # deb-pkg didn't work. (I didn't save the error.)
+          # make -j $(expr $(nproc) / 3 + 1) deb-pkg
+          make -j $(expr $(nproc) / 3 + 1) tar-pkg
+
+      - name: Test
+        run: echo I really wish I knew what to do here.
+
+      - name: Patch
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -ex
+          myref=${{github.ref}}
+          mytag=$(basename $myref)
+          baseref=$(echo $myref | sed s/-memor.*//)
+          basetag=$(basename $baseref)
+          git fetch --depth=1 origin tag "$basetag"
+          git diff -p "$basetag" "$myref" > "$mytag.patch"
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            vmlinux
+            vmlinux*.py
+            linux-*.tar
+            arch/x86_64/boot/bzImage
+            ./*.patch
+            ../*.deb
+
+      - name: Announce
+        if: startsWith(github.ref, 'refs/tags/')
+        run: echo do something here
+

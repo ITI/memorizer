@@ -366,7 +366,7 @@ bool in_memblocks(uintptr_t va_ptr)
 }
 
 /* global index counter */
-atomic_t index_stamp = ATOMIC_INIT(0);
+atomic64_t index_stamp = ATOMIC_INIT(0);
 
 /*
  * Provides an increasing function to mark the allocation lifecycle events.
@@ -379,7 +379,7 @@ atomic_t index_stamp = ATOMIC_INIT(0);
 unsigned long get_index(void) {
 	if(unlikely(index_column_type == COLUMN_TIME))
 		return get_jiffies_64();
-	return atomic_fetch_add(1, &index_stamp);
+	return atomic64_fetch_add(1, &index_stamp);
 }
 
 

@@ -138,6 +138,7 @@ extern struct list_head memorizer_object_reuse_list;
 /* state variables edited by /sys/kernel/debug/memorizer */
 extern struct bool_name track_calling_context;
 extern struct bool_name print_live_obj;
+extern struct bool_name verbose_warnings;
 
 /* sets the output format - jiffies or serial? */
 extern enum column_type index_column_type;

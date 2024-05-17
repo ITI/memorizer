@@ -119,7 +119,7 @@ The way it normally seems to be done is that this all runs inside yet another co
 
 A second problem is that Docker only supports KVM acceleration when run with `--privileged` (which is important because the memorizer kernel is very slow). The `docker.gitlab-runner.service` container wasn't run with `--privileged` when I was setting this process up (probably wise, since it doesn't need those permissions). For this reason we have a second image made from the `gitlab/gitlab-runner` image, running with `--privileged`. You can find the dockerfile for this in `scripts/memorizer/testVM`.
 
-In theory you could make this a shell runner directly on your machine instead of a container. The reason I didn't do that was because on the machine I was working on, `/etc/gitlab-runner/config.toml` (the file that holds the information for all the runners) was synced using a Docker bindmount to the one on the `docker.gitlab-runner.service` container for some reason. This meant if you added a runner on one, it would be duplicated on the other, leading to tests running in different environments and potentially a lot of weird bugs.
+In theory you could make this a shell runner directly on your machine instead of a container. The reason I didn't do that was because on the machine I was working on, `/etc/gitlab-runner/config.toml` (the file that holds the information for all the runners) was synced using a Docker bindmount to the one on the `docker.gitlab-runner.service` container (probably so we didn't have to re-add the runner in GitLab every time the container was restarted). This meant if you added a runner on one, it would be duplicated on the other, leading to tests running in different environments and potentially a lot of weird bugs.
 
 ## Tangent
 

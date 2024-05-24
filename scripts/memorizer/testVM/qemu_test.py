@@ -33,7 +33,7 @@ for cmd in cmds:
     child.expect("root@VM:.*# ", timeout=100000)
 
 # -o StrictHostKeyChecking=no disables the "are you sure you want to connect" message
-scp_proc = pexpect.spawn("scp -o StrictHostKeyChecking=no -P 8888 -i id_rsa root@localhost:/root/kmap .")
+scp_proc = pexpect.spawn("scp -B -o StrictHostKeyChecking=no -P 8888 -i id_rsa root@localhost:/root/kmap .")
 scp_proc.wait()
 
 if child.isalive():

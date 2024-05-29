@@ -99,6 +99,13 @@ upload_job:
     - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file *.tar.gz "${PACKAGE_REGISTRY_URL}/linux-${CI_COMMIT_TAG}.tar.gz"'
     - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file $CI_COMMIT_TAG.patch "${PACKAGE_REGISTRY_URL}/${CI_COMMIT_TAG}.patch"'
 
+bats:
+  tags: ["docker"]
+  stage: test
+  image: illinoisrobert/kernel-build
+  script:
+    - ./scripts/memorizer/test/boottest.sh
+
 release_job:
   tags: ["docker"]
   stage: release

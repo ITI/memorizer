@@ -1,0 +1,29 @@
+#!/bin/bash
+set -ex
+/bin/busybox --install /bin
+mkdir -p /dev /proc /sys /tmp 
+mount -t devtmpfs  devtmpfs  /dev
+mount -t proc      proc      /proc
+mount -t sysfs     sysfs     /sys
+mount -t tmpfs     tmpfs     /tmp
+mount -t debugfs   debugfs   /sys/kernel/debug
+
+ln -s /proc/self/fd /dev/.
+mkdir -p /usr
+ln -s /bin /usr/bin
+
+ip link set eth0 up
+ip addr add 10.0.2.15/24 dev eth0
+ip route add default via 10.0.2.2 dev eth0
+echo nameserver 10.0.2.3 >> /etc/resolv.conf
+
+# Enable the next line if you want to run the tests
+/run-test.sh 2>&1 | tee /results
+
+# Enable the next lines if you want an interactive shell
+#while true
+#do
+#	echo starting a shell
+#	setsid cttyhack sh 
+#done
+poweroff -f

@@ -1060,7 +1060,8 @@ static void add_ignores(struct objtool_file *file)
  * These functions must not directly change AC, but may PUSHF/POPF.
  */
 static const char *uaccess_safe_builtin[] = {
-#ifndef CONFIG_MEMORIZER
+	/* MEMORIZER */
+	"memorizer_mem_access",
 	/* KASAN */
 	"kasan_report",
 	"kasan_check_range",
@@ -1092,7 +1093,6 @@ static const char *uaccess_safe_builtin[] = {
 	"__asan_report_store4_noabort",
 	"__asan_report_store8_noabort",
 	"__asan_report_store16_noabort",
-#endif
 	/* KCSAN */
 	"__kcsan_check_access",
 	"__kcsan_mb",

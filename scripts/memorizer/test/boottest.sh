@@ -53,4 +53,4 @@ mkdir -p output
 # Feel free to add other qemu parameters.
 qemu-system-x86_64 -no-reboot -machine type=q35,accel=kvm,smm=off -smp 4 -m 8G -cpu max,pmu=off -nographic -append 'panic=30 selinux=0 audit=0 maxcpus=1 split_lock_detect=off memorizer_enabled_boot=no nokaslr no_hash_pointers loglevel=8 memalloc_size=4 console=ttyS0' -kernel $root/$O/arch/x86/boot/bzImage -initrd initramfs -fsdev local,security_model=mapped,id=fsdev0,path=output -device virtio-9p-pci,id=fs0,fsdev=fsdev0,mount_tag=hostshare
 
-cat output/results | grep "^not ok" && exit 1
+[ -z "$(grep '^not ok' output/results)" ] || exit 1

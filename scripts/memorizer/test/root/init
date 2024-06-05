@@ -1,12 +1,18 @@
 #!/bin/bash
 set -ex
 /bin/busybox --install /bin
-mkdir -p /dev /proc /sys /tmp 
+mkdir -p /dev /proc /sys /tmp /output
 mount -t devtmpfs  devtmpfs  /dev
 mount -t proc      proc      /proc
 mount -t sysfs     sysfs     /sys
 mount -t tmpfs     tmpfs     /tmp
 mount -t debugfs   debugfs   /sys/kernel/debug
+# Tell QEMU to mount a directory on the host
+# See https://gist.github.com/bingzhangdai/7cf8880c91d3e93f21e89f96ff67b24b
+# for an (incomplete) explanation of how this works
+echo "hostshare   /output 9p  trans=virtio,version=9p2000.L   0   0" >> /etc/fstab
+mount -a
+echo test >> output/foo
 
 ln -s /proc/self/fd /dev/.
 mkdir -p /usr
@@ -18,12 +24,12 @@ ip route add default via 10.0.2.2 dev eth0
 echo nameserver 10.0.2.3 >> /etc/resolv.conf
 
 # Enable the next line if you want to run the tests
-/run-test.sh 2>&1 | tee /results
+/run-test.sh 2>&1 | tee /output/results
 
 # Enable the next lines if you want an interactive shell
 #while true
 #do
-#	echo starting a shell
-#	setsid cttyhack sh 
+	#echo starting a shell
+	#setsid cttyhack sh 
 #done
 poweroff -f

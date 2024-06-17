@@ -115,7 +115,7 @@ void create_stack_kobj(uintptr_t to, struct EdgeBucket *new_bucket, struct pt_re
 
 /**
  * This function puts the <from, to, stack frame kobj, function argument kobj>
- * tuple into the hash table. When stack_trace_on is disabled, stack frame kobj
+ * tuple into the hash table. When log_frames_enabled is disabled, stack frame kobj
  * points to NULL value. If a stack frame kobj already exists, we use allocation
  * promotion to overide the existing one.
  * @ht: hash table pointer
@@ -123,11 +123,11 @@ void create_stack_kobj(uintptr_t to, struct EdgeBucket *new_bucket, struct pt_re
  * @to: callee's virtual address
  * @pt_regs: a structure for base pointer and stack pointer, calculated at
  * cyg_profile_function_enter.
- * @stack_trace_on: if turned on, allocate the stack frame kobj and argument
+ * @log_frames_enabled: if turned on, allocate the stack frame kobj and argument
  * kobj.
  */
 void cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t to,
-		struct pt_regs *pt_regs, bool stack_trace_on)
+		struct pt_regs *pt_regs, bool log_frames_enabled)
 {
 	int index;
 	struct EdgeBucket *search, *prev, *new_bucket;
@@ -151,9 +151,9 @@ void cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t 
 			 * created before we enable stack trace, then we will get a null for
 			 * kobj.
 			 */
-			if (stack_trace_on && search->kobj != NULL) {
+			if (log_frames_enabled && search->kobj != NULL) {
 				update_stack_kobj(search, pt_regs);
-			} else if (stack_trace_on && search->kobj == NULL) {
+			} else if (log_frames_enabled && search->kobj == NULL) {
 				/**
 				 * If a (caller, callee) pair exists before we enabled the stack trace,
 				 * then we need to create a new stack kobj for this frame.
@@ -196,7 +196,7 @@ void cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t 
 		new_bucket -> kobj = NULL;
 
 		// Create new stack frame kobj and arguments kobj for callee
-		if (stack_trace_on) {
+		if (log_frames_enabled) {
 			create_stack_kobj(to, new_bucket, pt_regs);
 		}
 	} else {
@@ -223,7 +223,7 @@ void console_print(struct FunctionHashTable * ht)
 }
 
 // Clear the entries
-void cfgmap_clear(struct FunctionHashTable * ht)
+void function_calls_clear(struct FunctionHashTable * ht)
 {
 	struct EdgeBucket * b;
 	int index;

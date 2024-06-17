@@ -27,12 +27,12 @@ echo 1 > /sys/kernel/debug/memorizer/memorizer_enabled
 
 Enable object access tracking:
 ```bash
-echo 1 > /sys/kernel/debug/memorizer/memorizer_log_access
+echo 1 > /sys/kernel/debug/memorizer/log_accesses_enabled
 ```
 
 Show allocation statistics:
 ```bash
-cat /sys/kernel/debug/memorizer/show_stats
+cat /sys/kernel/debug/memorizer/stats
 ```
 
 Clear free'd objects:
@@ -41,17 +41,17 @@ echo 1 > /sys/kernel/debug/memorizer/clear_object_list
 ```
 Enable function call tracking:
 ```bash
-echo 1 > /sys/kernel/debug/memorizer/cfg_log_on
+echo 1 > /sys/kernel/debug/memorizer/log_calls_enabled
 ```
 
 Enable function call and stack frame tracking:
 ```bash
-echo 1 > /sys/kernel/debug/memorizer/stack_trace_on
+echo 1 > /sys/kernel/debug/memorizer/log_frames_enabled
 ```
 
 Clear function call and stack frame tracking:
 ```bash
-echo 1 > /sys/kernel/debug/memorizer/cfgmap
+echo 1 > /sys/kernel/debug/memorizer/clear_function_calls
 ```
 
 Using Memorizer to Collect KMAPs
@@ -70,13 +70,13 @@ mount -t debugfs nodev /sys/kernel/debug
 # uninteresting data
 echo 1 > /sys/kernel/debug/clear_object_list
 # enable memorizer object access tracking, which by default is off
-echo 1 > /sys/kernel/debug/memorizer_log_access
+echo 1 > /sys/kernel/debug/log_accesses_enabled
 # Now run whatever test
 tar zcf something.tar.gz /somedir &
 ssh u@h:/somefile
 ...
 # Disable access logging
-echo 0 > /sys/kernel/debug/memorizer/memorizer_log_access
+echo 0 > /sys/kernel/debug/memorizer/log_accesses_enabled
 # Disable memorizer object tracking: isn't necessary but will reduce noise
 echo 0 > /sys/kernel/debug/memorizer/memorizer_enabled
 # Cat the results: make sure to pipe to something
@@ -112,5 +112,5 @@ There are a few special error codes:
 
 Note
 ====
-cfg_log_on and stack_trace_on shares the same <caller, callee> mapping structure. Please
+log_calls_enabled and log_frames_enabled shares the same <caller, callee> mapping structure. Please
 choose either one to turn on and clean the cfgmap after finished.

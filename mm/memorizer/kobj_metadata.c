@@ -351,7 +351,7 @@ struct memorizer_kobj *lt_remove_kobj(uintptr_t addr)
 	/* the code is in the most significant bits so shift and compare */
 	if (is_tracked_obj((uintptr_t)*l1e)) {
 		kobj = *l1e;
-		if(verbose_warnings.value) {
+		if(verbose_warnings_enabled.value) {
 			WARN(kobj->va_ptr != addr, "kobj(%p)->va_ptr(%p) != addr(%p); kobj->state(%d)\n",
 				kobj, (void*)kobj->va_ptr, (void*)addr, kobj->state);
 		} else {

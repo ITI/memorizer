@@ -29,27 +29,27 @@ setup() {
 
   # Turn everything off and clear stale data
   echo 0 > memorizer_enabled
-  echo 0 > memorizer_log_access
-  echo 0 > cfg_log_on
-  echo 0 > cfgmap
-  echo 1 > clear_dead_objs
+  echo 0 > log_accesses_enabled
+  echo 0 > log_calls_enabled
+  echo 1 > clear_function_calls
+  echo 1 > clear_dead_objects
   # Adjust following line: 0 gets less data, 1 gets more data
-  echo 1 > print_live_obj
+  echo 1 > log_live_enabled
   echo 1 > clear_printed_list
  }
 
 on() {
   # Turn everything on
-  echo 1 > cfg_log_on
+  echo 1 > log_calls_enabled
   echo 1 > memorizer_enabled
-  echo 1 > memorizer_log_access
+  echo 1 > log_accesses_enabled
 }
 
 off() {
   # Turn everything off
   echo 0 > memorizer_enabled
-  echo 0 > memorizer_log_access
-  echo 0 > cfg_log_on
+  echo 0 > log_accesses_enabled
+  echo 0 > log_calls_enabled
 }
 
 # If we gathered any data, kmap should be non-empty
@@ -58,7 +58,7 @@ off() {
 # Store the data on the server
 copy_all() {
   copy kmap
-  copy cfgmap
+  copy function_calls
   copy global_table
 }
 
@@ -67,7 +67,7 @@ drip() {
   echo WARNING - Using drip probably wont work.
   create_dir
   setup
-  echo 0 > print_live_obj
+  echo 0 > log_live_enabled
   echo 1 > clear_printed_list
 
   {

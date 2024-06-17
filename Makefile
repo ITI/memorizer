@@ -1026,6 +1026,10 @@ include $(addprefix $(srctree)/, $(include-y))
 # Do not add $(call cc-option,...) below this line. When you build the kernel
 # from the clean source tree, the GCC plugins do not exist at this point.
 
+# For Memorizer, in order for log_frames_enabled to allow for correct tracking 
+# of frame pointers, we must not omit frame pointers as an optimization option
+KBUILD_CFLAGS += -fno-omit-frame-pointer
+
 # Add user supplied CPPFLAGS, AFLAGS, CFLAGS and RUSTFLAGS as the last assignments
 KBUILD_CPPFLAGS += $(KCPPFLAGS)
 KBUILD_AFLAGS   += $(KAFLAGS)

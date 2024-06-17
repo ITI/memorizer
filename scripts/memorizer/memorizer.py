@@ -55,7 +55,7 @@ def startup():
   if ret != 0:
     print "Failed to clear object list"
     exit(1)
-  ret = os.system("echo 0 > " + mem_path + "print_live_obj")
+  ret = os.system("echo 0 > " + mem_path + "log_live_enabled")
   if ret != 0:
     print "Failed to disable live object dumping"
     exit(1)
@@ -63,14 +63,14 @@ def startup():
   if ret != 0:
     print "Failed to enable memorizer object allocation tracking"
     exit(1)
-  ret = os.system("echo 1 > " + mem_path + "memorizer_log_access")
+  ret = os.system("echo 1 > " + mem_path + "log_accesses_enabled")
   if ret != 0:
     print "Failed to enable memorizer object access tracking"
     exit(1)
 
 def cleanup():
   # Memorizer cleanup
-  ret = os.system("echo 0 > " + mem_path + "memorizer_log_access")
+  ret = os.system("echo 0 > " + mem_path + "log_accesses_enabled")
   if ret != 0:
     print "Failed to disable memorizer object access tracking"
     exit(1)
@@ -79,11 +79,11 @@ def cleanup():
     print "Failed to disable memorizer object allocation tracking"
     exit(1)
   # Print stats
-  ret = os.system("cat " + mem_path + "show_stats")
+  ret = os.system("cat " + mem_path + "stats")
   if ret != 0:
     print "Failed to display memorizer stats"
     exit(1)
-  ret = os.system("echo 1 > " + mem_path + "print_live_obj")
+  ret = os.system("echo 1 > " + mem_path + "log_live_enabled")
   if ret != 0:
     print "Failed to enable live object dumping"
     exit(1)

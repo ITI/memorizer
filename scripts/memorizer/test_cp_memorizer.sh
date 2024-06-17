@@ -6,7 +6,7 @@ cd $WDIR
 echo 1 > clear_object_list
 echo 1 > clear_printed_list
 echo 1 > memorizer_enabled
-echo 1 > memorizer_log_access
+echo 1 > log_accesses_enabled
 
 
 cp -R /mnt/host/src/repos/linuxkit /root
@@ -15,4 +15,4 @@ cd /root
 
 cd $WDIR
 echo 0 > memorizer_enabled
-echo 0 > memorizer_log_access
+echo 0 > log_accesses_enabled

@@ -135,7 +135,6 @@
 #include <linux/mempool.h>
 #include <linux/delay.h>
 #include <linux/uaccess.h>
-
 #include <asm/fixmap.h>
 
 #include "kobj_metadata.h"
@@ -638,23 +637,25 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 /**
  * memorizer_is_enabled - return the current logical state of memorizer_enabled
  *
- * The memorizer_enabled variable has four states. 0 and 1 mean unconditionally
+ * The memorizer_enabled variable has five states. 0 and 1 mean unconditionally
  * false and true, respectively. 2 and 3 both filter out uninteresting processes,
- * while 3 also filters out non-process contexts.
+ * while 3 also filters out non-process contexts. A value of 3 attaches memorizer
+ * to the current process, while values of 4 or greater attach memorizer to the 
+ * specified PID value. 
  */
 static bool __always_inline memorizer_is_enabled(bool filter) {
 	if(memorizer_enabled && !filter)
 		return true;
 
 	switch(memorizer_enabled) {
+	case 0:
+		return false;
 	case 1: 
 		return true;
 	case 2: 
 		return (!in_task()) || current->memorizer_enabled;
-	case 3: 
+	default: 
 		return in_task() && current->memorizer_enabled;
-	default:
-		return false;
 	}
 }
 
@@ -1539,7 +1540,6 @@ static ssize_t memorizer_enabled_read(struct file *filp, char __user *usr_buf, s
 
 	switch(memorizer_enabled) {
 	case 0:
-	default:
 		count = snprintf(buf, sizeof buf, "0 - memorizer disabled\n");
 		break;
 	case 1:
@@ -1549,7 +1549,10 @@ static ssize_t memorizer_enabled_read(struct file *filp, char __user *usr_buf, s
 		count = snprintf(buf, sizeof buf, "2 - memorizer enabled, proc root = %d\n", memorizer_enabled_pid);
 		break;
 	case 3:
-		count = snprintf(buf, sizeof buf, "3 - memorizer_enabled, no irq, proc root = %d\n", memorizer_enabled_pid);
+		count = snprintf(buf, sizeof buf, "3 - memorizer enabled, no irq, proc root = %d\n", memorizer_enabled_pid);
+		break;
+	default:
+		count = snprintf(buf, sizeof buf, "%d - memorizer enabled for target process pid = %d\n", memorizer_enabled, memorizer_enabled_pid);
 		break;
 	}
 
@@ -1558,26 +1561,42 @@ static ssize_t memorizer_enabled_read(struct file *filp, char __user *usr_buf, s
 
 static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf, size_t count, loff_t *ppos)
 {
-    int ret;
-    int value;
+	int ret;
+	int value;
 
-    ret = kstrtoint_from_user(buf, count, 10, &value);
-    if (ret)
-        return ret;
+	ret = kstrtoint_from_user(buf, count, 10, &value);
+	if (ret)
+		return ret;
 
-    if (value < 0 || value > 3)
-        return -EINVAL;
+	if (value < 0)
+		return -EINVAL;
 
-    pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
-    memorizer_enabled = value;
+	struct task_struct *task;
+	if (value > 3) {
+		task = find_get_task_by_vpid(value);
+		if (!task) {
+			return -EINVAL;
+		}
+	}
 
-    if (value == 2 || value == 3) {
-	memorizer_enabled_pid = task_pid_nr(current);
-	current->memorizer_enabled = 1;
+	pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
+	memorizer_enabled = value;
+
+	if (value == 0 || value == 1)
+		goto out;
+
+	if (value == 2 || value == 3) {
+		memorizer_enabled_pid = task_pid_nr(current);
+		current->memorizer_enabled = 1;
+	} else {
+		memorizer_enabled_pid = value;
+		task->memorizer_enabled = 1;
+		put_task_struct(task);
+	}
+
 	pr_info("memorizer_enabled_pid: %d\n", memorizer_enabled_pid);
-    }
-
-    return count;
+out:
+	return count;
 }
 
 static const struct file_operations memorizer_enabled_fops = {

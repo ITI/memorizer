@@ -171,7 +171,7 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	}
 
 	/* Iff free_index is 0 then this object is live */
-	if (!print_live_obj.value && kobj->free_index == 0) {
+	if (!log_live_enabled.value && kobj->free_index == 0) {
 		read_unlock(&kobj->rwlock);
 		return 0;
 	}
@@ -249,7 +249,7 @@ static int allocs_seq_show(struct seq_file *seq, void *v)
 	}
 	read_lock(&kobj->rwlock);
 	/* If free_index is 0 then this object is live */
-	if (!print_live_obj.value && kobj->free_index == 0) {
+	if (!log_live_enabled.value && kobj->free_index == 0) {
 		read_unlock(&kobj->rwlock);
 		return 0;
 	}
@@ -312,7 +312,7 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 
 	read_lock(&kobj->rwlock);
 	/* If free_index is 0 then this object is live */
-	if (!print_live_obj.value && kobj->free_index == 0) {
+	if (!log_live_enabled.value && kobj->free_index == 0) {
 		read_unlock(&kobj->rwlock);
 		return 0;
 	}
@@ -618,22 +618,7 @@ static const struct file_operations accesses_fops = {
 	.release	= kmap_release,
 };
 
-static ssize_t cfgmap_write(struct file *file, const char __user
-		*user_buf, size_t size, loff_t *ppos)
-{
-	unsigned long flags;
-	if (__memorizer_enter()) {
-		return -EBUSY;
-	}
-	local_irq_save(flags);
-	cfgmap_clear(cfgtbl);
-	local_irq_restore(flags);
-	__memorizer_exit();
-	*ppos += size;
-	return size;
-}
-
-static int cfgmap_seq_show(struct seq_file *seq, void *v)
+static int function_calls_seq_show(struct seq_file *seq, void *v)
 {
 	struct EdgeBucket * b;
 	int index;
@@ -647,15 +632,14 @@ static int cfgmap_seq_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
-static int cfgmap_open(struct inode *inode, struct file *file)
+static int function_calls_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, &cfgmap_seq_show, NULL);
+	return single_open(file, &function_calls_seq_show, NULL);
 }
 
-static const struct file_operations cfgmap_fops = {
+static const struct file_operations function_calls_fops = {
 	.owner		= THIS_MODULE,
-	.write		= cfgmap_write,
-	.open		= cfgmap_open,
+	.open		= function_calls_open,
 	.read		= seq_read,
 };
 
@@ -694,12 +678,12 @@ int memorizer_data_late_init(struct dentry *dentryMemDir)
 			NULL, &kmap_fops);
 	debugfs_create_file("kmap_stream", S_IRUGO, dentryMemDir,
 			NULL, &kmap_stream_fops);
-	debugfs_create_file("allocs", S_IRUGO, dentryMemDir,
+	debugfs_create_file("allocations", S_IRUGO, dentryMemDir,
 			NULL, &allocs_fops);
 	debugfs_create_file("accesses", S_IRUGO, dentryMemDir,
 			NULL, &accesses_fops);
-	debugfs_create_file("cfgmap", S_IRUGO|S_IWUGO, dentryMemDir,
-			NULL, &cfgmap_fops);
+	debugfs_create_file("function_calls", S_IRUGO, dentryMemDir,
+			NULL, &function_calls_fops);
 	debugfs_create_file("global_table", S_IRUGO, dentryMemDir,
 				     NULL, &globaltable_fops);
 

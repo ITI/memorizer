@@ -208,7 +208,7 @@ static int __init early_memorizer_enabled(char *arg)
 early_param("memorizer_enabled_boot", early_memorizer_enabled);
 
 /* flag enable/disable memory access logging */
-static BOOL_DECL(memorizer_log_access, false); 
+static BOOL_DECL(log_accesses_enabled, false); 
 static BOOL_DECL(mem_log_boot, false);
 static int __init early_mem_log_boot(char *arg)
 {
@@ -227,7 +227,7 @@ static int __init early_mem_log_boot(char *arg)
 early_param("mem_log_boot", early_mem_log_boot);
 
 /* flag enable/disable memory access logging */
-static BOOL_DECL(cfg_log_on, false);
+static BOOL_DECL(log_calls_enabled, false);
 static BOOL_DECL(cfg_log_boot, false);
 static int __init early_cfg_log_boot(char *arg)
 {
@@ -257,7 +257,7 @@ static int __init track_cc(char *arg){
 }
 early_param("mem_track_cc", track_cc);
 
-static BOOL_DECL(stack_trace_on, false);
+static BOOL_DECL(log_frames_enabled, false);
 static BOOL_DECL(stack_trace_boot, false);
 static int __init early_stack_trace_boot(char *arg)
 {
@@ -295,10 +295,10 @@ static int __init early_index_column_type(char *arg)
 early_param("memorizer_index_type", early_index_column_type);
 
 /* flag enable/disable printing of live objects */
-BOOL_DECL(print_live_obj, true);
+BOOL_DECL(log_live_enabled, true);
 
 /* Use WARN() macros if true */
-BOOL_DECL(verbose_warnings, false);
+BOOL_DECL(verbose_warnings_enabled, false);
 
 /* Function has table */
 struct FunctionHashTable * cfgtbl;
@@ -677,7 +677,7 @@ void __always_inline memorizer_mem_access(const void* addr, size_t size, bool
 	unsigned long flags;
 	unsigned long ua_flags = user_access_save();
 
-	if (unlikely(!memorizer_log_access.value) || unlikely(!memorizer_is_enabled(true))) {
+	if (unlikely(!log_accesses_enabled.value) || unlikely(!memorizer_is_enabled(true))) {
 		track_disabled_access();
 		goto out;
 	}
@@ -721,7 +721,7 @@ void __cyg_profile_func_enter(void *ip, void *parent_ip)
 	unsigned long flags;
 	struct pt_regs pt_regs;
 
-	if (!cfg_log_on.value && !stack_trace_on.value)
+	if (!log_calls_enabled.value && !log_frames_enabled.value)
 		return;
 	/* Prevent infinite loop */
 	if (__memorizer_enter())
@@ -747,7 +747,7 @@ void __cyg_profile_func_enter(void *ip, void *parent_ip)
 	 * the callee bp and callee bp + 0x10 is the func sp.
 	 */
 
-	if (stack_trace_on.value) {
+	if (log_frames_enabled.value) {
 		uintptr_t callee_bp = 0, callee_sp = 0;
 		register uintptr_t cyg_rbp asm("rbp");
 		callee_bp = *(uintptr_t *)cyg_rbp; // deference callee bp
@@ -758,7 +758,7 @@ void __cyg_profile_func_enter(void *ip, void *parent_ip)
 	}
 
 	/* cfg_update_counts creates <from, to, callee kobj, args kobj> tuple */
-	cfg_update_counts(cfgtbl, (uintptr_t)parent_ip, (uintptr_t)ip, &pt_regs, stack_trace_on.value);
+	cfg_update_counts(cfgtbl, (uintptr_t)parent_ip, (uintptr_t)ip, &pt_regs, log_frames_enabled.value);
 #endif
 
 #else
@@ -941,13 +941,13 @@ void memorizer_discard_kobj(struct memorizer_kobj * kobj)
 
 
 /**
- * clear_dead_objs --- remove entries from freed list and free kobjs
+ * clear_dead_objects --- remove entries from freed list and free kobjs
  *
  * @only_printed_items - limit clearance to certain dead items.
  * 
  * This must be called in process context, without acquiring inmem.
  */
-static int clear_dead_objs(bool only_printed_items)
+static int clear_dead_objects(bool only_printed_items)
 {
 	struct memorizer_kobj *kobj;
 	LIST_HEAD(object_list);
@@ -1023,7 +1023,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		BUG_ON(kobj->state != KOBJ_STATE_ALLOCATED);
 		BUG_ON(kobj->access_counts.next == LIST_POISON1);
 		BUG_ON(kobj->access_counts.prev == LIST_POISON2);
-		if(verbose_warnings.value) {
+		if(verbose_warnings_enabled.value) {
 			WARN(kobj->va_ptr != kobj_ptr,
 				"kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
 				kobj,
@@ -1452,21 +1452,42 @@ void memorizer_register_global(const void *ptr, size_t size)
 /*
  * clear_free_list_write() - call the function to clear the free'd kobjs
  */
-static ssize_t clear_dead_objs_write(struct file *file, const char __user
+static ssize_t clear_dead_objects_write(struct file *file, const char __user
 		*user_buf, size_t size, loff_t *ppos)
 {
 	int err;
-	pr_info("clear_dead_objs: Clearing the free'd kernel objects\n");
-	err = clear_dead_objs(false);
+	pr_info("clear_dead_objects: Clearing the free'd kernel objects\n");
+	err = clear_dead_objects(false);
 	if(err)
 		return err;
 	*ppos += size;
 	return size;
 }
 
-static const struct file_operations clear_dead_objs_fops = {
+static const struct file_operations clear_dead_objects_fops = {
 	.owner		= THIS_MODULE,
-	.write		= clear_dead_objs_write,
+	.write		= clear_dead_objects_write,
+};
+
+static ssize_t clear_function_calls_write(struct file *file, const char __user
+		*user_buf, size_t size, loff_t *ppos)
+{
+	unsigned long flags;
+	if (__memorizer_enter()) {
+		return -EBUSY;
+	}
+	local_irq_save(flags);
+	function_calls_clear(cfgtbl);
+	local_irq_restore(flags);
+	__memorizer_exit();
+	*ppos += size;
+	pr_info("clear_function_calls: Clearing function calls\n");
+	return size;
+}
+
+static const struct file_operations clear_function_calls_fops = {
+	.owner		= THIS_MODULE,
+	.write		= clear_function_calls_write,
 };
 
 /*
@@ -1477,7 +1498,7 @@ static ssize_t clear_printed_list_write(struct file *file, const char __user
 {
 	int err;
 	pr_info("clear_printed_list: Clearing the free'd and printed kernel objects\n");
-	err = clear_dead_objs(true);
+	err = clear_dead_objects(true);
 	if(err)
 		return err;
 	*ppos += size;
@@ -1495,14 +1516,14 @@ static int stats_seq_show(struct seq_file *seq, void *v)
 	return seq_print_stats(seq);
 }
 
-static int show_stats_open(struct inode *inode, struct file *file)
+static int stats_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, &stats_seq_show, NULL);
 }
 
-static const struct file_operations show_stats_fops = {
+static const struct file_operations stats_fops = {
 	.owner		= THIS_MODULE,
-	.open		= show_stats_open,
+	.open		= stats_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
 	.release	= single_release,
@@ -1618,21 +1639,21 @@ void __init memorizer_init(void)
 		memorizer_enabled = 0;
 	}
 	if (mem_log_boot.value ) {
-		memorizer_log_access.value = true;
+		log_accesses_enabled.value = true;
 	} else {
-		memorizer_log_access.value = false;
+		log_accesses_enabled.value = false;
 	}
 	if (cfg_log_boot.value ) {
-		cfg_log_on.value = true;
+		log_calls_enabled.value = true;
 	} else {
-		cfg_log_on.value = false;
+		log_calls_enabled.value = false;
 	}
-	if (stack_trace_boot.value && !cfg_log_on.value) {
-		stack_trace_on.value = true;
+	if (stack_trace_boot.value && !log_calls_enabled.value) {
+		log_frames_enabled.value = true;
 	} else {
-		stack_trace_on.value = false;
+		log_frames_enabled.value = false;
 	}
-	print_live_obj.value = true;
+	log_live_enabled.value = true;
 
 	local_irq_restore(flags);
 	__memorizer_exit();
@@ -1695,26 +1716,28 @@ static int memorizer_late_init(void)
 	// TODO upcoming feature robadams@illinois.edu memorizer_control_late_init(dentryMemDir);
 
 	// stats interface 
-	debugfs_create_file("show_stats", S_IRUGO, dentryMemDir,
-			NULL, &show_stats_fops);
+	debugfs_create_file("stats", S_IRUGO, dentryMemDir,
+			NULL, &stats_fops);
 	
 	// control lnterfaces
-	debugfs_create_file("clear_dead_objs", S_IWUGO, dentryMemDir,
-			NULL, &clear_dead_objs_fops);
+	debugfs_create_file("clear_dead_objects", S_IWUGO, dentryMemDir,
+			NULL, &clear_dead_objects_fops);
 	debugfs_create_file("clear_printed_list", S_IWUGO, dentryMemDir,
 			NULL, &clear_printed_list_fops);
+	debugfs_create_file("clear_function_calls", S_IWUGO, dentryMemDir,
+			NULL, &clear_function_calls_fops);
 	debugfs_create_file("memorizer_enabled", S_IRUGO|S_IWUGO,
 			dentryMemDir, NULL, &memorizer_enabled_fops);
-	memorizer_create_bool("memorizer_log_access", S_IRUGO|S_IWUGO,
-			dentryMemDir, &memorizer_log_access);
-	memorizer_create_bool("cfg_log_on", S_IRUGO|S_IWUGO,
-			dentryMemDir, &cfg_log_on);
-	memorizer_create_bool("stack_trace_on", S_IRUGO|S_IWUGO,
-			dentryMemDir, &stack_trace_on);
-	memorizer_create_bool("print_live_obj", S_IRUGO | S_IWUGO,
-			dentryMemDir, &print_live_obj);
-	memorizer_create_bool("verbose_warnings", S_IRUGO | S_IWUGO,
-			dentryMemDir, &verbose_warnings);
+	memorizer_create_bool("log_accesses_enabled", S_IRUGO|S_IWUGO,
+			dentryMemDir, &log_accesses_enabled);
+	memorizer_create_bool("log_calls_enabled", S_IRUGO|S_IWUGO,
+			dentryMemDir, &log_calls_enabled);
+	memorizer_create_bool("log_frames_enabled", S_IRUGO|S_IWUGO,
+			dentryMemDir, &log_frames_enabled);
+	memorizer_create_bool("log_live_enabled", S_IRUGO | S_IWUGO,
+			dentryMemDir, &log_live_enabled);
+	memorizer_create_bool("verbose_warnings_enabled", S_IRUGO | S_IWUGO,
+			dentryMemDir, &verbose_warnings_enabled);
 
 #ifdef CONFIG_MEMORIZER_DEBUGFS_RAM
 	{

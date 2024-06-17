@@ -58,16 +58,16 @@ Disabling the memorizer:
 echo 0 > memorizer_enabled
 ```
 
-## memorizer_log_access
-This enables/disables the tracking for accesses(loads and stores). It is disabled by default during bootup. To ensure complete tracking, both memorizer_enabled and memorizer_log_access should be enabled.
+## log_accesses_enabled
+This enables/disables the tracking for accesses(loads and stores). It is disabled by default during bootup. To ensure complete tracking, both memorizer_enabled and log_accesses_enabled should be enabled.
 
 Enabling access logging:
 ```
-echo 1 > memorizer_log_access
+echo 1 > log_accesses_enabled
 ```
 Disabling access logging
 ```
-echo 0 > memorizer_log_access
+echo 0 > log_accesses_enabled
 ```
 
 ## kmap

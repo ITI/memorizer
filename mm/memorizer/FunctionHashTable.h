@@ -29,10 +29,10 @@ void func_hash_tbl_init(void);
 struct FunctionHashTable * create_function_hashtable(void);
 
 // Update the counts for an edge, adding to table if not already there
-void cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t to, struct pt_regs *pt_regs, bool stack_trace_on);
+void cfg_update_counts(struct FunctionHashTable * ht, uintptr_t from, uintptr_t to, struct pt_regs *pt_regs, bool log_frames_enabled);
 
 // Clear entries and reset
-void cfgmap_clear(struct FunctionHashTable * ht);
+void function_calls_clear(struct FunctionHashTable * ht);
 
 // Print directly to console TODO: this is just temp hack for check
 void console_print(struct FunctionHashTable * ht);

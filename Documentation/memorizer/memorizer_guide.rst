@@ -82,7 +82,7 @@ The memorizer records event data and outputs it in the form of a CAPMAP.
 A CAPMAP has two types of entries:
 
 Alloc/Free Information
-----------------------
+^^^^^^^^^^^^^^^^^^^^^^
 
 These are denoted by non indented lines. Each line represents a kernel
 object and the information recorded is as follows:
@@ -101,7 +101,7 @@ object and the information recorded is as follows:
 -  Slab Cache - Type of slab cache used for the allocation
 
 Access Information
-------------------
+^^^^^^^^^^^^^^^^^^
 
 These are denoted by indented lines. Each line represents a memory
 location that the current memory object has accesses. The information
@@ -116,8 +116,6 @@ User Space. The DebugFS interface is present in the
 /sys/kernel/debug/memorizer directory and provides controls for the
 memorizer. The following section details the use of each file in the
 DebugFS directory.
-
---------------
 
 Seting up memorizer and kernel testing
 --------------------------------------
@@ -171,7 +169,7 @@ with it. You can find the ``memorizer.config`` file in the
 ``/arch/x86/configs/memorizer.config`` directory.
 
 Summary of GRUB Configuration Updates
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 -  **GRUB Timeout Settings**:
 
@@ -265,7 +263,7 @@ TL;DR:
 Now that we have a kernel, we need to run it in a VM for automated
 tests. This is so we don’t have to allocate a machine specifically for
 testing Memorizer and worry about the networking of that machine and
-what is allowed to connect to it and whether it’s physically plugged in.
+what is allowed to connect to it and whether it is physically plugged in.
 
 QEMU needs 3 things to run: A kernel, an initrd, and an OS image. We
 already have a kernel from step 1. I bashed my head against a brick wall
@@ -349,7 +347,7 @@ want to get this file out of the VM so we can look at it with other
 tools. There are two ways to do this.
 
 Loopback device
-~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^
 
 One way is to use a loopback device. Unfortunately this doesn’t work
 super well for automated tests, because it requires root, and uses
@@ -412,10 +410,9 @@ memorizer kernel and get the ``kmap`` file off of it. This process
 should work manually, and you can get started on analyzing and viewing
 the data in the ``kmap`` file on your own machine.
 
---------------
 
-``Initramfs`` method for memorizer
-----------------------------------
+Initramfs method for memorizer
+------------------------------
 
 Overview
 ^^^^^^^^

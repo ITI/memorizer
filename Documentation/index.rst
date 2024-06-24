@@ -60,6 +60,7 @@ Various other manuals with useful information for all kernel developers.
    fault-injection/index
    livepatch/index
    rust/index
+   memorizer/index
 
 
 User-oriented documentation

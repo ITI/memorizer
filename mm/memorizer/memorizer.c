@@ -134,7 +134,6 @@
 #include <linux/kasan-checks.h>
 #include <linux/mempool.h>
 #include <linux/delay.h>
-#include <linux/uaccess.h>
 #include <asm/fixmap.h>
 
 #include "kobj_metadata.h"
@@ -676,22 +675,21 @@ void __always_inline memorizer_mem_access(const void* addr, size_t size, bool
 		write, uintptr_t ip)
 {
 	unsigned long flags;
-	unsigned long ua_flags = user_access_save();
 
 	if (unlikely(!log_accesses_enabled.value) || unlikely(!memorizer_is_enabled(true))) {
 		track_disabled_access();
-		goto out;
+		return;
 	}
 
 	if (current->kasan_depth > 0) {
 		track_induced_access();
-		goto out;
+		return;
 	}
 
 	if (__memorizer_enter()) {
 		/* Can't sleep, have to punt */
 		track_induced_access();
-		goto out;
+		return;
 	}
 
 	local_irq_save(flags);
@@ -705,8 +703,6 @@ void __always_inline memorizer_mem_access(const void* addr, size_t size, bool
 	local_irq_restore(flags);
 
 	__memorizer_exit();
-out:
-	user_access_restore(ua_flags);
 }
 
 //==-- Memorizer kernel object tracking -----------------------------------==//
@@ -724,7 +720,7 @@ void __cyg_profile_func_enter(void *ip, void *parent_ip)
 
 	if (!log_calls_enabled.value && !log_frames_enabled.value)
 		return;
-	/* Prevent infinite loop */
+	/* Prevent infinete loop */
 	if (__memorizer_enter())
 		return;
 

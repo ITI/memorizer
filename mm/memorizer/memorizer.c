@@ -675,13 +675,8 @@ void __always_inline memorizer_mem_access(const void* addr, size_t size, bool
 		write, uintptr_t ip)
 {
 	unsigned long flags;
-<<<<<<< HEAD
-	unsigned long ua_flags = user_access_save();
 
 	if (unlikely(!log_accesses_enabled.value) || unlikely(!memorizer_is_enabled(true))) {
-=======
-	if (unlikely(!memorizer_log_access.value) || unlikely(!memorizer_is_enabled(true))) {
->>>>>>> parent of 49b2ff9dcb8f (Fix UACCESS enabled warnings)
 		track_disabled_access();
 		return;
 	}

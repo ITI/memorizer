@@ -150,81 +150,82 @@ static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
  */
 static int kmap_seq_show(struct seq_file *seq, void *v)
 {
-	struct access_from_counts *afc;
-	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
-			object_list);
-	char *new_alloc_type = 0;
-	uintptr_t free_ip = 0;
+    struct access_from_counts *afc;
+    struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj, object_list);
+    char *new_alloc_type = 0;
+    uintptr_t free_ip = 0;
+    int bkt;
 
-	if (v == SEQ_START_TOKEN) {
-		/* kmap file doesn't have a header */
-		return 0;
-	}
+    if (v == SEQ_START_TOKEN) {
+        /* kmap file doesn't have a header */
+        return 0;
+    }
 
-	read_lock(&kobj->rwlock);
+    read_lock(&kobj->rwlock);
 
-	if((kobj->free_index!=0) != (kobj->state==KOBJ_STATE_FREED)) {
-		pr_err("kobj(%p)->free_index==%lu, ->state==%d\n",
-			kobj, kobj->free_index, kobj->state);
-		read_unlock(&kobj->rwlock);
-		BUG();
-	}
+    if ((kobj->free_index != 0) != (kobj->state == KOBJ_STATE_FREED)) {
+        pr_err("kobj(%p)->free_index==%lu, ->state==%d\n",
+               kobj, kobj->free_index, kobj->state);
+        read_unlock(&kobj->rwlock);
+        BUG();
+    }
 
-	/* Iff free_index is 0 then this object is live */
-	if (!log_live_enabled.value && kobj->free_index == 0) {
-		read_unlock(&kobj->rwlock);
-		return 0;
-	}
-	kobj->printed = true;
+    /* Iff free_index is 0 then this object is live */
+    if (!log_live_enabled.value && kobj->free_index == 0) {
+        read_unlock(&kobj->rwlock);
+        return 0;
+    }
+    kobj->printed = true;
 
-	/* Print object allocation info */
-	if((kobj->free_ip >> 32) == 0xdeadbeef) {
-		/* This allocation was replaced by another
-		 * allocation with no interveing `free()`
-		 * for reasons unknown. The subsequent
-		 * allocator is in `free_ip`.
-		 */
-		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
-		/* Some post-processing scripts expect to
-		 * see "DEADBEEF" in this case.
-		 */
-		free_ip = 0xdeadbeef;
-	} else if ((kobj->free_ip >> 32) == 0xfeed) {
-		/* This allocation was replaced by another
-		 * allocation with no intervening `free()` due
-		 * to a nested allocation. The subsequent allocator
-		 * is in `free_ip`.
-		 * */
-		new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
-		free_ip = 0xfedbeef;
-	} else {
-		/* Normal allocation */
-		new_alloc_type = "";
-		free_ip = kobj->free_ip;
-	}
-	seq_printf(seq,"%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s,%s\n",
-			(void*) kobj->alloc_ip, kobj->pid, (void*) kobj->va_ptr,
-			kobj->size, kobj->alloc_index, kobj->free_index, (void*)
-			free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
-			kobj->slabname,new_alloc_type);
+    /* Print object allocation info */
+    if ((kobj->free_ip >> 32) == 0xdeadbeef) {
+        /* This allocation was replaced by another
+         * allocation with no intervening `free()`
+         * for reasons unknown. The subsequent
+         * allocator is in `free_ip`.
+         */
+        new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
+        /* Some post-processing scripts expect to
+         * see "DEADBEEF" in this case.
+         */
+        free_ip = 0xdeadbeef;
+    } else if ((kobj->free_ip >> 32) == 0xfeed) {
+        /* This allocation was replaced by another
+         * allocation with no intervening `free()` due
+         * to a nested allocation. The subsequent allocator
+         * is in `free_ip`.
+         * */
+        new_alloc_type = alloc_type_str(kobj->free_ip & 0xffff);
+        free_ip = 0xfedbeef;
+    } else {
+        /* Normal allocation */
+        new_alloc_type = "";
+        free_ip = kobj->free_ip;
+    }
+    seq_printf(seq, "%-p,%d,%p,%lu,%lu,%lu,%p,%s,%s,%s,%s\n",
+               (void *)kobj->alloc_ip, kobj->pid, (void *)kobj->va_ptr,
+               kobj->size, kobj->alloc_index, kobj->free_index, (void *)
+               free_ip, alloc_type_str(kobj->alloc_type), kobj->comm,
+               kobj->slabname, new_alloc_type);
 
-	/* print each access IP with counts and remove from list */
-	list_for_each_entry(afc, &kobj->access_counts, list) {
-		if (kobj->alloc_type == MEM_NONE && track_calling_context.value) {
-			seq_printf(seq, "  from:%p,caller:%p,%llu,%llu\n",
-					(void *) afc->ip, (void *)afc->caller,
-					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads);
-		} else
-			seq_printf(seq, "  %p,%llu,%llu,%lld\n",
-					(void *) afc->ip,
-					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads,
-					(unsigned long long) afc->pid);
-	}
+    /* Iterate over the hashtable and print each access IP with counts */
+    hash_for_each(kobj->access_counts, bkt, afc, hnode) {
+        if (kobj->alloc_type == MEM_NONE) {
+            seq_printf(seq, "  from:%p,%llu,%llu\n",
+                       (void *)afc->ip,
+                       (unsigned long long)afc->writes,
+                       (unsigned long long)afc->reads);
+        } else {
+            seq_printf(seq, "  %p,%llu,%llu,%lld\n",
+                       (void *)afc->ip,
+                       (unsigned long long)afc->writes,
+                       (unsigned long long)afc->reads,
+                       (unsigned long long)afc->pid);
+        }
+    }
 
-	read_unlock(&kobj->rwlock);
-	return 0;
+    read_unlock(&kobj->rwlock);
+    return 0;
 }
 
 
@@ -295,55 +296,59 @@ static int allocs_seq_show(struct seq_file *seq, void *v)
  */
 static int accesses_seq_show(struct seq_file *seq, void *v)
 {
-	struct access_from_counts *afc;
-	struct memorizer_kobj *kobj = list_entry(v, struct memorizer_kobj,
-			object_list);
+    struct access_from_counts *afc;
+    struct memorizer_kobj *kobj;
+    int bkt;
 
-	if (v == SEQ_START_TOKEN) {
-		/* first time through, print the header */
-		seq_printf(seq,
-			"alloc_index,access_ip,"
+    if (v == SEQ_START_TOKEN) {
+        /* first time through, print the header */
+        seq_printf(seq,
+                   "alloc_index,access_ip,"
 #ifdef CONFIG_MEMORIZER_TRACKPIDS
-			"pid,"
+                   "pid,"
 #endif
-			"writes,reads\n");
-		return 0;
-	}
+                   "writes,reads\n");
+        return 0;
+    }
 
-	read_lock(&kobj->rwlock);
-	/* If free_index is 0 then this object is live */
-	if (!log_live_enabled.value && kobj->free_index == 0) {
-		read_unlock(&kobj->rwlock);
-		return 0;
-	}
-	kobj->printed = true;
+    kobj = list_entry(v, struct memorizer_kobj, object_list);
 
-	/* print each access IP with counts and remove from list */
-	list_for_each_entry(afc, &kobj->access_counts, list) {
-		if (kobj->alloc_type == MEM_NONE && track_calling_context.value) {
-			seq_printf(seq, "  from:%p,caller:%p,%llu,%llu\n",
-					(void *) afc->ip, (void *)afc->caller,
-					(unsigned long long) afc->writes,
-					(unsigned long long) afc->reads);
-		} else
-			seq_printf(seq,
+    read_lock(&kobj->rwlock);
+    /* If free_index is 0 then this object is live */
+    if (!log_live_enabled.value && kobj->free_index == 0) {
+        read_unlock(&kobj->rwlock);
+        return 0;
+    }
+    kobj->printed = true;
+
+    /* print each access IP with counts and remove from hashtable */
+    hash_for_each(kobj->access_counts, bkt, afc, hnode) {
+        if (kobj->alloc_type == MEM_NONE) {
+            seq_printf(seq, "  from:%p,%llu,%llu\n",
+                       (void *)afc->ip,
+                       (unsigned long long)afc->writes,
+                       (unsigned long long)afc->reads);
+        } else {
+            seq_printf(seq,
 #ifdef CONFIG_MEMORIZER_TRACKPIDS
-				"%llu,%p,%llu,%llu,%llu\n",
+                       "%llu,%p,%llu,%llu,%llu\n",
 #else
-				"%llu,%p,%llu,%llu\n",
+                       "%llu,%p,%llu,%llu\n",
 #endif
-				(unsigned long long)kobj->alloc_index,
-				(void *) afc->ip,
+                       (unsigned long long)kobj->alloc_index,
+                       (void *)afc->ip,
 #ifdef CONFIG_MEMORIZER_TRACKPIDS
-				(unsigned long long)afc->pid,
+                       (unsigned long long)afc->pid,
 #endif
-				(unsigned long long) afc->writes,
-				(unsigned long long) afc->reads);
-	}
+                       (unsigned long long)afc->writes,
+                       (unsigned long long)afc->reads);
+        }
+    }
 
-	read_unlock(&kobj->rwlock);
-	return 0;
+    read_unlock(&kobj->rwlock);
+    return 0;
 }
+
 
 /*
  * kmap_seq_stop() --- clean up on end of single read session.
@@ -701,4 +706,5 @@ int memorizer_data_late_init(struct dentry *dentryMemDir)
 #endif
 	return 0;
 }
+
 

@@ -1,9 +1,9 @@
 /*===-- LICENSE ------------------------------------------------------------===
  * Developed by:
  *
- *    Research Group of Professor Vikram Adve in the Department of Computer
- *    Science The University of Illinois at Urbana-Champaign
- *    http://web.engr.illinois.edu/~vadve/Home.html
+ *	Research Group of Professor Vikram Adve in the Department of Computer
+ *	Science The University of Illinois at Urbana-Champaign
+ *	http://web.engr.illinois.edu/~vadve/Home.html
  *
  * Copyright (c) 2015, Nathan Dautenhahn
  * Copyright (c) 2024, Board of Trustees of the University of Illinois
@@ -23,9 +23,9 @@
  *
  *===-----------------------------------------------------------------------===
  *
- *       Filename:  kobj_metadata.h
+ *	   Filename:  kobj_metadata.h
  *
- *    Description:  Header file for metadata tracking functionality.
+ *	Description:  Header file for metadata tracking functionality.
  *
  *===-----------------------------------------------------------------------===
  */
@@ -61,48 +61,48 @@
  * This data structure captures the details of allocated objects
  */
 struct memorizer_kobj {
-    struct rb_node rb_node;
-    enum AllocType alloc_type;
-    rwlock_t rwlock;
-    long obj_id;
-    uintptr_t alloc_ip;
-    uintptr_t free_ip;
-    uintptr_t va_ptr;
-    uintptr_t pa_ptr;
-    size_t size;
-    unsigned long alloc_index;
-    unsigned long free_index;
-    pid_t pid;
-    char comm[TASK_COMM_LEN];
-    char funcstr[KSYM_NAME_LEN];
-    bool printed;
-    char *slabname;
-    struct list_head object_list;
-    DECLARE_HASHTABLE(access_counts, ACCESS_COUNTS_HASH_BITS); // Use a hashtable
-    struct memorizer_kobj *args_kobj;
-    unsigned short state;
+	struct rb_node rb_node;
+	enum AllocType alloc_type;
+	rwlock_t rwlock;
+	long obj_id;
+	uintptr_t alloc_ip;
+	uintptr_t free_ip;
+	uintptr_t va_ptr;
+	uintptr_t pa_ptr;
+	size_t size;
+	unsigned long alloc_index;
+	unsigned long free_index;
+	pid_t pid;
+	char comm[TASK_COMM_LEN];
+	char funcstr[KSYM_NAME_LEN];
+	bool printed;
+	char *slabname;
+	struct list_head object_list;
+	DECLARE_HASHTABLE(access_counts, ACCESS_COUNTS_HASH_BITS); // Use a hashtable
+	struct memorizer_kobj *args_kobj;
+	unsigned short state;
 };
 
 enum kobj_state_t {
-    KOBJ_STATE_NULL = 0,
-    KOBJ_STATE_ALLOCATED = 1,
-    KOBJ_STATE_FREED = 2,
-    KOBJ_STATE_REUSE = 3,
+	KOBJ_STATE_NULL = 0,
+	KOBJ_STATE_ALLOCATED = 1,
+	KOBJ_STATE_FREED = 2,
+	KOBJ_STATE_REUSE = 3,
 };
 
 struct access_from_counts {
-    struct hlist_node hnode; // For hashtable
-    struct list_head list;   // For reuse list
-    uintptr_t ip;
-    uint64_t pid;
-    uint64_t writes;
-    uint64_t reads;
+	struct hlist_node hnode; // For hashtable
+	struct list_head list;   // For reuse list
+	uintptr_t ip;
+	uint64_t pid;
+	uint64_t writes;
+	uint64_t reads;
 };
 
 struct pid_obj {
-    uint32_t key;
-    pid_t pid;
-    char comm[TASK_COMM_LEN];
+	uint32_t key;
+	pid_t pid;
+	char comm[TASK_COMM_LEN];
 };
 /*
  * Kernel virtual addresses start at ffff880000000000 - ffffc7ffffffffff (=64
@@ -110,32 +110,32 @@ struct pid_obj {
  * Documentation/x86/x86_64/mm.txt. This means bit 43 is always set, which means
  * we can remove all bytes where it is unset: TODO Optimization.
  *
- *  63             47 46                   24 23        12 11         0
+ *  63			 47 46				   24 23		12 11		 0
  * +-----------------+--*--------------------+------------+------------+
- * |      ---        |          L3           |     L2     |     L1     |
+ * |	  ---		|		  L3		   |	 L2	 |	 L1	 |
  * +-----------------+-----------------------+------------+------------+
  *
  * The lookup table maps each byte of allocatable virtual address space to a
  * pointer to kernel object metadata--> 8 byte pointer.
  *
  */
-#define LT_L1_SHIFT		    12
+#define LT_L1_SHIFT			12
 #define LT_L1_ENTRIES		(_AC(1,UL) << LT_L1_SHIFT)
 #define LT_L1_ENTRY_SIZE	(sizeof(void *))
-#define LT_L1_SIZE		    (LT_L1_ENTRIES * LT_L1_ENTRY_SIZE)
+#define LT_L1_SIZE			(LT_L1_ENTRIES * LT_L1_ENTRY_SIZE)
 
-#define LT_L2_SHIFT		    27
+#define LT_L2_SHIFT			27
 #define LT_L2_ENTRIES		(_AC(1,UL) << (LT_L2_SHIFT - LT_L1_SHIFT))
 #define LT_L2_ENTRY_SIZE	(sizeof(void *))
-#define LT_L2_SIZE		    (LT_L2_ENTRIES * LT_L2_ENTRY_SIZE)
+#define LT_L2_SIZE			(LT_L2_ENTRIES * LT_L2_ENTRY_SIZE)
 
-#define LT_L3_SHIFT		    47
+#define LT_L3_SHIFT			47
 #define LT_L3_ENTRIES		(_AC(1,UL) << (LT_L3_SHIFT - LT_L2_SHIFT))
 #define LT_L3_ENTRY_SIZE	(sizeof(void *))
-#define LT_L3_SIZE		    (LT_L3_ENTRIES * LT_L3_ENTRY_SIZE)
+#define LT_L3_SIZE			(LT_L3_ENTRIES * LT_L3_ENTRY_SIZE)
 
 
-#define PID_ENTRIES		    (_AC(1,UL) << 5)
+#define PID_ENTRIES			(_AC(1,UL) << 5)
 //PLACEHOLDER VALUE
 //==-- Table data structures -----------------------------------------------==//
 

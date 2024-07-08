@@ -407,10 +407,10 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
   pr_info("\texecutable: %s\n", kobj->comm);
   // Iterate over the hashtable
   hash_for_each(kobj->access_counts, bkt, entry, hnode) {
-    pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
-        (void *)entry->ip, entry->pid,
-        (unsigned long long)entry->writes,
-        (unsigned long long)entry->reads);
+	pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
+		(void *)entry->ip, entry->pid,
+		(unsigned long long)entry->writes,
+		(unsigned long long)entry->reads);
   }
 }
 EXPORT_SYMBOL(__print_memorizer_kobj);
@@ -427,24 +427,24 @@ EXPORT_SYMBOL(memorizer_print_stats);
 static struct access_from_counts *
 __alloc_afc(void)
 {
-    struct access_from_counts *afc;
-    struct list_head *recycle_entry;
+	struct access_from_counts *afc;
+	struct list_head *recycle_entry;
 
-    /* First try the recycle bin */
-    recycle_entry = pop_or_null(&memorizer_afc_reuse_list);
-    if (recycle_entry) {
-        afc = list_entry(recycle_entry, struct access_from_counts, list);
-        track_afc_alloc_reuse();
-        return afc;
-    }
+	/* First try the recycle bin */
+	recycle_entry = pop_or_null(&memorizer_afc_reuse_list);
+	if (recycle_entry) {
+		afc = list_entry(recycle_entry, struct access_from_counts, list);
+		track_afc_alloc_reuse();
+		return afc;
+	}
 
-    track_afc_alloc_memalloc();
-    afc = memalloc(sizeof(struct access_from_counts));
-    if (afc) {
-        INIT_LIST_HEAD(&afc->list);  // Initialize the list head
-        INIT_HLIST_NODE(&afc->hnode);  // Initialize the hlist node
-    }
-    return afc;
+	track_afc_alloc_memalloc();
+	afc = memalloc(sizeof(struct access_from_counts));
+	if (afc) {
+		INIT_LIST_HEAD(&afc->list);  // Initialize the list head
+		INIT_HLIST_NODE(&afc->hnode);  // Initialize the hlist node
+	}
+	return afc;
 }
 
 /**
@@ -498,21 +498,21 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
  */
 static inline struct access_from_counts *
 unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct memorizer_kobj *kobj) {
-    struct access_from_counts *afc = NULL;
+	struct access_from_counts *afc = NULL;
 
-    // Search in the hashtable
-    hash_for_each_possible(kobj->access_counts, afc, hnode, src_ip) {
-        if (afc->ip == src_ip && afc->pid == pid) {
-            return afc;
-        }
-    }
+	// Search in the hashtable
+	hash_for_each_possible(kobj->access_counts, afc, hnode, src_ip) {
+		if (afc->ip == src_ip && afc->pid == pid) {
+			return afc;
+		}
+	}
 
-    // Allocate the new one and initialize the count
-    afc = alloc_and_init_access_counts(src_ip, pid);
-    if (afc) {
-        hash_add(kobj->access_counts, &afc->hnode, src_ip);
-    }
-    return afc;
+	// Allocate the new one and initialize the count
+	afc = alloc_and_init_access_counts(src_ip, pid);
+	if (afc) {
+		hash_add(kobj->access_counts, &afc->hnode, src_ip);
+	}
+	return afc;
 }
 
 /**
@@ -885,30 +885,30 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
  */
 void __memorizer_discard_kobj(struct memorizer_kobj *kobj)
 {
-    struct access_from_counts *afc;
-    struct hlist_node *tmp;
-    int bkt;
+	struct access_from_counts *afc;
+	struct hlist_node *tmp;
+	int bkt;
 
-    BUG_ON(kobj->state != KOBJ_STATE_FREED);
-    BUG_ON(kobj->object_list.next == LIST_POISON1);
-    BUG_ON(kobj->object_list.prev == LIST_POISON2);
+	BUG_ON(kobj->state != KOBJ_STATE_FREED);
+	BUG_ON(kobj->object_list.next == LIST_POISON1);
+	BUG_ON(kobj->object_list.prev == LIST_POISON2);
 
-    /* Remove from (likely) memorizer_object_freed_list */
-    list_del(&kobj->object_list);
+	/* Remove from (likely) memorizer_object_freed_list */
+	list_del(&kobj->object_list);
 
-    /* Remove all entries from the hashtable and add them to the reuse list */
-    hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
-        hash_del(&afc->hnode);
-        list_add(&afc->list, &memorizer_afc_reuse_list);
-    }
-    hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
+	/* Remove all entries from the hashtable and add them to the reuse list */
+	hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
+		hash_del(&afc->hnode);
+		list_add(&afc->list, &memorizer_afc_reuse_list);
+	}
+	hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
 
-    /* Add kernel object to the cache list */
-    kobj->state = KOBJ_STATE_REUSE;
-    list_add_tail(&kobj->object_list, &memorizer_object_reuse_list);
+	/* Add kernel object to the cache list */
+	kobj->state = KOBJ_STATE_REUSE;
+	list_add_tail(&kobj->object_list, &memorizer_object_reuse_list);
 
-    /* stats */
-    track_kobj_free();
+	/* stats */
+	track_kobj_free();
 }
 
 
@@ -990,45 +990,45 @@ static int clear_dead_objects(bool only_printed_items)
  */
 void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
-    struct memorizer_kobj *kobj;
-    unsigned long flags;
-    struct access_from_counts *afc;
-    struct hlist_node *tmp;
-    int bkt;
+	struct memorizer_kobj *kobj;
+	unsigned long flags;
+	struct access_from_counts *afc;
+	struct hlist_node *tmp;
+	int bkt;
 
-    /* find and remove the kobj from the lookup table and return the kobj */
-    kobj = lt_remove_kobj(kobj_ptr);
+	/* find and remove the kobj from the lookup table and return the kobj */
+	kobj = lt_remove_kobj(kobj_ptr);
 
-    /*
-     * If this is null it means we are freeing something we did not insert
-     * into our tree and we have a missed alloc track, otherwise we update
-     * some of the metadata for free.
-     */
-    if (kobj) {
-        BUG_ON(kobj->state != KOBJ_STATE_ALLOCATED);
+	/*
+	 * If this is null it means we are freeing something we did not insert
+	 * into our tree and we have a missed alloc track, otherwise we update
+	 * some of the metadata for free.
+	 */
+	if (kobj) {
+		BUG_ON(kobj->state != KOBJ_STATE_ALLOCATED);
 
-        /* Update the free_index for the object */
-        write_lock_irqsave(&kobj->rwlock, flags);
-        kobj->free_index = get_index();
-        kobj->free_ip = call_site;
+		/* Update the free_index for the object */
+		write_lock_irqsave(&kobj->rwlock, flags);
+		kobj->free_index = get_index();
+		kobj->free_ip = call_site;
 
-        /* Remove all entries from the hashtable and add them to the reuse list */
-        hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
-            hash_del(&afc->hnode);
-            list_add(&afc->list, &memorizer_afc_reuse_list);
-        }
-        hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
+		/* Remove all entries from the hashtable and add them to the reuse list */
+		hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
+			hash_del(&afc->hnode);
+			list_add(&afc->list, &memorizer_afc_reuse_list);
+		}
+		hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
 
-        /* Move the object from (likely) allocated list to freed list */
-        list_del(&kobj->object_list);
-        kobj->state = KOBJ_STATE_FREED;
-        list_add(&kobj->object_list, &memorizer_object_freed_list);
-        write_unlock_irqrestore(&kobj->rwlock, flags);
+		/* Move the object from (likely) allocated list to freed list */
+		list_del(&kobj->object_list);
+		kobj->state = KOBJ_STATE_FREED;
+		list_add(&kobj->object_list, &memorizer_object_freed_list);
+		write_unlock_irqrestore(&kobj->rwlock, flags);
 
-        track_free();
-    } else {
-        track_untracked_obj_free();
-    }
+		track_free();
+	} else {
+		track_untracked_obj_free();
+	}
 }
 
 /**

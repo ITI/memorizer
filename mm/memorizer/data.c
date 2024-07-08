@@ -163,7 +163,7 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 
 	read_lock(&kobj->rwlock);
 
-	if ((kobj->free_index != 0) != (kobj->state == KOBJ_STATE_FREED)) {
+	if((kobj->free_index != 0) != (kobj->state == KOBJ_STATE_FREED)){
 		pr_err("kobj(%p)->free_index==%lu, ->state==%d\n",
 			   kobj, kobj->free_index, kobj->state);
 		read_unlock(&kobj->rwlock);
@@ -227,7 +227,6 @@ static int kmap_seq_show(struct seq_file *seq, void *v)
 	read_unlock(&kobj->rwlock);
 	return 0;
 }
-
 
 /*
  * allocs_seq_show() - print out the object
@@ -303,11 +302,11 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 	if (v == SEQ_START_TOKEN) {
 		/* first time through, print the header */
 		seq_printf(seq,
-				   "alloc_index,access_ip,"
+					"alloc_index,access_ip,"
 #ifdef CONFIG_MEMORIZER_TRACKPIDS
-				   "pid,"
+					"pid,"
 #endif
-				   "writes,reads\n");
+					"writes,reads\n");
 		return 0;
 	}
 
@@ -323,32 +322,24 @@ static int accesses_seq_show(struct seq_file *seq, void *v)
 
 	/* print each access IP with counts and remove from hashtable */
 	hash_for_each(kobj->access_counts, bkt, afc, hnode) {
-		if (kobj->alloc_type == MEM_NONE) {
-			seq_printf(seq, "  from:%p,%llu,%llu\n",
-					   (void *)afc->ip,
-					   (unsigned long long)afc->writes,
-					   (unsigned long long)afc->reads);
-		} else {
 			seq_printf(seq,
 #ifdef CONFIG_MEMORIZER_TRACKPIDS
-					   "%llu,%p,%llu,%llu,%llu\n",
+						"%llu,%p,%llu,%llu,%llu\n",
 #else
-					   "%llu,%p,%llu,%llu\n",
+						"%llu,%p,%llu,%llu\n",
 #endif
-					   (unsigned long long)kobj->alloc_index,
-					   (void *)afc->ip,
+						(unsigned long long)kobj->alloc_index,
+						(void *)afc->ip,
 #ifdef CONFIG_MEMORIZER_TRACKPIDS
-					   (unsigned long long)afc->pid,
+						(unsigned long long)afc->pid,
 #endif
-					   (unsigned long long)afc->writes,
-					   (unsigned long long)afc->reads);
-		}
+						(unsigned long long)afc->writes,
+						(unsigned long long)afc->reads);
 	}
 
 	read_unlock(&kobj->rwlock);
 	return 0;
 }
-
 
 /*
  * kmap_seq_stop() --- clean up on end of single read session.

@@ -389,12 +389,10 @@ unsigned long get_index(void) {
  */
 void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 {
-	//struct list_head * listptr;
 	struct access_from_counts *entry;
-  int bkt;
+	int bkt;
 	pr_info("%s: \n", title);
 	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
-	//pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
 	pr_info("\talloc_func:	%s\n", kobj->funcstr);
 	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
 	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
@@ -405,7 +403,7 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("\tfree index:  %lu\n", kobj->free_index);
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
-  hash_for_each(kobj->access_counts, bkt, entry, hnode) {
+	hash_for_each(kobj->access_counts, bkt, entry, hnode) {
 		pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
 				//(void *) entry->ip, entry->pid,
 				(void *) entry->ip, entry->pid,
@@ -828,7 +826,7 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->alloc_type = AT;
 	kobj->args_kobj = NULL;
 	INIT_LIST_HEAD(&kobj->object_list);
-  hash_init(kobj->access_counts);
+	hash_init(kobj->access_counts);
 	kobj->state = KOBJ_STATE_ALLOCATED;
 
 	/* get the slab name */
@@ -910,7 +908,6 @@ void __memorizer_discard_kobj(struct memorizer_kobj *kobj)
 	/* stats */
 	track_kobj_free();
 }
-
 
 void memorizer_discard_kobj(struct memorizer_kobj * kobj)
 {

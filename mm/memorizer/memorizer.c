@@ -406,7 +406,7 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
   hash_for_each(kobj->access_counts, bkt, entry, hnode) {
-		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
+		pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
 				//(void *) entry->ip, entry->pid,
 				(void *) entry->ip, entry->pid,
 				(unsigned long long) entry->writes,

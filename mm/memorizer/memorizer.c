@@ -389,9 +389,9 @@ unsigned long get_index(void) {
  */
 void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 {
-	struct list_head * listptr;
+	//struct list_head * listptr;
 	struct access_from_counts *entry;
-
+  int bkt;
 	pr_info("%s: \n", title);
 	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
 	//pr_info("\talloc_mod:	%s\n", *kobj->modsymb);

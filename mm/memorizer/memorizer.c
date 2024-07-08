@@ -407,10 +407,10 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
   pr_info("\texecutable: %s\n", kobj->comm);
   // Iterate over the hashtable
   hash_for_each(kobj->access_counts, bkt, entry, hnode) {
-	pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
-		(void *)entry->ip, entry->pid,
-		(unsigned long long)entry->writes,
-		(unsigned long long)entry->reads);
+	  pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
+		  (void *)entry->ip, entry->pid,
+		  (unsigned long long)entry->writes,
+		  (unsigned long long)entry->reads);
   }
 }
 EXPORT_SYMBOL(__print_memorizer_kobj);

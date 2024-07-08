@@ -61,48 +61,48 @@
  * This data structure captures the details of allocated objects
  */
 struct memorizer_kobj {
-    struct rb_node rb_node;
-    enum AllocType alloc_type;
-    rwlock_t rwlock;
-    long obj_id;
-    uintptr_t alloc_ip;
-    uintptr_t free_ip;
-    uintptr_t va_ptr;
-    uintptr_t pa_ptr;
-    size_t size;
-    unsigned long alloc_index;
-    unsigned long free_index;
-    pid_t pid;
-    char comm[TASK_COMM_LEN];
-    char funcstr[KSYM_NAME_LEN];
-    bool printed;
-    char *slabname;
-    struct list_head object_list;
-    DECLARE_HASHTABLE(access_counts, ACCESS_COUNTS_HASH_BITS); // Use a hashtable
-    struct memorizer_kobj *args_kobj;
-    unsigned short state;
+	struct rb_node rb_node;
+	enum AllocType alloc_type;
+	rwlock_t rwlock;
+	long obj_id;
+	uintptr_t alloc_ip;
+	uintptr_t free_ip;
+	uintptr_t va_ptr;
+	uintptr_t pa_ptr;
+	size_t size;
+	unsigned long alloc_index;
+	unsigned long free_index;
+	pid_t pid;
+	char comm[TASK_COMM_LEN];
+	char funcstr[KSYM_NAME_LEN];
+	bool printed;
+	char *slabname;
+	struct list_head object_list;
+	DECLARE_HASHTABLE(access_counts, ACCESS_COUNTS_HASH_BITS); // Use a hashtable
+	struct memorizer_kobj *args_kobj;
+	unsigned short state;
 };
 
 enum kobj_state_t {
-    KOBJ_STATE_NULL = 0,
-    KOBJ_STATE_ALLOCATED = 1,
-    KOBJ_STATE_FREED = 2,
-    KOBJ_STATE_REUSE = 3,
+	KOBJ_STATE_NULL = 0,
+	KOBJ_STATE_ALLOCATED = 1,
+	KOBJ_STATE_FREED = 2,
+	KOBJ_STATE_REUSE = 3,
 };
 
 struct access_from_counts {
-    struct hlist_node hnode; // For hashtable
-    struct list_head list;   // For reuse list
-    uintptr_t ip;
-    uint64_t pid;
-    uint64_t writes;
-    uint64_t reads;
+	struct hlist_node hnode; // For hashtable
+	struct list_head list;   // For reuse list
+	uintptr_t ip;
+	uint64_t pid;
+	uint64_t writes;
+	uint64_t reads;
 };
 
 struct pid_obj {
-    uint32_t key;
-    pid_t pid;
-    char comm[TASK_COMM_LEN];
+	uint32_t key;
+	pid_t pid;
+	char comm[TASK_COMM_LEN];
 };
 /*
  * Kernel virtual addresses start at ffff880000000000 - ffffc7ffffffffff (=64

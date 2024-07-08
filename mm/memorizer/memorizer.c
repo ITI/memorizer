@@ -389,29 +389,29 @@ unsigned long get_index(void) {
  */
 void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 {
-  //struct list_head * listptr;
-  struct access_from_counts *entry;
-  int bkt;
-  pr_info("%s: \n", title);
-  pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
-  //pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
-  pr_info("\talloc_func:	%s\n", kobj->funcstr);
-  pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
-  pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
-  pr_info("\tva:		0x%p\n", (void*) kobj->va_ptr);
-  pr_info("\tpa:		0x%p\n", (void*) kobj->pa_ptr);
-  pr_info("\tsize:	%lu\n", kobj->size);
-  pr_info("\talloc index: %lu\n", kobj->alloc_index);
-  pr_info("\tfree index:  %lu\n", kobj->free_index);
-  pr_info("\tpid: %d\n", kobj->pid);
-  pr_info("\texecutable: %s\n", kobj->comm);
-  // Iterate over the hashtable
+	struct list_head * listptr;
+	struct access_from_counts *entry;
+
+	pr_info("%s: \n", title);
+	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
+	//pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
+	pr_info("\talloc_func:	%s\n", kobj->funcstr);
+	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
+	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
+	pr_info("\tva:		0x%p\n", (void*) kobj->va_ptr);
+	pr_info("\tpa:		0x%p\n", (void*) kobj->pa_ptr);
+	pr_info("\tsize:	%lu\n", kobj->size);
+	pr_info("\talloc index: %lu\n", kobj->alloc_index);
+	pr_info("\tfree index:  %lu\n", kobj->free_index);
+	pr_info("\tpid: %d\n", kobj->pid);
+	pr_info("\texecutable: %s\n", kobj->comm);
   hash_for_each(kobj->access_counts, bkt, entry, hnode) {
-	  pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
-		  (void *)entry->ip, entry->pid,
-		  (unsigned long long)entry->writes,
-		  (unsigned long long)entry->reads);
-  }
+		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
+				//(void *) entry->ip, entry->pid,
+				(void *) entry->ip, entry->pid,
+				(unsigned long long) entry->writes,
+				(unsigned long long) entry->reads);
+	}
 }
 EXPORT_SYMBOL(__print_memorizer_kobj);
 

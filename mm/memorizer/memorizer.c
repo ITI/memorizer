@@ -96,6 +96,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/hashtable.h>
 #include <linux/bug.h>
 #include <linux/gfp.h>
 #include <linux/cpumask.h>
@@ -243,18 +244,6 @@ static int __init early_cfg_log_boot(char *arg)
 }
 early_param("cfg_log_boot", early_cfg_log_boot);
 
-BOOL_DECL(track_calling_context, false);
-static int __init track_cc(char *arg){
-    if(!arg)
-        return 0;
-    if(strcmp(arg,"yes") == 0) {
-        pr_info("Enabling boot accessing logging\n");
-        track_calling_context.value = true;
-    }
-	return 1;
-}
-early_param("mem_track_cc", track_cc);
-
 static BOOL_DECL(log_frames_enabled, false);
 static BOOL_DECL(stack_trace_boot, false);
 static int __init early_stack_trace_boot(char *arg)
@@ -390,12 +379,10 @@ unsigned long get_index(void) {
  */
 void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 {
-	struct list_head * listptr;
 	struct access_from_counts *entry;
-
+	int bkt;
 	pr_info("%s: \n", title);
 	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
-	//pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
 	pr_info("\talloc_func:	%s\n", kobj->funcstr);
 	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
 	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
@@ -406,11 +393,10 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("\tfree index:  %lu\n", kobj->free_index);
 	pr_info("\tpid: %d\n", kobj->pid);
 	pr_info("\texecutable: %s\n", kobj->comm);
-	list_for_each(listptr, &(kobj->access_counts)){
-		entry = list_entry(listptr, struct access_from_counts, list);
-		pr_info("\t  Access IP: %p, PID: %d, Writes: %llu, Reads: %llu\n",
+	hash_for_each(kobj->access_counts, bkt, entry, hnode) {
+		pr_info("\t  Access IP: %p, PID: %llu, Writes: %llu, Reads: %llu\n",
 				//(void *) entry->ip, entry->pid,
-				(void *) entry->ip, 0,
+				(void *) entry->ip, entry->pid,
 				(unsigned long long) entry->writes,
 				(unsigned long long) entry->reads);
 	}
@@ -426,21 +412,27 @@ EXPORT_SYMBOL(memorizer_print_stats);
 //----
 //==-- Memorizer Access Processing ----------------------------------------==//
 //----
-
 static struct access_from_counts *
 __alloc_afc(void)
 {
-	struct list_head *p;
+	struct access_from_counts *afc;
+	struct list_head *recycle_entry;
 
 	/* First try the recycle bin */
-	p = pop_or_null(&memorizer_afc_reuse_list);
-	if(p) {
+	recycle_entry = pop_or_null(&memorizer_afc_reuse_list);
+	if (recycle_entry) {
+		afc = list_entry(recycle_entry, struct access_from_counts, list);
 		track_afc_alloc_reuse();
-		return list_entry(p, struct access_from_counts, list);
+		return afc;
 	}
 
 	track_afc_alloc_memalloc();
-	return memalloc(sizeof(struct access_from_counts));
+	afc = memalloc(sizeof(struct access_from_counts));
+	if (afc) {
+		INIT_LIST_HEAD(&afc->list);  // Initialize the list head
+		INIT_HLIST_NODE(&afc->hnode);  // Initialize the hlist node
+	}
+	return afc;
 }
 
 /**
@@ -452,7 +444,7 @@ static inline void
 init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 		pid)
 {
-	INIT_LIST_HEAD(&(afc->list));
+  INIT_HLIST_NODE(&(afc->hnode));
 	afc->ip = ip;
 	afc->writes = 0;
 	afc->reads = 0;
@@ -461,10 +453,6 @@ init_access_counts_object(struct access_from_counts *afc, uint64_t ip, pid_t
 #else
 	afc->pid = -1;
 #endif
-	if (track_calling_context.value)
-		afc->caller = cur_caller;
-	else
-		afc->caller = 0;
 }
 
 /**
@@ -497,36 +485,21 @@ alloc_and_init_access_counts(uint64_t ip, pid_t pid)
  * Here we insert a new entry for each (ip,threadid) tuple.
  */
 static inline struct access_from_counts *
-unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct
-		memorizer_kobj *kobj)
-{
-	struct list_head * listptr;
-	struct access_from_counts *entry;
-	struct access_from_counts * afc = NULL;
-	list_for_each (listptr, &(kobj->access_counts)) {
-		entry = list_entry(listptr, struct access_from_counts, list);
-		if (src_ip == entry->ip) {
-			if (pid == entry->pid) {
-				if (kobj->alloc_type == MEM_NONE) {
-					if (entry->caller == cur_caller) {
-						return entry;
-					} else if (cur_caller < entry->caller) {
-						break;
-					}
-				} else {
-					return entry;
-				}
-			} else if (pid < entry->pid) {
-				break;
-			}
-		} else if (src_ip < entry->ip) {
-			break;
+unlckd_insert_get_access_counts(uint64_t src_ip, pid_t pid, struct memorizer_kobj *kobj) {
+	struct access_from_counts *afc = NULL;
+
+	// Search in the hashtable
+	hash_for_each_possible(kobj->access_counts, afc, hnode, src_ip) {
+		if (afc->ip == src_ip && afc->pid == pid) {
+			return afc;
 		}
 	}
-	/* allocate the new one and initialize the count none in list */
+
+	// Allocate the new one and initialize the count
 	afc = alloc_and_init_access_counts(src_ip, pid);
-	if (afc)
-		list_add_tail(&(afc->list), listptr);
+	if (afc) {
+		hash_add(kobj->access_counts, &afc->hnode, src_ip);
+	}
 	return afc;
 }
 
@@ -724,9 +697,6 @@ void __cyg_profile_func_enter(void *ip, void *parent_ip)
 	if (__memorizer_enter())
 		return;
 
-	if (track_calling_context.value)
-		cur_caller = (uintptr_t)parent_ip;
-
 	/* Disable interrupt */
 
 	local_irq_save(flags);
@@ -845,8 +815,8 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 	kobj->printed = false;
 	kobj->alloc_type = AT;
 	kobj->args_kobj = NULL;
-	INIT_LIST_HEAD(&kobj->access_counts);
 	INIT_LIST_HEAD(&kobj->object_list);
+	hash_init(kobj->access_counts);
 	kobj->state = KOBJ_STATE_ALLOCATED;
 
 	/* get the slab name */
@@ -901,21 +871,25 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
  *
  * This must be called with @inmem locked.
  */
-void __memorizer_discard_kobj(struct memorizer_kobj * kobj)
+void __memorizer_discard_kobj(struct memorizer_kobj *kobj)
 {
+	struct access_from_counts *afc;
+	struct hlist_node *tmp;
+	int bkt;
+
 	BUG_ON(kobj->state != KOBJ_STATE_FREED);
 	BUG_ON(kobj->object_list.next == LIST_POISON1);
 	BUG_ON(kobj->object_list.prev == LIST_POISON2);
-	BUG_ON(kobj->access_counts.next == LIST_POISON1);
-	BUG_ON(kobj->access_counts.prev == LIST_POISON2);
 
 	/* Remove from (likely) memorizer_object_freed_list */
 	list_del(&kobj->object_list);
 
-	/* Add afc to the cache list */
-	list_splice_init(&kobj->access_counts, &memorizer_afc_reuse_list);
-	kobj->access_counts.next = LIST_POISON1;
-	kobj->access_counts.prev = LIST_POISON2;
+	/* Remove all entries from the hashtable and add them to the reuse list */
+	hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
+		hash_del(&afc->hnode);
+		list_add(&afc->list, &memorizer_afc_reuse_list);
+	}
+	hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
 
 	/* Add kernel object to the cache list */
 	kobj->state = KOBJ_STATE_REUSE;
@@ -1003,12 +977,13 @@ static int clear_dead_objects(bool only_printed_items)
  */
 void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 {
-
 	struct memorizer_kobj *kobj;
 	unsigned long flags;
+	struct access_from_counts *afc;
+	struct hlist_node *tmp;
+	int bkt;
 
-	/* find and remove the kobj from the lookup table and return the
-	 * kobj */
+	/* find and remove the kobj from the lookup table and return the kobj */
 	kobj = lt_remove_kobj(kobj_ptr);
 
 	/*
@@ -1018,8 +993,6 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	 */
 	if (kobj) {
 		BUG_ON(kobj->state != KOBJ_STATE_ALLOCATED);
-		BUG_ON(kobj->access_counts.next == LIST_POISON1);
-		BUG_ON(kobj->access_counts.prev == LIST_POISON2);
 		if(verbose_warnings_enabled.value) {
 			WARN(kobj->va_ptr != kobj_ptr,
 				"kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
@@ -1040,6 +1013,13 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		kobj->free_index = get_index();
 		kobj->free_ip = call_site;
 
+		/* Remove all entries from the hashtable and add them to the reuse list */
+		hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
+			hash_del(&afc->hnode);
+			list_add(&afc->list, &memorizer_afc_reuse_list);
+		}
+		hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
+
 		/* Move the object from (likely) allocated list to freed list */
 		list_del(&kobj->object_list);
 		kobj->state = KOBJ_STATE_FREED;
@@ -1047,9 +1027,9 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		write_unlock_irqrestore(&kobj->rwlock, flags);
 
 		track_free();
-	}
-	else
+	} else {
 		track_untracked_obj_free();
+	}
 }
 
 /**

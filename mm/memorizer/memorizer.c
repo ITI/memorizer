@@ -244,16 +244,6 @@ static int __init early_cfg_log_boot(char *arg)
 }
 early_param("cfg_log_boot", early_cfg_log_boot);
 
-static int __init track_cc(char *arg){
-    if(!arg)
-        return 0;
-    if(strcmp(arg,"yes") == 0) {
-        pr_info("Enabling boot accessing logging\n");
-    }
-	return 1;
-}
-early_param("mem_track_cc", track_cc);
-
 static BOOL_DECL(log_frames_enabled, false);
 static BOOL_DECL(stack_trace_boot, false);
 static int __init early_stack_trace_boot(char *arg)
@@ -1003,6 +993,20 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	 */
 	if (kobj) {
 		BUG_ON(kobj->state != KOBJ_STATE_ALLOCATED);
+		if(verbose_warnings_enabled.value) {
+			WARN(kobj->va_ptr != kobj_ptr,
+				"kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
+				kobj,
+				(void*)kobj->va_ptr,
+				(void*)kobj_ptr);
+		} else {
+			if(kobj->va_ptr != kobj_ptr) {
+				pr_warn("kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
+					kobj,
+					(void*)kobj->va_ptr,
+					(void*)kobj_ptr);
+			}
+		}
 
 		/* Update the free_index for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);

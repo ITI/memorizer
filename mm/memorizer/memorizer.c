@@ -396,7 +396,6 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("%s: \n", title);
 	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
 	//pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
-	pr_info("\talloc_func:	%s\n", kobj->funcstr);
 	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
 	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
 	pr_info("\tva:		0x%p\n", (void*) kobj->va_ptr);
@@ -863,13 +862,6 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 		kobj->slabname = "no-slab";
 	}
 
-#if CALL_SITE_STRING == 1
-	/* Some of the call sites are not tracked correctly so don't try */
-	if (call_site)
-		kallsyms_lookup((unsigned long) call_site, NULL, NULL,
-				//&(kobj->modsymb), kobj->funcstr);
-			NULL, kobj->funcstr);
-#endif
 #if TASK_STRING == 1
 	/* task information */
 	if (in_irq()) {

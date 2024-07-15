@@ -2,7 +2,7 @@
 VERSION = 6
 PATCHLEVEL = 6
 SUBLEVEL = 30
-EXTRAVERSION = -memorizer-25-rc3
+EXTRAVERSION = -memorizer-25-rc4
 NAME = Hurr durr I'ma ninja sloth
 
 # *DOCUMENTATION*

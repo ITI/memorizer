@@ -129,7 +129,7 @@ void memorizer_kmem_cache_free(unsigned long call_site, const void *ptr);
 void memorizer_kmem_cache_free_bulk(unsigned long call_site, size_t size, void **p);
 void memorizer_vmalloc_alloc(unsigned long call_site, const void *ptr, unsigned long size, gfp_t gfp_flags);
 void memorizer_vmalloc_free(unsigned long call_site, const void *ptr);
-void memorizer_register_global(const void *ptr, size_t size);
+void memorizer_register_global(const void *ptr);
 void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
         size);
 void memorizer_fork(struct task_struct *p, long nr);
@@ -168,7 +168,7 @@ static inline void memorizer_kmem_cache_free(unsigned long call_site, const void
 static inline void memorizer_kmem_cache_free_bulk(unsigned long call_site, size_t size, void **p) {}
 static inline void memorizer_vmalloc_alloc(unsigned long call_site, const void *ptr, unsigned long size, gfp_t gfp_flags) {}
 static inline void memorizer_vmalloc_free(unsigned long call_site, const void *ptr) {}
-static inline void memorizer_register_global(const void *ptr, size_t size) {}
+static inline void memorizer_register_global(const void *ptr) {}
 static inline void memorizer_alloc(unsigned long call_site, const void *ptr,
                    size_t size, enum AllocType AT){}
 static inline void memorizer_fork(struct task_struct *p, long nr) {}

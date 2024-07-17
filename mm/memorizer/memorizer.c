@@ -169,7 +169,8 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site, uintptr
 		ptr, uint64_t size, enum AllocType AT);
 static struct memorizer_kobj * add_heap_UFO(uintptr_t va);
 //==-- Data types and structs for building maps ---------------------------==//
-#define global_table_text_size 1024 * 1024 * 10
+/* FIXME robadams@illinois.edu - make size dynamic? */
+#define global_table_text_size (1024 * 1024 * 10)
 char * global_table_text;
 char * global_table_ptr;
 
@@ -1433,9 +1434,29 @@ void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
 	__memorizer_kmalloc(call_site, ptr, size, size, 0, MEM_STACK);
 }
 
-void memorizer_register_global(const void *ptr, size_t size)
+void memorizer_register_global(const void *ptr)
 {
-	__memorizer_kmalloc(0, ptr, size, size, 0, MEM_GLOBAL);
+	const struct kasan_global *g = ptr;
+
+	__memorizer_kmalloc(0, g->beg, g->size, g->size, 0, MEM_GLOBAL);
+
+	if(global_table_ptr) {
+		int written;
+		written = snprintf(
+			global_table_ptr,
+			global_table_text+global_table_text_size-global_table_ptr,
+			"%p %d %s %s\n",
+			g->beg,
+			(int)(g->size),
+			(char *)(g->name),
+			(char *)(g->module_name));
+		global_table_ptr += written;
+		if(global_table_ptr >= global_table_text+global_table_text_size) {
+			pr_warn("memorizer: global table overflow");
+			global_table_ptr = 0;
+			global_table_text = 0;
+		}
+	}
 }
 
 /*

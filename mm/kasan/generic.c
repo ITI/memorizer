@@ -217,9 +217,6 @@ void kasan_cache_shutdown(struct kmem_cache *cache)
 
 static void register_global(struct kasan_global *global)
 {
-#ifdef CONFIG_MEMORIZER
-	int written;
-#endif
 	size_t aligned_size = round_up(global->size, KASAN_GRANULE_SIZE);
 
 	kasan_unpoison(global->beg, global->size, false);
@@ -228,12 +225,7 @@ static void register_global(struct kasan_global *global)
 		     global->size_with_redzone - aligned_size,
 		     KASAN_GLOBAL_REDZONE, false);
 
-#ifdef CONFIG_MEMORIZER
-	memorizer_register_global(global->beg, global->size);
-	written = sprintf(global_table_ptr, "%p %d %s %s\n", global -> beg,
-			      (int)(global -> size), (char *)(global -> name), (char *)(global -> module_name));
-	global_table_ptr += written;
-#endif
+	memorizer_register_global(global);
 }
 
 void __asan_register_globals(void *ptr, ssize_t size)

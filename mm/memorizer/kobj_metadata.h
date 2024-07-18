@@ -71,6 +71,7 @@ struct memorizer_kobj {
 	unsigned long	    free_index;
 	pid_t		    pid;
 	char		    comm[TASK_COMM_LEN];
+	char		    funcstr[KSYM_NAME_LEN];
 	bool		    printed;
 	//char		    *modsymb[KSYM_NAME_LEN];
 	char		    *slabname;

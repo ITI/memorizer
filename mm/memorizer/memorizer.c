@@ -169,8 +169,7 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site, uintptr
 		ptr, uint64_t size, enum AllocType AT);
 static struct memorizer_kobj * add_heap_UFO(uintptr_t va);
 //==-- Data types and structs for building maps ---------------------------==//
-/* FIXME robadams@illinois.edu - make size dynamic? */
-#define global_table_text_size (1024 * 1024 * 10)
+#define global_table_text_size 1024 * 1024 * 10
 char * global_table_text;
 char * global_table_ptr;
 
@@ -397,6 +396,7 @@ void __print_memorizer_kobj(struct memorizer_kobj * kobj, char * title)
 	pr_info("%s: \n", title);
 	pr_info("\tkobj_id:	%ld\n", kobj->obj_id);
 	//pr_info("\talloc_mod:	%s\n", *kobj->modsymb);
+	pr_info("\talloc_func:	%s\n", kobj->funcstr);
 	pr_info("\talloc_ip:	0x%p\n", (void*) kobj->alloc_ip);
 	pr_info("\tfree_ip:	0x%p\n", (void*) kobj->free_ip);
 	pr_info("\tva:		0x%p\n", (void*) kobj->va_ptr);
@@ -863,6 +863,13 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
 		kobj->slabname = "no-slab";
 	}
 
+#if CALL_SITE_STRING == 1
+	/* Some of the call sites are not tracked correctly so don't try */
+	if (call_site)
+		kallsyms_lookup((unsigned long) call_site, NULL, NULL,
+				//&(kobj->modsymb), kobj->funcstr);
+			NULL, kobj->funcstr);
+#endif
 #if TASK_STRING == 1
 	/* task information */
 	if (in_irq()) {
@@ -1434,29 +1441,9 @@ void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
 	__memorizer_kmalloc(call_site, ptr, size, size, 0, MEM_STACK);
 }
 
-void memorizer_register_global(const void *ptr)
+void memorizer_register_global(const void *ptr, size_t size)
 {
-	const struct kasan_global *g = ptr;
-
-	__memorizer_kmalloc(0, g->beg, g->size, g->size, 0, MEM_GLOBAL);
-
-	if(global_table_ptr) {
-		int written;
-		written = snprintf(
-			global_table_ptr,
-			global_table_text+global_table_text_size-global_table_ptr,
-			"%p %d %s %s\n",
-			g->beg,
-			(int)(g->size),
-			(char *)(g->name),
-			(char *)(g->module_name));
-		global_table_ptr += written;
-		if(global_table_ptr >= global_table_text+global_table_text_size) {
-			pr_warn("memorizer: global table overflow");
-			global_table_ptr = 0;
-			global_table_text = 0;
-		}
-	}
+	__memorizer_kmalloc(0, ptr, size, size, 0, MEM_GLOBAL);
 }
 
 /*

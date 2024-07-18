@@ -652,9 +652,8 @@ static const struct file_operations function_calls_fops = {
  * up and we get complete debug info for all globals. */
 static int globaltable_seq_show(struct seq_file *seq, void *v)
 {
-	if(global_table_text)
-		seq_printf(seq, "%s\n", global_table_text);
-	return 0;
+  seq_printf(seq, "%s\n", global_table_text);
+  return 0;
 }
 
 static int globaltable_open(struct inode *inode, struct file *file)

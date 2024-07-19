@@ -170,6 +170,7 @@ static inline struct memorizer_kobj * __create_kobj(uintptr_t call_site, uintptr
 		ptr, uint64_t size, enum AllocType AT);
 static struct memorizer_kobj * add_heap_UFO(uintptr_t va);
 //==-- Data types and structs for building maps ---------------------------==//
+/* TODO robadams@illinois.edu global_table_text overflows. Fix or delete feature. */
 #define global_table_text_size 1024 * 1024 * 10
 char * global_table_text;
 char * global_table_ptr;

@@ -232,7 +232,8 @@ static void register_global(struct kasan_global *global)
 	memorizer_register_global(global->beg, global->size);
 	written = sprintf(global_table_ptr, "%p %d %s %s\n", global -> beg,
 			      (int)(global -> size), (char *)(global -> name), (char *)(global -> module_name));
-	global_table_ptr += written;
+	/* TODO robadams@illinois.edu following line overflows. Fix or delete feature. */
+	// global_table_ptr += written;
 #endif
 }
 

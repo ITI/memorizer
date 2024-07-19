@@ -10,10 +10,10 @@ Summary of memorizer-specific kernel versions
    - Fail job if any BATS test fails
    - Run the old memorizer test in the new system
    - Get rid of password for ssh key in test setup
-   - Fix UACCESS enabled warnings
    - Create BATS test infrastructure.
    - Don't hang test if kernel panics
    - Don't hang test if key needs passphrase
+   - global_table overflow workaround
 
 - v6.6.30-memorizer-24
    - Update automated_test_doc.md

@@ -2,6 +2,9 @@
 Summary of memorizer-specific kernel versions
 =============================================
 
+- v6.6.30-memorizer-26
+   - Support PID reporting in access entries
+   - Remove "track calling context" feature.
 - v6.6.30-memorizer-25
    - Allow values greater than 3 to be written to memorizer_enabled
    - Rename memorizer files

@@ -1,5 +1,3 @@
-# TODO robadams@illinois.edu add tests
-# TODO release deb files
 stages:
   - setup
   - compile
@@ -22,47 +20,28 @@ variables_job:
   variables:
     GIT_STRATEGY: none
 
-
-compile_deb_job:
-  rules:
-    # Not until we figure out how to do it right.
-    - when: never
+compile_job:
   tags: ["docker"]
   stage: compile
   image: illinoisrobert/kernel-build
   script:
     # Some people like tarballs; some like debs. We'll build both
-    # Note: "make O=o" is not compatible with "deb-pkg", so we won't use it.
-    - make  defconfig rob.config memorizer.config
-    - make -j $(expr $(nproc) / 3 + 1) deb-pkg
-    # I don't know why deb-pkg puts the files where we can't reach them.
-    - mv ../linux-* .
+    - make O=o defconfig rob.config memorizer.config
+    - make O=o -j $(expr $(nproc) / 3 + 1) targz-pkg
+    - make O=o -j $(expr $(nproc) / 3 + 1) deb-pkg
   artifacts:
     expire_in: 1 week
     paths:
-      # - ./.config
-      # - ./vmlinux
-      - ./linux-*
-      # - ./arch/x86/boot/bzImage
-
-compile_tar_job:
-  tags: ["docker"]
-  stage: compile
-  image: illinoisrobert/kernel-build
-  script:
-    # Some people like tarballs; some like debs. We'll build both
-    # Note: "make O=o" is not compatible with "deb-pkg", so we won't use it.
-    - make  defconfig rob.config memorizer.config
-    - make -j $(expr $(nproc) / 3 + 1) targz-pkg
-  artifacts:
-    expire_in: 1 week
-    paths:
-      - ./*.tar.gz
-      - ./arch/x86/boot/bzImage
+      - ./o/.config
+      - ./o/vmlinux
+      - ./o/arch/x86/boot/bzImage
+      - ./o/*.tar.gz
+      - ./*.deb
 
 patch_job:
   tags: ["docker"]
   stage: patch
+  needs: ["variables_job"]
   image: illinoisrobert/kernel-build
   script:
     - git fetch --depth=1 origin tag "$BASETAG"
@@ -74,10 +53,30 @@ patch_job:
     paths:
       - $CI_COMMIT_TAG.patch
 
+documentation_job:
+  tags: ["docker"]
+  needs: ["variables_job"]
+  stage: patch
+  image: illinoisrobert/kernel-build
+  script:
+    - make O=o SPHINXDIRS="memorizer" pdfdocs htmldocs
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - o/Documentation/output/memorizer/pdf/memorizer.pdf
+      - o/Documentation/output/memorizer/*.html
+      - o/Documentation/output/memorizer/*.js
+      - o/Documentation/output/memorizer/_sources/*
+      - o/Documentation/output/memorizer/_static/*
+
 test_job:
   tags: ["shell"]
+  needs: ["compile_job"]
   stage: test
   script:
+    - ls -l o/arch/x86/boot/bzImage
+    - '[ -f arch/x86/boot/bzImage ] || cp o/arch/x86/boot/bzImage arch/x86/boot/.'
+    - ls -l arch/x86/boot/bzImage
     - cd scripts/memorizer/testVM
     - cp -r ~/mz-img-hack/* .
     - python3 ./qemu_test.py
@@ -89,18 +88,31 @@ test_job:
 upload_job:
   tags: ["docker"]
   stage: upload
+  needs: ["compile_job", "documentation_job", "patch_job", "variables_job"]
   image: curlimages/curl:latest
   rules:
     - if: $CI_COMMIT_TAG
   variables:
     GIT_STRATEGY: none
   script:
-    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file arch/x86/boot/bzImage "${PACKAGE_REGISTRY_URL}/bzImage-${CI_COMMIT_TAG}"'
-    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file *.tar.gz "${PACKAGE_REGISTRY_URL}/linux-${CI_COMMIT_TAG}.tar.gz"'
+    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file o/vmlinux "${PACKAGE_REGISTRY_URL}/vmlinux-${CI_COMMIT_TAG}"'
+    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file o/.config "${PACKAGE_REGISTRY_URL}/config-${CI_COMMIT_TAG}"'
+    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file o/arch/x86/boot/bzImage "${PACKAGE_REGISTRY_URL}/bzImage-${CI_COMMIT_TAG}"'
+    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file o/*.tar.gz "${PACKAGE_REGISTRY_URL}/linux-${CI_COMMIT_TAG}.tar.gz"'
+    - 'tar cfz debs-${CI_COMMIT_TAG}.tgz *.deb && curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file debs-${CI_COMMIT_TAG}.tgz "${PACKAGE_REGISTRY_URL}/debs-${CI_COMMIT_TAG}.tgz"'
     - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file $CI_COMMIT_TAG.patch "${PACKAGE_REGISTRY_URL}/${CI_COMMIT_TAG}.patch"'
+    - 'curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file o/Documentation/output/memorizer/pdf/memorizer.pdf "${PACKAGE_REGISTRY_URL}/memorizer-${CI_COMMIT_TAG}.pdf"'
+    - |
+      set -ex
+      cd o/Documentation/output/memorizer
+      tar cfz html-${CI_COMMIT_TAG}.tgz *.html *.js _sources _static
+      curl --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file html-${CI_COMMIT_TAG}.tgz  "${PACKAGE_REGISTRY_URL}/html-${CI_COMMIT_TAG}.tgz"
+  variables:
+    GIT_STRATEGY: none
 
 bats:
   tags: ["docker"]
+  needs: ["compile_job"]
   stage: test
   image: illinoisrobert/kernel-build
   script:
@@ -121,12 +133,24 @@ release_job:
     description: '$CI_COMMIT_TAG'
     assets:
       links:
-        - name: linux-$CI_COMMIT_TAG.tar.gz
-          url: $PACKAGE_REGISTRY_URL/linux-$CI_COMMIT_TAG.tar.gz
+        - name: vmlinux-$CI_COMMIT_TAG
+          url: "${PACKAGE_REGISTRY_URL}/vmlinux-${CI_COMMIT_TAG}"
+        - name: config-$CI_COMMIT_TAG
+          url: "${PACKAGE_REGISTRY_URL}/config-${CI_COMMIT_TAG}"
         - name: bzImage-$CI_COMMIT_TAG
           url: $PACKAGE_REGISTRY_URL/bzImage-$CI_COMMIT_TAG
+        - name: linux-$CI_COMMIT_TAG.tar.gz
+          url: $PACKAGE_REGISTRY_URL/linux-$CI_COMMIT_TAG.tar.gz
+        - name: Debian packages
+          url: "${PACKAGE_REGISTRY_URL}/debs-$CI_COMMIT_TAG.tgz"
         - name: $CI_COMMIT_TAG.patch
           url: $PACKAGE_REGISTRY_URL/$CI_COMMIT_TAG.patch
+        - name: PDF Documentation
+          url: ${PACKAGE_REGISTRY_URL}/memorizer-${CI_COMMIT_TAG}.pdf
+        - name: HTML Documentation
+          url: "${PACKAGE_REGISTRY_URL}/html-${CI_COMMIT_TAG}.tgz"
+  variables:
+    GIT_STRATEGY: none
 
 announce_job:
   tags: ["docker"]
@@ -138,3 +162,4 @@ announce_job:
   script:
     # slack-announce returns true even if the announcement didn't work.
     - slack-announce "$SLACK_CHANNEL_ID" "$SLACK_AUTH_TOKEN" "There is a new memorizer release $CI_COMMIT_TAG. You can download it from $CI_PROJECT_URL/-/releases/$CI_COMMIT_TAG."
+

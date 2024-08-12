@@ -1,5 +1,6 @@
-This is the Bootstrap Guide to Memorizer
-========================================
+============================
+Bootstrap Guide to Memorizer
+============================
 
 This is intended to be a comprehensive guide to get you started with the
 Memorizer project. It is intended to be a reference for anyone working
@@ -36,44 +37,18 @@ at the time of kernel compilation.
 The following table gives a summary of all the Hooks in Memorizer(Needs
 Revising):
 
-+-------------+-------------+-------------+-------------+-------------+
-| Hook        | Type        | Location    | Recording   | Description |
-|             |             |             | Function    |             |
-+=============+=============+=============+=============+=============+
-| kmem_ca     | Function    | slub.c      | \__memorize | Records     |
-| che_alloc() | Call        |             | r_kmalloc() | kmem_ca     |
-|             |             |             |             | che_alloc() |
-+-------------+-------------+-------------+-------------+-------------+
-| kmalloc()   | Function    | slub.c      | \__memorize | Records     |
-|             | Call        |             | r_kmalloc() | kmalloc()   |
-+-------------+-------------+-------------+-------------+-------------+
-| p           | Funtion     | p           | \__memorize | Records     |
-| age_alloc() | Call        | age_alloc.c | r_kmalloc() | p           |
-|             |             |             |             | age_alloc() |
-|             |             |             |             | (NEEDS      |
-|             |             |             |             | FIXING)     |
-+-------------+-------------+-------------+-------------+-------------+
-| globals     | Function    | kasan.c     | \__memorize | Records     |
-|             | Call        | (Check)     | r_kmalloc() | globals     |
-|             |             |             |             | (NEED to    |
-|             |             |             |             | record      |
-|             |             |             |             | Alloc Addr) |
-+-------------+-------------+-------------+-------------+-------------+
-| loads       | KASAN       | kasan.c     | memorizer_m | Records     |
-|             | Inst        |             | em_access() | loads       |
-|             | rumentation |             |             |             |
-+-------------+-------------+-------------+-------------+-------------+
-| store       | KASAN       | kasan.c     | memorizer_m | Records     |
-|             | In          |             | em_access() | Stores      |
-|             | strumemtion |             |             |             |
-+-------------+-------------+-------------+-------------+-------------+
-| kmem_c      | Function    | slub.c      | memorizer_  | Records     |
-| ache_free() | Call        |             | free_kobj() | kmem_c      |
-|             |             |             |             | ache_free() |
-+-------------+-------------+-------------+-------------+-------------+
-| kfree()     | Function    | slub.c      | memorizer_  | Records the |
-|             | Call        |             | free_kobj() | kfree()     |
-+-------------+-------------+-------------+-------------+-------------+
+================================================ ===================== =============== =============================================
+Hook / Recording Function                        Type                  Location        Description
+================================================ ===================== =============== =============================================
+``kmem_cache_alloc()`` ``__memorizer_kmalloc()`` Function Call         slub.c          Records ``kmem_cache_alloc``
+``kmalloc()`` ``__memorizer_kmalloc()``          Function Call         slub.c          Records ``kmalloc``
+``page_alloc()`` ``__memorizer_kmalloc()``       Function Call         page_alloc.c    Records ``page_alloc`` (NEEDS FIXING)
+``globals()`` ``__memorizer_kmalloc()``          Function Call         kasan.c (Check) Records globals (NEED to record Alloc Addr)
+loads ``memorizer_mem_access()``                 KASAN Instrumentation kasan.c         Records loads
+store ``memorizer_mem_access()``                 KASAN Instrumentation kasan.c         Records stores
+``kmem_cache_free()`` ``memorizer_free_kobj()``  Function Call         slub.c          Records ``kmem_cache_free``
+``kfree()`` ``memorizer_free_kobj(``)            Function Call         slub.c          Records ``the kfree``
+================================================ ===================== =============== =============================================
 
 CAPMAP
 ------
@@ -105,20 +80,28 @@ Access Information
 
 These are denoted by indented lines. Each line represents a memory
 location that the current memory object has accesses. The information
-recorded is as follows: \* Access IP \* Access PID \* Number of Writes
-\* Number of Reads
+recorded is as follows:
+
+* Access IP
+* Access PID
+* Number of Writes
+* Number of Reads
 
 DebugFS layout
 --------------
 
 The memorizer uses the debugfs to communicate between the Kernel and
 User Space. The DebugFS interface is present in the
-/sys/kernel/debug/memorizer directory and provides controls for the
+``/sys/kernel/debug/memorizer directory`` and provides controls for the
 memorizer. The following section details the use of each file in the
 DebugFS directory.
 
+.. note::
+
+   TODO robadams@illinois.edu Do we need to insert a section here?
+
 Seting up memorizer and kernel testing
---------------------------------------
+======================================
 
 Running the test by hand consists of a couple basic steps:
 
@@ -149,14 +132,20 @@ TL;DR:
    make modules_install
    make install
 
-   **The code below is if you intend to run the kernel on a physical machine.**
-   #Modify your grub configuration to make it easy to select which kernel to boot. Using any text editor, add or change the following lines in /etc/default/grub. i.e. nano /etc/default/grub.
+The code below is if you intend to run the kernel on a physical machine.::
+
+   # Modify your grub configuration to make it easy to select which
+   # kernel to boot.  Using any text editor, add or change the
+   # following lines in /etc/default/grub. e.g. nano /etc/default/grub.
+   
    GRUB_TIMEOUT="5"
    GRUB_TIMEOUT_STYLE="countdown"
    GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no maxcpus=1 split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4 console=tty0 console=ttyS0"
    GRUB_CMDLINE_LINUX_DEFAULT=""
+
    #Finally, update grub
    update_grub
+
    #Then reboot your system
    reboot
 
@@ -171,61 +160,61 @@ with it. You can find the ``memorizer.config`` file in the
 Summary of GRUB Configuration Updates
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
--  **GRUB Timeout Settings**:
+-  GRUB Timeout Settings:
 
    -  Configured to provide an easy way to select which kernel to boot,
       allowing a grace period to choose a different kernel if needed.
 
--  **Kernel Command Line Arguments (``GRUB_CMDLINE_LINUX``)**:
+-  Kernel Command Line Arguments (``GRUB_CMDLINE_LINUX``):
 
    -  Used to pass specific arguments to the kernel at boot time,
       modifying the kernel’s behavior for compatibility and performance.
 
--  **Disabling Memorizer Module (``memorizer_enabled_boot=no``)**:
+-  Disabling Memorizer Module (``memorizer_enabled_boot=no``):
 
    -  Disables the memorizer module at boot time, useful for booting the
       kernel without the memorizer module if it causes issues.
 
--  **Limiting Number of CPUs (``maxcpus=1``)**:
+-  Limiting Number of CPUs (``maxcpus=1``):
 
    -  Restricts the kernel to use only one CPU, currently necessary
       since the memorizer module is incompatible with multiple
       processors, ensuring stable system operation.
 
--  **Disabling Split Lock Detection (``split_lock_detect=off``)**:
+-  Disabling Split Lock Detection (``split_lock_detect=off``):
 
    -  Disables the split lock detection feature, enhancing system
       stability and speed.
 
--  **Disabling Hash Pointers (``no_hash_pointers``)**:
+-  Disabling Hash Pointers (``no_hash_pointers``):
 
    -  Disables the hash pointers feature, which can interfere with
       specific system operations or performance.
 
--  **Disabling Kernel Address Space Layout Randomization
-   (``nokaslr``)**:
+-  Disabling Kernel Address Space Layout Randomization
+   (``nokaslr``):
 
    -  Disables Kernel Address Space Layout Randomization (KASLR),
       simplifying debugging and improving compatibility with certain
       hardware or software.
 
--  **Disabling Audit Feature (``audit=0``)**:
+-  Disabling Audit Feature (``audit=0``):
 
    -  Turns off the audit feature, reducing overhead and improving
       system performance by not recording audit logs.
 
--  **Setting Log Level (``loglevel=8``)**:
+-  Setting Log Level (``loglevel=8``):
 
    -  Sets the kernel log level to the most verbose level, useful for
       debugging as it provides detailed kernel messages.
 
--  **Setting Memory Allocation Size (``memalloc_size=4``)**:
+-  Setting Memory Allocation Size (``memalloc_size=4``):
 
    -  Sets the memory allocation size to 4, optimizing memory usage
       based on specific system requirements.
 
--  **Configuring Console Output (``console=tty0`` and
-   ``console=ttyS0``)**:
+-  Configuring Console Output (``console=tty0`` and
+   ``console=ttyS0``):
 
    -  ``console=tty0``: Directs kernel messages to the first virtual
       console.
@@ -319,7 +308,7 @@ correct location of ``bzImage``, it should be somewhere around
 ``../arch/x86/boot/bzImage``.
 
 Running the test
-----------------
+================
 
 An example of a simple test is:
 
@@ -379,8 +368,6 @@ TL;DR:
    cat /sys/kernel/debug/memorizer/kmap > /tmp/kmap
    scp /tmp/kmap [user]@_gateway:/tmp/.   #replace user with host computers name.
 
---------------
-
 To do this, we need to set up a connection between the guest VM and the
 host, and then copy over the kmap files from the guest VM to the host.
 
@@ -412,10 +399,10 @@ the data in the ``kmap`` file on your own machine.
 
 
 Initramfs method for memorizer
-------------------------------
+==============================
 
 Overview
-^^^^^^^^
+--------
 
 This process introduces a simplified method for running a virtual
 machine (VM) memorizer, minimizing the complexity often associated with
@@ -425,34 +412,34 @@ environment, utilizing Busybox without a conventional root filesystem
 the memorizer.
 
 Key Features
-^^^^^^^^^^^^
+------------
 
--  **Minimalist Initramfs**: The VM runs with a Busybox-based initramfs
+-  Minimalist Initramfs: The VM runs with a Busybox-based initramfs
    and no rootfs, focusing solely on the essential components required
    for memorizer development and testing.
--  **Automated Testing**: The provided shell script, ``boottest.sh``,
+-  Automated Testing: The provided shell script, ``boottest.sh``,
    automates the process of building a kernel, creating an initramfs,
    and booting the VM. Upon booting, the initramfs automatically
    executes a memorizer test suite and exits the emulator.
--  **BATS Integration**: The BATS (Bash Automated Testing System) is
+-  BATS Integration: The BATS (Bash Automated Testing System) is
    included within the initramfs, specifically in the ``/test``
    directory, allowing for the execution of both new-feature and
    regression tests.
 
 Considerations
-^^^^^^^^^^^^^^
+--------------
 
--  **Scope Limitations**: This solution is highly specialized for
+-  Scope Limitations: This solution is highly specialized for
    memorizer development and testing. It lacks support for common
    features such as a window manager, desktop environment, and
    networking capabilities, making it unsuitable for broader application
    testing.
--  **Stability**: The current implementation may experience issues, such
+-  Stability: The current implementation may experience issues, such
    as hanging if the VM panics. This is a known problem and requires
    further refinement.
 
 Overview of process
-~~~~~~~~~~~~~~~~~~~
+-------------------
 
 This process involves: 1. Cloning the necessary repositories. 2.
 Clearing the build environment using ``clear.sh``. 3. Building the
@@ -460,9 +447,9 @@ project using ``doit.sh`` or ``gdb_doit.sh`` for debugging. 4. Running
 the debug build and connecting GDB to it for remote debugging.
 
 Step-by-Step Guide
-~~~~~~~~~~~~~~~~~~
+------------------
 
-1. **Cloning the Repository**
+1. Cloning the Repository
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 First, ensure you have cloned the “memorizer” repository along with the
@@ -475,7 +462,7 @@ necessary environment for the following steps.
 
 Replace ``<memorizer_repo_url>`` with the actual repository URLs.
 
-2. **Clearing the Build Directory**
+2. Clearing the Build Directory
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The ``clear.sh`` script is used to clean the build environment by
@@ -488,11 +475,11 @@ skip this step.
 
    ./clear.sh
 
-**Explanation:** - ``clear.sh`` will delete the ``o`` directory where
+Explanation: - ``clear.sh`` will delete the ``o`` directory where
 build artifacts are stored. - It also removes the ``initramfs`` file,
 which is used as an initial RAM filesystem during the boot process.
 
-3. **Building Memorizer with Initramfs**
+3. Building Memorizer with Initramfs
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The ``doit.sh`` script compiles the “memorizer” project along with an
@@ -502,11 +489,11 @@ The ``doit.sh`` script compiles the “memorizer” project along with an
 
    ./doit.sh
 
-**Explanation:** - ``doit.sh`` automates the build process for
-“memorizer”. - It compiles the source code and integrates the
+Explanation: - ``doit.sh`` automates the build process for “memorizer”.
+- It compiles the source code and integrates the
 ``initramfs``. - The output is typically placed in the ``o`` directory.
 
-4. **Building Memorizer for Debugging with GDB**
+4. Building Memorizer for Debugging with GDB
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 To build “memorizer” with debugging symbols and support, use the
@@ -516,16 +503,16 @@ To build “memorizer” with debugging symbols and support, use the
 
    ./gdb_doit.sh
 
-**Explanation:** - ``gdb_doit.sh`` builds “memorizer” with the necessary
+Explanation: - ``gdb_doit.sh`` builds “memorizer” with the necessary
 flags and settings to enable debugging with GDB. - This process
 generates a ``vmlinux`` file that can be used for debugging.
 
-5. **Debugging with GDB**
+5. Debugging with GDB
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 To start debugging, follow these steps:
 
-1. **Run Memorizer in Debug Mode**
+1. Run Memorizer in Debug Mode
 
    Open a terminal and execute the debug build of “memorizer”.
 
@@ -536,7 +523,7 @@ To start debugging, follow these steps:
    This will prepare the build for GDB and run it in a mode that allows
    remote debugging.
 
-2. **Connect GDB to the Running Instance**
+2. Connect GDB to the Running Instance
 
    Open another terminal window and navigate to the “memorizer” folder.
 
@@ -545,7 +532,7 @@ To start debugging, follow these steps:
       cd memorizer
       gdb -ex 'target remote :1234' o/vmlinux
 
-   **Explanation:**
+   Explanation:
 
    -  ``cd memorizer``: Navigate to the “memorizer” directory.
    -  ``gdb -ex 'target remote :1234' o/vmlinux``: This command starts
@@ -553,7 +540,7 @@ To start debugging, follow these steps:
       the ``vmlinux`` file generated by ``gdb_doit.sh``.
 
 Automating it
--------------
+=============
 
 Normally the way Gitlab CI works is:
 
@@ -592,7 +579,7 @@ runner on one, it would be duplicated on the other, leading to tests
 running in different environments and potentially a lot of weird bugs.
 
 Tangent
--------
+=======
 
 (This part is not strictly necessary but it might be informative if
 you’re working with VMs)
@@ -608,7 +595,7 @@ acceleration seemed to be on. Evidently, going too many qemus deep leads
 to performance issues.
 
 Setting up the runner
----------------------
+=====================
 
 ::
 
@@ -638,7 +625,7 @@ the new containers to run with ``--privileged``. If there’s a way to do
 this, feel free to change it to work that way.
 
 How the test works
-------------------
+==================
 
 The test itself is done by ``scripts/memorizer/VM/qemu_test.py``. It
 uses ``pexpect`` to send a bunch of commands to the VM, then uses

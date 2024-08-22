@@ -34,59 +34,15 @@ specific command-line parameters. For the Grub bootloader, these
 parameters are read from `/etc/default/grub` See
 <https://www.gnu.org/software/grub/manual/grub/html_node/Simple-configuration.html>
 
-* Edit `/etc/default/grub`. Add these lines to ensure that the grub menu
+* Edit ``/etc/default/grub``. Add or modify these lines to ensure that the grub menu
   is displayed so that the user may control the boot process::
 
     GRUB_TIMEOUT=5 
     GRUB_TIMEOUT_STYLE=countdown
-
-* Add these boot parameters to the ``GRUB_CMDLINE_LINUX`` line in `/etc/default/grub`.
-
-  memorizer_enabled_boot=no
-    The memorizer tool is able to gather information
-    during the boot process. Unless your experiment
-    requires it, turn it off to save memory space.
-
-  maxcpus=1                
-    As of ``linux-6.6.30-memorizer-25<F2>``, 
-    memorizer only runs in single-cpu environments.
-
-  split_lock_detect=off
-    ..
-
-  no_hash_pointers         
-    As a security measure, Linux anonymizes all pointer
-    values before printing them to the console. We
-    turn that feature off so that data analysis tools
-    can corelate code pointers with source code.
-
-  nokaslr                  
-    As a security measure, Linux can be loaded
-    into randomly-generated virtual memory addresses.
-    We turn that feature off so that the data analysis
-    tools can corelate code pointers with source code.
-
-  audit=0
-    ..
-
-  loglevel=8               
-    As part of memorizer development, we always run
-    at a high loglevel. Your needs may be different.
-
-  memalloc_size=4          
-    At startup, memorizer reserves a significant
-    portion of physical memory for its own uses.
-    All CAPMAP data is stored there before being
-    retrieved via the `debugfs` file system.
-    Make this number the largest you are able to,
-    reserving only enough to run your experiment.
-    The number is the number of GB to use,
-    the suggested minimum value is 4GB.
-
-  The ``GRUB_CMDLINER_LINUX`` values must be on a single line.
-  Here is an working example::
-
     GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no maxcpus=1 split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
+
+  See :ref:`memorizer-grub-cmdline` for more information about individual kernel parameters.
+
 
 Reboot
 ======

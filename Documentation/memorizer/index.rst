@@ -19,11 +19,14 @@ run the memorizer kernel, along with collecting and sending kmap data.
 
     quick_start
     using_memorizer
-    kmap
-    memorizer_guide
     use_cases
     automated_test_doc
+    reference
     changelog
+
+..
+  memorizer_guide
+  kmap
 
 .. only::  subproject and html
 

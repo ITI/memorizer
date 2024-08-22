@@ -75,13 +75,14 @@ Therefore, a typical run using memorizer to create KMAPs includes::
   cat /sys/kernel/debug/memorizer/kmap > test.kmap
 
 .. note::
-   Each of the following files also proide KMAP data.
+   Each of the following files also provides KMAP data.
    Their precise use is not yet described in this document.
 
    * ``kmap_stream``
    * ``accesses``
    * ``allocs``
 
+.. _kmap-output-format:
 Output Format
 =============
 

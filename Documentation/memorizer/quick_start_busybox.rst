@@ -12,8 +12,7 @@ Environment
 ===========
 
 We will not be building a kernel, so we do not need any kernel
-build tools. However, these techniques do work on a custom-built kernel; see the other guides for information about building a kernel.
-
+build tools. However, these techniques do work on a custom-built kernel; see the other *Quick Start* guides for information about building a kernel.
 
 Qemu
 ----
@@ -72,7 +71,7 @@ Don't forget to make ``/init`` executable::
 
   chmod +x root/init
 
-At this point, your `root` directory should contain two files::
+At this point, your ``root`` directory should contain two files::
 
   root/init
   root/bin/busybox
@@ -93,6 +92,8 @@ If this were a standard Linux kernel, invocation would be simple::
 However, the Memorizer kernel requires a few more switches::
 
  qemu-system-x86_64 -machine type=q35,accel=kvm,smm=off -smp 4 -m 8G -cpu max,pmu=off -append 'selinux=0 audit=0 maxcpus=1 split_lock_detect=off memorizer_enabled_boot=no nokaslr no_hash_pointers loglevel=8 memalloc_size=4 console=ttyS0' -kernel bzImage-v6.6.30-memorizer-25 -initrd initramfz
+
+See :ref:`memorizer-grub-cmdline` for more information about individual kernel parameters.
 
 Congratulations! You should now have a running Memorizer kernel. 
 See :doc:`using_memorizer` for the next steps.

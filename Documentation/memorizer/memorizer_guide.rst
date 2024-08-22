@@ -47,7 +47,7 @@ Hook / Recording Function                        Type                  Location 
 loads ``memorizer_mem_access()``                 KASAN Instrumentation kasan.c         Records loads
 store ``memorizer_mem_access()``                 KASAN Instrumentation kasan.c         Records stores
 ``kmem_cache_free()`` ``memorizer_free_kobj()``  Function Call         slub.c          Records ``kmem_cache_free``
-``kfree()`` ``memorizer_free_kobj(``)            Function Call         slub.c          Records ``the kfree``
+``kfree()`` ``memorizer_free_kobj()``            Function Call         slub.c          Records ``the kfree``
 ================================================ ===================== =============== =============================================
 
 CAPMAP
@@ -160,77 +160,79 @@ with it. You can find the ``memorizer.config`` file in the
 Summary of GRUB Configuration Updates
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
--  GRUB Timeout Settings:
+- GRUB Timeout Settings:
 
-   -  Configured to provide an easy way to select which kernel to boot,
-      allowing a grace period to choose a different kernel if needed.
+  - Configured to provide an easy way to select which kernel to boot,
+    allowing a grace period to choose a different kernel if needed.
 
--  Kernel Command Line Arguments (``GRUB_CMDLINE_LINUX``):
+- Kernel Command Line Arguments (``GRUB_CMDLINE_LINUX``):
 
-   -  Used to pass specific arguments to the kernel at boot time,
-      modifying the kernel’s behavior for compatibility and performance.
+  - Used to pass specific arguments to the kernel at boot time,
+    modifying the kernel’s behavior for compatibility and performance.
 
--  Disabling Memorizer Module (``memorizer_enabled_boot=no``):
+- Disabling Memorizer Module (``memorizer_enabled_boot=no``):
 
-   -  Disables the memorizer module at boot time, useful for booting the
-      kernel without the memorizer module if it causes issues.
+  - Disables the memorizer module at boot time, useful for booting the
+    kernel without the memorizer module if it causes issues.
 
--  Limiting Number of CPUs (``maxcpus=1``):
+- Limiting Number of CPUs (``maxcpus=1``):
 
-   -  Restricts the kernel to use only one CPU, currently necessary
-      since the memorizer module is incompatible with multiple
-      processors, ensuring stable system operation.
+  - Restricts the kernel to use only one CPU, currently necessary
+    since the memorizer module is incompatible with multiple
+    processors, ensuring stable system operation.
 
--  Disabling Split Lock Detection (``split_lock_detect=off``):
+- Disabling Split Lock Detection (``split_lock_detect=off``):
 
-   -  Disables the split lock detection feature, enhancing system
-      stability and speed.
+  - Disables the split lock detection feature, enhancing system
+    stability and speed.
 
--  Disabling Hash Pointers (``no_hash_pointers``):
+- Disabling Hash Pointers (``no_hash_pointers``):
 
-   -  Disables the hash pointers feature, which can interfere with
-      specific system operations or performance.
+  - Disables the hash pointers feature, which can interfere with
+    specific system operations or performance.
 
--  Disabling Kernel Address Space Layout Randomization
-   (``nokaslr``):
+- Disabling Kernel Address Space Layout Randomization
+  (``nokaslr``):
 
-   -  Disables Kernel Address Space Layout Randomization (KASLR),
-      simplifying debugging and improving compatibility with certain
-      hardware or software.
+  - Disables Kernel Address Space Layout Randomization (KASLR),
+    simplifying debugging and improving compatibility with certain
+    hardware or software.
 
--  Disabling Audit Feature (``audit=0``):
+- Disabling Audit Feature (``audit=0``):
 
-   -  Turns off the audit feature, reducing overhead and improving
-      system performance by not recording audit logs.
+  - Turns off the audit feature, reducing overhead and improving
+    system performance by not recording audit logs.
 
--  Setting Log Level (``loglevel=8``):
+- Setting Log Level (``loglevel=8``):
 
-   -  Sets the kernel log level to the most verbose level, useful for
-      debugging as it provides detailed kernel messages.
+  - Sets the kernel log level to the most verbose level, useful for
+    debugging as it provides detailed kernel messages.
 
--  Setting Memory Allocation Size (``memalloc_size=4``):
+- Setting Memory Allocation Size (``memalloc_size=4``):
 
-   -  Sets the memory allocation size to 4, optimizing memory usage
-      based on specific system requirements.
+  - Sets the memory allocation size to 4, optimizing memory usage
+    based on specific system requirements.
 
--  Configuring Console Output (``console=tty0`` and
-   ``console=ttyS0``):
+- Configuring Console Output (``console=tty0`` and
+  ``console=ttyS0``):
 
-   -  ``console=tty0``: Directs kernel messages to the first virtual
-      console.
-   -  ``console=ttyS0``: Directs kernel messages to the first serial
-      port, particularly useful for systems requiring serial console
-      access, such as remote debugging.
+  - ``console=tty0``: Directs kernel messages to the first virtual
+    console.
+  - ``console=ttyS0``: Directs kernel messages to the first serial
+    port, particularly useful for systems requiring serial console
+    access, such as remote debugging.
 
 These updates ensure the system boots with specific configurations that
 enhance compatibility, performance, and debugging capabilities.
 
-Note: There has been some difficulties running the memorizer kernel on a
-physical machine. There has been issues with drivers for things like
-wifi or peripherals. The kernel has been tested on a VM and works fine.
-If you want to run the kernel on a physical machine, you may need to do
-some additional configurations; such as making sure all the correct
-modules are installed.
+.. note ::
+
+  There has been some difficulties running the memorizer kernel on a
+  physical machine. There has been issues with drivers for things like
+  wifi or peripherals. The kernel has been tested on a VM and works fine.
+  If you want to run the kernel on a physical machine, you may need to do
+  some additional configurations; such as making sure all the correct
+  modules are installed.
 
 Building and running a VM
 -------------------------

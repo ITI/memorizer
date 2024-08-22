@@ -24,21 +24,24 @@ a Memorizer Kernel into a Qemu VM. This document presumes you are running a Debi
 Linux distro (such as Ubuntu) on your host.
 
 These instructions presume that you are building using your
-non-privileged host account. Any line **not(** preceded by ``sudo``
+non-privileged host account. Any line not preceded by ``sudo``
 should be run without super-user privilege.
-
 
 Mkosi
 -----
 
-Install mkosi. You can install `using the project's instructions`_, or
-using apt. It is important that you install version 14 or newer. Here
-is how to install using apt::
+Install mkosi. You can install with ``git``, ``pip``, or ``apt``. 
+For these instructions, it is important that you install version 14. Here
+is one way to install mkosi::
 
-  sudo apt install mkosi
+  pip install git+https://github.com/systemd/mkosi.git@v14
+  mkosi --version
+  ~/.local/bin/mkosi --version
+  /usr/local/bin/mkosi --version
+
+``mkosi`` will likely be in one of the three indicated locations.
 
 .. _`using the project's instructions`: https://github.com/systemd/mkosi?tab=readme-ov-file#installation
-
 
 Qemu
 ----
@@ -47,8 +50,9 @@ Install Qemu::
 
   sudo apt install qemu-system-x86_64
   sudo adduser $USER kvm
+  exit
 
-
+You need to log out and log back in to apply the group id change.
 
 Kernel Build Packages
 ---------------------
@@ -96,15 +100,21 @@ memorizer install once
 Configure the kernel
 --------------------
 
-::
+Apply the default configuration, followed by the updates from the memorizer configuration::
 
-  make defconfig
-  make memorizer.config
+  make O=p defconfig
+  make O=p memorizer.config
+
+.. note::
+
+  The ``O=p`` option directs ``make`` to deposit all of the built
+  files into a subdirectory called ``p``. This is where the
+  ``mkosi.conf`` files expect to find the Linux kernel image.
 
 Confirm that CONFIG_FRAME_WARN is at least 2048::
 
-  grep CONFIG_FRAME_WARN .config
-  ./scripts/config --set-val CONFIG_FRAME_WARN 2048
+  grep CONFIG_FRAME_WARN p/.config
+  ./scripts/config --file p/.config --set-val CONFIG_FRAME_WARN 2048
 
 If you are compiling the kernel on Ubuntu, you may receive the
 following error that interrupts the building process::
@@ -113,8 +123,8 @@ following error that interrupts the building process::
 
 If so, disable the conflicting security certificates::
 
-      scripts/config --disable SYSTEM_TRUSTED_KEYS
-      scripts/config --disable SYSTEM_REVOCATION_KEYS
+      scripts/config --file p/.config --disable SYSTEM_TRUSTED_KEYS
+      scripts/config --file p/.config --disable SYSTEM_REVOCATION_KEYS
 
 Building the kernel
 -------------------
@@ -124,13 +134,11 @@ configuration process. If so,
 accept default answers when prompted.
 
 Adding ``–j`` makes it compile faster. In this case, ``make`` will use
-twice as many concurrent processes as their are cores in the system.
+twice as many concurrent processes as their are processing units in the system.
 
 ::
 
-  make -j$(($(nproc) * 2))
-
-
+  make -j$(($(nproc) * 2)) O=p
 
 Boot the Kernel
 ===============
@@ -146,6 +154,9 @@ Build the rootfs::
 Run memorizer::
 
   mkosi qemu
+
+.. note::
+  You may need to select *View -> serial0* to see the console output.
 
 Congratulations! You should now have a running Memorizer kernel. 
 See :doc:`using_memorizer` for the next steps.

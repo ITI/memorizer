@@ -38,7 +38,7 @@ use Memorizer.
 Using the Kernel
 ================
 
-..note::
+.. note::
 
 Move this to :doc:`using_memorizer`
 

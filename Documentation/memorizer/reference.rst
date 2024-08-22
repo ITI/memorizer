@@ -70,7 +70,7 @@ Memorizer-specific
   reserving only enough to run your experiment.
   The number is the number of GB to use,
   the suggested minimum value is 4GB. The default
-  value is 8.
+  value is 8G.
 
 Memorizer-required
 ~~~~~~~~~~~~~~~~~~
@@ -88,13 +88,13 @@ Disabling Hash Pointers (``no_hash_pointers``)
   As a security measure, Linux anonymizes all pointer
   values before printing them to the console. We
   turn that feature off so that data analysis tools
-  can corelate code pointers with source code.
+  can correlate code pointers with source code.
 
 Disabling Kernel Address Space Layout Randomization (``nokaslr``)
   As a security measure, Linux can be loaded
   into randomly-generated virtual memory addresses.
   We turn that feature off so that the data analysis
-  tools can corelate code pointers with source code.
+  tools can correlate code pointers with source code.
 
 Disabling Audit Feature (``audit=0``)
   Turns off the audit feature, reducing overhead and improving
@@ -104,7 +104,7 @@ Setting Log Level (``loglevel=8``)
   Sets the kernel log level to the most verbose level, useful for
   debugging as it provides detailed kernel messages.
   As part of memorizer development, we always run
-  at a high loglevel. Your needs may be different.
+  at a high log level. Your needs may be different.
 
 Configuring Console Output (``console=tty0`` and ``console=ttyS0``)
   These are not strictly required for Memorizer. If you are using
@@ -136,14 +136,14 @@ Control Files
 
 ``clear_dead_objects``
   - `WRITE` - Clear Memorizer's tracking information of any object
-    that has completed its lifecycle (i.e. has been free'd),
+    that has completed its lifecycle (i.e. has been freed),
     regardless of whether that data has been reported.
     The value written is not used for anything.
   - `READ` - n/a
 
 ``clear_printed_objects``
   - `WRITE` - Clear Memorizer's tracking information of any object
-    that has completed its lifecycle (i.e. has been free'd), but
+    that has completed its lifecycle (i.e. has been freed), but
     only if that data has been previously reported via ``kmap``.
     The value written is not used for anything.
   - `READ` - n/a
@@ -204,7 +204,7 @@ Control Files
 
 ``log_live_enabled``
   - `WRITE` - Writing any boolean value affects the reporting of live kernel objects. If
-    `true`, all tracked kernel objects are reported. If `false`, only free'd objects are
+    `true`, all tracked kernel objects are reported. If `false`, only freed objects are
     reported. This does not affect the tracking itself, only the reporting.
   - `READ` - The current status is returned.
 
@@ -230,28 +230,28 @@ These files are all read-only. Any writes to these files will return an error.
 
 ``kmap``
   - `READ` - Returns current Memorizer data. If ``log_live_enabled`` is
-    false, returns only information on free'd objects. 
+    false, returns only information on freed objects. 
     For more information on the data format, see :ref:`debugfs-kmap`
 
 ``kmap_stream``
   - `READ` - Returns current Memorizer data in a way convenient for
-    network streaming. It only returns data on free'd objects, regardless
+    network streaming. It only returns data on freed objects, regardless
     of the setting ``log_live_enabled``. When the data is exhausted,
     Memorizer does not return an EOF condition, but waits for more
     data instead. Programs that read from ``kmap_stream`` typically
-    never exit and mulled be signaled via Conrol-C or the ``kill`` command.
+    never exit and mulled be signaled via Control-C or the ``kill`` command.
     For more information on the data format, see :ref:`debugfs-kmap-stream`.
 
 ``allocations``
   - `READ` - Returns Memorizer information, limited to information
     about object allocations and frees.  If ``log_live_enabled`` is
-    ``false``, returns only information on free'd objects. 
+    ``false``, returns only information on freed objects. 
     For more information on the data format, see :ref:`debugfs-allocations`
 
 ``accesses``
   - `READ` - Returns Memorizer information, limited to information
     about object memory accesses.  If ``log_live_enabled`` is
-    ``false``, returns only information on free'd objects. 
+    ``false``, returns only information on freed objects. 
     For more information on the data format, see :ref:`debugfs-accesses`
 
 ``function_calls``
@@ -339,12 +339,12 @@ in a kmap file.
 
   There are a few special cases:
 
-  - If an object has been allocated but not yet free'd, then ``free_ip`` is zero.
-    If the object has, in fact, been free'd but Memorizer did not observe
+  - If an object has been allocated but not yet freed, then ``free_ip`` is zero.
+    If the object has, in fact, been freed but Memorizer did not observe
     the free, then ``free_ip`` is also zero.
 
   - If a subsequently allocated object exists in the same virtual addresses
-    as a previously allocated, not free'd, object, then Memorizer probably
+    as a previously allocated, not freed, object, then Memorizer probably
     did not observe the intervening free.
 
     In this case, ``free_ip`` of the previous object is ``0xdeadbeef`` and
@@ -380,7 +380,7 @@ in a kmap file.
 .. _`debugfs-allocations`:
 .. _`debugfs-accesses`:
 
-Varous Other Formats
+Various Other Formats
 ~~~~~~~~~~~~~~~~~~~~
 
 .. note::

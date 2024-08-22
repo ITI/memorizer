@@ -5,7 +5,7 @@ Memorizer Quick Start
 Memorizer is a Linux kernel feature for analyzing memory objects inside
 the kernel. As a Linux kernel feature, building Memorizer is simply
 a matter of rebuilding the Linux kernel. Running Memorizer is simply
-booting and interactig with the resulting kernel.
+booting and interacting with the resulting kernel.
 
 If you are already familiar with building and booting custom
 Linux kernels, use your existing workflow. The Memorizer

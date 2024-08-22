@@ -22,7 +22,7 @@ the test, and a second PC for network tasks.
   username and password that you create during the install
   process.
 - Boot into Ubuntu. 
-- Open terminal
+- Open terminal.
 - Install some networking helpers. ``net-tools`` will allow
   you to find the IP address of your device. ``openssh-server`` will allow
   you to connect to your device from your workstation.
@@ -33,12 +33,12 @@ the test, and a second PC for network tasks.
     apt install net-tools
     apt install openssh-server
 
-- figure out IP of device by typing ``ifconfig`` or ``ip a``
+- Figure out IP of device by typing ``ifconfig`` or ``ip a``
 
 .. note::
   You may find the remainder of these instructions easier to perform
   using an ``ssh`` connection from your workstation to the
-  freshly-installed Ubuntu machine. Using the user name from the Ubuntu install,
+  freshly-installed Ubuntu machine. Using the username from the Ubuntu install,
   and the IP address you previously discovered,
   run the following command on your workstation.
   ::
@@ -171,7 +171,7 @@ specific command-line parameters. For the Grub bootloader, these
 parameters are read from `/etc/default/grub` See
 <https://www.gnu.org/software/grub/manual/grub/html_node/Simple-configuration.html>
 
-Edit `/etc/default/grub`. Add these lines to Ensure that the grub menu
+Edit `/etc/default/grub`. Add these lines to ensure that the grub menu
 is displayed so that the user may control the boot process::
 
     GRUB_TIMEOUT=5 

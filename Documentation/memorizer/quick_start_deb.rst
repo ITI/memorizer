@@ -22,10 +22,10 @@ downloaded::
   $ ls ~/Downloads/*.deb
   linux-image-6.6.30-memorizer-25..._amd64.deb
 
-Kernel Instsall
+Kernel Install
 ===============
 
-Install the Linux image using the system's packakge manager::
+Install the Linux image using the system's package manager::
 
   $ sudo apt install ~/Downloads/linux-image-6.6.30-memorizer*.deb
 

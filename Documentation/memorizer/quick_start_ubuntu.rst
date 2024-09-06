@@ -178,8 +178,7 @@ is displayed so that the user may control the boot process::
     GRUB_TIMEOUT_STYLE=countdown
     GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no maxcpus=1 split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
 
-Make ``memalloc_size`` specify as much memory as you can stand,
-but at least 4 gigabytes.
+Give ``memalloc_size`` as much memory as you can spare, but at least 4 gigabytes. The remaining memory should be enough to run your experiment.
 
 See :ref:`memorizer-grub-cmdline` for more information about individual kernel parameters.
 

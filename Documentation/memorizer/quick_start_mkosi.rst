@@ -9,12 +9,6 @@ using Mkosi_.
 
 .. _Mkosi: https://github.com/systemd/mkosi
 
-There are other ways to build and install Memorizer. Use any way
-that works for you, as long as you can:
-
-- Download Memorizer source
-- Config and build a kernel
-- Boot the kernel
 
 Environment
 ===========

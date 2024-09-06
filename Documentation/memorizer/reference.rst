@@ -77,7 +77,7 @@ Memorizer-required
 
 Limiting Number of CPUs (``maxcpus=1``)
   Restricts the kernel to use only one CPU, currently necessary
-  since the memorizer module is incompatible with multiple
+  since Memorizer is incompatible with multiple
   processors, ensuring stable system operation.
 
 Disabling Split Lock Detection (``split_lock_detect=off``)
@@ -171,7 +171,7 @@ Control Files
       subsequently created child processes
 
     Note that writing ``0`` to ``memorizer_enabled`` turns off
-    the memorizer kernel object tracing immediately. Until some
+    Memorizer kernel object tracing immediately. Until some
     other value is written, Memorizer gathers no data whatsoever.
 
     Processes that were marked as memorizable are still marked even
@@ -239,7 +239,7 @@ These files are all read-only. Any writes to these files will return an error.
     of the setting ``log_live_enabled``. When the data is exhausted,
     Memorizer does not return an EOF condition, but waits for more
     data instead. Programs that read from ``kmap_stream`` typically
-    never exit and mulled be signaled via Control-C or the ``kill`` command.
+    never exit and must be signaled via Control-C or the ``kill`` command.
     For more information on the data format, see :ref:`debugfs-kmap-stream`.
 
 ``allocations``

@@ -9,7 +9,7 @@ every object inside the kernel and output them as a CAPMAP, to be used
 for further analysis.
 
 This is intended to be a comprehensive guide to get you started with the
-Memorizer project. It is intended to be a reference for anyone working
+Memorizer project, as well as a reference for anyone working
 on the project, and should contain the information needed to boot-up and
 run the memorizer kernel, along with collecting and sending kmap data.
 

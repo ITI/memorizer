@@ -45,10 +45,9 @@ Some of the kernel command-line parameters that effect Memorizer are:
       accesss until specifically enabled by the user.
   
 ``mem_log_boot=(yes|no)`` 
-  * ``yes`` - If ``memorizer_enabled=yes``, then the Memorizer data
+  * ``yes`` - If ``memorizer_enabled_boot=yes``, then the Memorizer data
     will include information about memory accesses in the initial
     boot process.
-
   * ``no`` - The Memorizer will not trace memory accesses until
     specifically enabled by the user.
 
@@ -180,4 +179,7 @@ no memorizable processes when the command finishes.
 Interpreting Results
 ====================
 
-See :ref:`kmap-output-format` for more information.
+.. note ::
+
+  See the as-yet-unwritten :ref:`kmap-output-format` for more information.
+  TODO robadams@illinois.edu

@@ -38,35 +38,6 @@ use Memorizer.
 Using the Kernel
 ================
 
-.. note::
-
-Move this to :doc:`using_memorizer`
-
-After you have successfully built a Memorizer Linux kernel, follow
-the directions in :doc:`using_memorizer`.
-
-Initial Conditions
-------------------
-
-Set it up::
-
-  echo 0 > /sys/foo
-  echo 1 > /sys/bar
-
-Run the experiment
-------------------
-
-Gather the data::
-
-  echo 1 > start
-  ./AmazingApp.AppImage
-  echo 0 > start
-
-Store the data
---------------
-
-Submit the results for storage and analysis::
-
-  scp foo bar:
-
-   
+Now that you have built and booted a Memorizer Linux kernel,
+you are able to run an experiment. For full instructions,
+see :doc:`using_memorizer`.

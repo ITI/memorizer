@@ -24,7 +24,7 @@ Memorizer-specific
       accesss until specifically enabled by the user.
   
 ``mem_log_boot=(yes|no)`` 
-  * ``yes`` - If ``memorizer_enabled=yes``, then the Memorizer data
+  * ``yes`` - If ``memorizer_enabled_boot=yes``, then the Memorizer data
     will include information about memory accesses in the initial
     boot process.
 

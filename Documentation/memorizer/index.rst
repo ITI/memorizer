@@ -5,7 +5,7 @@ Memorizer
 =========
 
 Memorizer is a tool to track all the allocs, accesses and frees for
-every object inside the kernel and output them as a CAPMAP, to be used
+every object inside the kernel and output them as a kmap, to be used
 for further analysis.
 
 This is intended to be a comprehensive guide to get you started with the
@@ -19,14 +19,13 @@ run the memorizer kernel, along with collecting and sending kmap data.
 
     quick_start
     using_memorizer
-    use_cases
     automated_test_doc
+    memorizer_guide
     reference
     changelog
 
 ..
-  memorizer_guide
-  kmap
+    use_cases
 
 .. only::  subproject and html
 

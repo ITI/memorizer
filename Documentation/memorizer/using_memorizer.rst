@@ -7,9 +7,12 @@ Using Memorizer
   This section is a work in progress. The instructions
   and information in it might be incomplete or incorrect.
 
-The Memorizer tool traces the allocation and utilization of kernel objects.
-The gathering of a
-specific set of data can be broken down to:
+Memorizer is a tool to record information about access to kernel objects:
+specifically, it counts memory accesses from distinct IP addresses in the
+kernel source and also the PID that accessed, thereby providing spatial and
+temporal dimensions.
+
+The phases of gathering data from a specific experiement are:
 
 * `Initial Conditions`_
 * :ref:`Enabling Memorizer<memorizer_enable>`
@@ -54,6 +57,16 @@ Some of the kernel command-line parameters that effect Memorizer are:
 If the kernel command-line parameters are incorrect, adjust them in
 your bootloader configuration (typical: ``/etc/default/grub``) and
 reboot.
+
+Memorizer's control and data files live in the debugfs filesystem at
+``/sys/kernel/debug/memorizer/*``. If that directory does not
+exist, please confirm:
+
+* You are running a Memorizer kernel. Examine the output of ``uname -a``,
+  and reboot as required.
+* The debugfs filesystem is mounted. Examine the output of
+  ``mount | grep debugfs``. If you need to mount the debugfs filesystem, 
+  run ``mount -t debugfs debugfs /sys/kernel/debug`` as root.
 
 If you are not interested in any previously-collected Memorizer data::
 
@@ -129,10 +142,10 @@ file server.
 Streaming experiment
 ====================
 
-In contrast to the previous process memorizer can also
-provide its kmap data in real time. Reading `kmap_stream`
+In contrast to the previous process, Memorizer can also
+provide its kmap data in real time. Reading ``kmap_stream``
 provides data about kernel objects that have completed their
-life cycle. Additionally, reading `kmap_stream` will destroy
+life cycle. Additionally, reading ``kmap_stream`` will destroy
 Memorizer's record of that kernel object, thus freeing
 Memorizer memory to use for future kernel object tracing.
 
@@ -181,5 +194,4 @@ Interpreting Results
 
 .. note ::
 
-  See the as-yet-unwritten :ref:`kmap-output-format` for more information.
-  TODO robadams@illinois.edu
+  See the :ref:`kmap file format <debugfs-kmap>` secion for more information.

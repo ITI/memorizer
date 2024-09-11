@@ -1,3 +1,5 @@
+.. _`quick-start`:
+
 =====================
 Memorizer Quick Start
 =====================

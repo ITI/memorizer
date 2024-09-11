@@ -104,11 +104,18 @@ Download, install source code
   Read through the choices or just accept defaults. Accepting defaults works on
   most of the tested hardware.
 
-  .. note::
+.. note ::
 
-    ``make localmodconfig`` will match the currently loaded 
-    modules on your system. Please ensure all modules you need to run the 
-    system are there, including USB, CIFS, and other occasionally-used modules.
+  There has been some difficulties running the memorizer kernel on a
+  physical machine. There has been issues with drivers for things like
+  wifi or peripherals. The kernel has been tested on a VM and works fine.
+  If you want to run the kernel on a physical machine, you may need to do
+  some additional configurations; such as making sure all the correct
+  modules are installed.
+
+  ``make localmodconfig`` will match the currently loaded 
+  modules on your system. Please ensure all modules you need to run the 
+  system are there, including USB, CIFS, and other occasionally-used modules.
 
 - aquire the appropriate Memorizer patch file, which can be found
   at <https://code.iti.illinois.edu/ring0/memorizer/-/releases>. Place the
@@ -145,6 +152,16 @@ Configure the kernel
 
     scripts/config --disable SYSTEM_TRUSTED_KEYS
     scripts/config --disable SYSTEM_REVOCATION_KEYS
+
+.. note ::
+
+  There has been some difficulties running the Memorizer kernel on a
+  physical machine. There has been issues with drivers for things like
+  wifi or peripherals. The kernel has been tested on a VM and works fine.
+  If you want to run the kernel on a physical machine, you may need to do
+  some additional configurations; such as making sure all the correct
+  modules are installed.
+
 
 Building the kernel
 -------------------

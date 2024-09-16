@@ -138,13 +138,16 @@ Memorizer memory to use for future kernel object tracing.
 
 To gather data synchronously, one might do this::
 
-  # Any one of the following commands will trigger the
-  # streaming feature.
+  # "cat", "nc", and "ssh" are documented here. Any one of these will
+  # trigger the streaming feature.
   cat > /tmp/kmap_data.txt < /sys/kernel/debug/memorizer/kmap_stream 
-  #nc server 9999          < /sys/kernel/debug/memorizer/kmap_stream
+
+  #Client: nc <server> <port> < /sys/kernel/debug/memorizer/kmap_stream
+  #Server: nc -l -k -p <port> > /tmp/kmap
+
   #ssh user@server sh -c "cat > /tmp/kmap_data.txt" < /sys/kernel/debug/memorizer/kmap_stream
 
-  # Run the experiment:
+  # With streaming started, run the experiment:
   sh -c "echo 3 > /sys/kernel/debug/memorizer_enabled && test-program"
 
 This shell script enables the streaming feature by reading

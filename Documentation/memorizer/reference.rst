@@ -226,7 +226,7 @@ These files are all read-only. Any writes to these files will return an error.
 
     cat kmap | ssh user@server sh -c "cat > /tmp/kmap"
     cp kmap /tmp/kmap && scp /tmp/kmap user@server:/tmp/kmap
-    Client: nc server 9999 < kmap;  and server: nc -l 9999 > /tmp/kmap
+    Client: nc <server> <port> < kmap;  and server: nc -l -k -p <port> > /tmp/kmap
 
 ``kmap``
   - `READ` - Returns current Memorizer data. If ``log_live_enabled`` is

@@ -26,7 +26,7 @@ compile_job:
   image: illinoisrobert/kernel-build
   script:
     # Some people like tarballs; some like debs. We'll build both
-    - make O=o defconfig rob.config memorizer.config
+    - make O=o defconfig memorizer.config
     - make O=o -j $(expr $(nproc) / 3 + 1) targz-pkg
     - make O=o -j $(expr $(nproc) / 3 + 1) deb-pkg
   artifacts:

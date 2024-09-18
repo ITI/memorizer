@@ -2,6 +2,10 @@
 Summary of memorizer-specific kernel versions
 =============================================
 
+- v6.6.51-memorizer-26
+
+  - Merge with v6.6.51
+
 - v6.6.30-memorizer-26
 
   - Documentation improvements

@@ -64,7 +64,7 @@ Memorizer-specific
 ``memalloc_size=#``
   At startup, memorizer reserves a significant
   portion of physical memory for its own uses.
-  All CAPMAP data is stored there before being
+  All kmap data is stored there before being
   retrieved via the `debugfs` file system.
   Make this number the largest you are able to,
   reserving only enough to run your experiment.
@@ -127,9 +127,10 @@ Using the Grub syntax, here is a working example of a Memorizer kernel command l
 Memorizer ``debugfs`` files
 ===========================
 
-Memorizer provides control, data, and status values through the Linux ``debugfs`` filesystem.
-The ``debugfs`` filesystem is conventionally mounted at ``/sys/kernel/debug/`` and the
-Memorizer files are in the ``/sys/kernel/debug/memorizer/`` directory.
+Memorizer provides control, data, and status values through the
+Linux ``debugfs`` filesystem.  The ``debugfs`` filesystem is
+conventionally mounted at ``/sys/kernel/debug/`` and the Memorizer
+files are in the ``/sys/kernel/debug/memorizer/`` directory.
 
 Control Files
 ~~~~~~~~~~~~~
@@ -156,7 +157,7 @@ Control Files
 
 ``memorizer_enabled``
   - `WRITE` - Set the current Memorizer mode.
-    Memorizer starts to gather data whenever ``memorizer_enabled`` has a
+    Memorizer gathers data whenever ``memorizer_enabled`` has a
     non-zero value.  The control file ``memorizer_enabled`` accepts
     several different command values:
 
@@ -182,19 +183,21 @@ Control Files
     process-id of a Memorizer-enabled process.
 
 ``log_accesses_enabled``
-  - `WRITE` - Writing any boolean value enables or disables the tracing of memory reads and writes.
-    Valid values include `yes`, `no`, `true`, `false`, `on`, `off`, `1`, and `0`.
-    Requires `memorizer_enabled` to be set.
+  - `WRITE` - Writing any boolean value enables or disables the tracing
+    of memory reads and writes.
+    Valid values include `yes`, `no`, `true`, `false`, `on`, `off`,
+    `1`, and `0`.  Requires `memorizer_enabled` to be set.
   - `READ` - The current status is returned.
 
 ``log_calls_enabled``
-  - `WRITE` - Writing any boolean value enables or disables the tracing of function
-    calls for the dynamic call graph.
+  - `WRITE` - Writing any boolean value enables or disables
+    the tracing of function calls for the dynamic call graph.
   - `READ` - The current status is returned.
 
 ``log_frames_enabled``
-  - `WRITE` - Writing any boolean value enables or disables the tracing of function
-    calls with ``RSP`` and ``RBP`` recorded for the dynamic call graph.
+  - `WRITE` - Writing any boolean value enables or disables the tracing
+    of function calls with ``RSP`` and ``RBP`` recorded for the dynamic
+    call graph.
   - `READ` - The current status is returned.
 
   .. note::
@@ -203,14 +206,16 @@ Control Files
     choose either one to turn on and clean the cfgmap after finished.
 
 ``log_live_enabled``
-  - `WRITE` - Writing any boolean value affects the reporting of live kernel objects. If
-    `true`, all tracked kernel objects are reported. If `false`, only freed objects are
-    reported. This does not affect the tracking itself, only the reporting.
+  - `WRITE` - Writing any boolean value affects the reporting of live
+    kernel objects. If `true`, all tracked kernel objects are reported. If
+    `false`, only freed objects are reported. This does not affect the
+    tracking itself, only the reporting.
   - `READ` - The current status is returned.
 
 ``verbose_warnings_enabled``
-  - `WRITE` - Writing any boolean value affects the reporting of certain internal
-    errors. If `true`, these errors invoke ``WARN()``. Otherwise, they invoke ``pr_warn()``.
+  - `WRITE` - Writing any boolean value affects the reporting of
+    certain internal errors. If `true`, these errors invoke
+    ``WARN()``. Otherwise, they invoke ``pr_warn()``.
   - `READ` - The current status is returned.
 
 
@@ -290,7 +295,11 @@ blah.
 ``kmap``
 ~~~~~~~~
 
-Memorizer outputs data as text. The format of the kmap file is as follows::
+.. note::
+
+  The data files ``kmap`` and ``kmap_stream`` are formatted identically.
+
+Memorizer outputs data as text. The format of the ``kmap`` file is as follows::
 
   alloc_ip,pid,obj_va_ptr,size,alloc_index,free_index,free_ip,alloc_type,command,slabname,new_alloc_type
     access_ip,write_count,read_count,access_pid
@@ -300,14 +309,13 @@ Memorizer outputs data as text. The format of the kmap file is as follows::
   ...
 
 The longer line represents the allocation and destruction of a kernel object.
-The shorter line represents the memory accesses of that same object.
+The shorter, indented, line represents the memory accesses of that same object.
 Each shorter line refers to the immediately preceding long line. There may be
 any number of shorter lines per long line. There may be any number of long lines
 in a kmap file.
 
-
 ``alloc_ip``
-  The instruction pointer of the *call* instruction which resulted
+  The instruction pointer of the ``call`` instruction which resulted
   in the allocation of the object.
 
 ``pid``
@@ -327,12 +335,6 @@ in a kmap file.
 ``free_index``
   The moment of the destruction of the object. See
   `memorizer_index_type`_ for a description.
-
-  Note that the ``[index]`` is either ``serial`` or ``time``. The serial index is a
-  strictly increasing value that orders the kmap entries, but does not
-  relate in any way to time. The `time` index associates each event
-  with the kernel system time, but does not provide a complete
-  ordering of the events.
 
 ``free_ip``
   The instruction pointer of the `call` instruction which destroyed the object.
@@ -362,28 +364,79 @@ in a kmap file.
     of the subsequent allocation.
 
 ``alloc_type``
-  TBD
+  Memorizer tracks various sorts of object allocation. This field
+  gives an indication of which type this is.
+
+  This field has several possible values. Consult the source code
+  for information on each of these::
+
+    STACK
+    STACK_FRAME
+    STACK_ARGS
+    STACK_PAGE
+    GEN_HEAP
+    UFO_HEAP
+    GLOBAL
+    KMALLOC
+    KMALLOC_ND
+    KMEM_CACHE
+    KMEM_CACHE_ND
+    KMEM_CACHE_BULK
+    ALLOC_PAGES
+    ALLOC_PAGES_EXACT
+    ALLOC_PAGES_GETFREEPAGES
+    ALLOC_PAGES_FOLIO
+    VMALLOC
+    INDUCED_ALLOC
+    BOOTMEM
+    MEMBLOCK
+    UFO_MEMBLOCK
+    MEMORIZER
+    USER
+    BUG
+    UFO_GLOBAL
+    UFO_NONE
+    NONE
 
 ``command``
   The executable name, excluding the path, of the program running
   when the object was allocated. If the object was allocated
   outside of process context, the value of ``command`` will
-  be either *hardirq* or *softirq*. 
+  be either `hardirq` or `softirq`. 
 
 ``slabname``
-  TBD
+  The name of the slab cache object associated with this object, i.e.
+  the ``name`` field of ``struct kmem_cache``.  This field has the
+  value `no-slab` if the cache name cannot be determined.
 
 ``new_alloc_type``
-  TBD
+  Every allocator must, itself, be a client of a more generic
+  allocator.  For example, ``kmalloc`` might gets its memory from
+  ``__alloc_pages``. When that happens, the allocation kmap
+  entry for the more generic allocation will include the
+  ``alloc_type`` of the more specific allocation in this
+  field.
+  
 
-.. _`debugfs-kmap-stream`:
 .. _`debugfs-allocations`:
 .. _`debugfs-accesses`:
 
-Various Other Formats
-~~~~~~~~~~~~~~~~~~~~
+``allocations`` and ``accesses`` files
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. note::
-  TODO robadams@illinois.edu -- we need to describe the format of kmap-stream, allocations, and accesses
+Memorizer's ``allocations`` and ``accesses`` files contain
+identical information to the ``kmap`` file, split into 
+two files and formatted in a slightly different fashion.
 
-TBD
+``allocations`` contains all of the data from the long lines from ``kmap``.
+
+``accesses`` contains all of the data from the short lines from ``kmap``.
+
+In both cases, the order of the fields is subject to change and is different
+from the ``kmap`` file. Each file contains a header line which describes
+the fields in that file.
+
+This format was chosen to simplify the parsing of Memorizer data::
+
+  allocs = pd.read_csv("./allocations")
+  accesses = pd.read_csv("./accesses")

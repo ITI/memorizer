@@ -38,6 +38,18 @@ compile_job:
       - ./o/*.tar.gz
       - ./*.deb
 
+compile_baremetal_job:
+  tags: ["docker"]
+  stage: compile
+  image: illinoisrobert/kernel-build
+  script:
+    - cp baremetal.config .config
+    - make -j $(expr $(nproc) / 3 + 1)
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - ./arch/x86/boot/bzImage
+
 patch_job:
   tags: ["docker"]
   stage: patch
@@ -76,6 +88,20 @@ test_job:
   script:
     - ls -l o/arch/x86/boot/bzImage
     - '[ -f arch/x86/boot/bzImage ] || cp o/arch/x86/boot/bzImage arch/x86/boot/.'
+    - ls -l arch/x86/boot/bzImage
+    - cd scripts/memorizer/testVM
+    - cp -r ~/mz-img-hack/* .
+    - python3 ./qemu_test.py
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - ./scripts/memorizer/testVM/kmap
+
+test_baremetal_job:
+  tags: ["shell"]
+  needs: ["compile_baremetal_job"]
+  stage: test
+  script:
     - ls -l arch/x86/boot/bzImage
     - cd scripts/memorizer/testVM
     - cp -r ~/mz-img-hack/* .

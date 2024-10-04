@@ -93,6 +93,8 @@ However, the Memorizer kernel requires a few more switches::
 
  qemu-system-x86_64 -machine type=q35,accel=kvm,smm=off -smp 4 -m 8G -cpu max,pmu=off -append 'selinux=0 audit=0 maxcpus=1 split_lock_detect=off memorizer_enabled_boot=no nokaslr no_hash_pointers loglevel=8 memalloc_size=4 console=ttyS0' -kernel bzImage-v6.6.30-memorizer-25 -initrd initramfz
 
+Memorizer can be run in SMP—and the ``maxcpus`` option can be excluded—by using ``taskset`` to bond Memorizer to a specified CPU. See :ref:`limiting_cpus`.
+
 See :ref:`memorizer-grub-cmdline` for more information about individual kernel parameters.
 
 Congratulations! You should now have a running Memorizer kernel. 

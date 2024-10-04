@@ -75,10 +75,30 @@ Memorizer-specific
 Memorizer-required
 ~~~~~~~~~~~~~~~~~~
 
+.. _`limiting_cpus`:
+
 Limiting Number of CPUs (``maxcpus=1``)
   Restricts the kernel to use only one CPU, currently necessary
   since Memorizer is incompatible with multiple
   processors, ensuring stable system operation.
+
+  Note: Memorizer can be run on SMP systems—and the ``maxcpus``
+  field can be excluded from grub boot options—by using ``taskset``
+  to bond Memorizer to a specified CPU. This must be done in
+  combination with either mode `3`:
+
+  * ``taskset -c <CPU_NUMBER> sh -c "echo 3 > /sys/kernel/debug/memorizer/memorizer_enabled; <PROGRAM_TO_RUN>"``
+  
+  or mode `pid`:
+
+  * ``PID=<PID_NUMBER>; taskset -c <CPU_NUMBER> -p $PID; echo $PID > /sys/kernel/debug/memorizer/memorizer_enabled;``
+  
+  Any subsequent or related Memorizer processes must also be pinned to this 
+  same CPU via ``taskset``. This includes both kmap streaming (the process 
+  with ``/sys/kernel/debug/memorizer/kmap_stream`` open), and kmap reading 
+  even after ``memorizer_enabled`` is set to ``0`` 
+  (i.e. ``taskset -c <CPU_NUMBER> cp /sys/kernel/debug/memorizer/kmap /tmp/kmap``)
+
 
 Disabling Split Lock Detection (``split_lock_detect=off``)
   Disables the split lock detection feature, enhancing system

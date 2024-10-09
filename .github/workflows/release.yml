@@ -21,11 +21,12 @@ jobs:
 
       - name: Build
         run: |
-          make  defconfig rob.config memorizer.config
+          make  defconfig memorizer.config
           make -j $(expr $(nproc) / 3 + 1)
           make -j $(expr $(nproc) / 3 + 1) modules
           # deb-pkg didn't work. (I didn't save the error.)
-          # make -j $(expr $(nproc) / 3 + 1) deb-pkg
+          make -j $(expr $(nproc) / 3 + 1) deb-pkg
+          cp ../*.deb .
           make -j $(expr $(nproc) / 3 + 1) tar-pkg
 
       - name: Test
@@ -42,6 +43,11 @@ jobs:
           git fetch --depth=1 origin tag "$basetag"
           git diff -p "$basetag" "$myref" > "$mytag.patch"
 
+      - name: PDF
+        run: |
+          set -ex
+          make SPHINXDIRS="memorizer" pdfdocs htmldocs
+
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -52,7 +58,8 @@ jobs:
             linux-*.tar
             arch/x86_64/boot/bzImage
             ./*.patch
-            ../*.deb
+            ./*.deb
+            Documentation/output/memorizer/pdf/*.pdf
 
       - name: Announce
         if: startsWith(github.ref, 'refs/tags/')

@@ -43,7 +43,7 @@ compile_baremetal_job:
   stage: compile
   image: illinoisrobert/kernel-build
   script:
-    - cp baremetal.config .config
+    - cp arch/x86/configs/memorizer-baremetal.config .config
     - make -j $(expr $(nproc) / 3 + 1)
   artifacts:
     expire_in: 1 week

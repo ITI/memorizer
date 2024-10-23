@@ -2,6 +2,15 @@
 Summary of memorizer-specific kernel versions
 =============================================
 
+- v6.6.51-memorizer-27
+
+  - HTML documentation deployment on github.
+  - add pdf documentation to release
+  - Update github workflow
+  - taskset "SMP" instructions
+  - Add test using baremetal.config
+  - Reorganize some of the documentation.
+
 - v6.6.51-memorizer-26
 
   - Merge with v6.6.51

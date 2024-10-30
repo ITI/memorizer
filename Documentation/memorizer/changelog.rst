@@ -10,6 +10,7 @@ Summary of memorizer-specific kernel versions
   - taskset "SMP" instructions
   - Add test using baremetal.config
   - Reorganize some of the documentation.
+  - Add /proc/<pid>/memorizer_enabled
 
 - v6.6.51-memorizer-26
 

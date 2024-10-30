@@ -151,6 +151,8 @@ Memorizer provides control, data, and status values through the
 Linux ``debugfs`` filesystem.  The ``debugfs`` filesystem is
 conventionally mounted at ``/sys/kernel/debug/`` and the Memorizer
 files are in the ``/sys/kernel/debug/memorizer/`` directory.
+Memorizer files are in the ``/sys/kernel/debug/memorizer/`` directory,
+with the single exception of ``/proc/<pid>/memorizer_enabled``.
 
 Control Files
 ~~~~~~~~~~~~~
@@ -201,6 +203,14 @@ Control Files
 
   - `READ` - The current Memorizer mode and, optionally, the
     process-id of a Memorizer-enabled process.
+
+``/proc/<pid>/memorizer_enabled``
+  - `WRITE` - Set or clear the memorizable status of the indicated
+    `process`. If a process is memorizable and memorizer is in mode
+    ``2`` or ``3``, then the process and all of its subsequently created
+    child processes will be tracked.
+    This value is unused in modes ``0`` and ``1``.
+  - `READ` - The current memorizable status of the indicated process.
 
 ``log_accesses_enabled``
   - `WRITE` - Writing any boolean value enables or disables the tracing

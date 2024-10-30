@@ -13,6 +13,27 @@
 	echo -n 0 > /sys/kernel/debug/memorizer/memorizer_enabled
 }
 
+@test "/proc/self/memorizer_enabled exists" {
+	[ "$(</proc/self/memorizer_enabled)" = "0" ]
+	[ "$(</proc/$$/memorizer_enabled)" = "0" ]
+}
+
+setup() {
+	echo -n 0 > /sys/kernel/debug/memorizer/memorizer_enabled
+	echo -n 0 > /proc/self/memorizer_enabled
+}
+
+@test "/proc/self/memorizer_enabled can be written/read" {
+	[ "$(</proc/self/memorizer_enabled)" = "0" ]
+	[ "$(</proc/$$/memorizer_enabled)" = "0" ]
+	echo -n yes > /proc/$$/memorizer_enabled
+	[ "$(</proc/self/memorizer_enabled)" = "1" ]
+	[ "$(</proc/$$/memorizer_enabled)" = "1" ]
+	echo -n no > /proc/self/memorizer_enabled
+	[ "$(</proc/self/memorizer_enabled)" = "0" ]
+	[ "$(</proc/$$/memorizer_enabled)" = "0" ]
+}
+
 @test "ls" {
 	echo -n 1 > /sys/kernel/debug/memorizer/clear_dead_objects
 	cp /sys/kernel/debug/memorizer/kmap /dev/null

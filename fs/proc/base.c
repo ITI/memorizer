@@ -3217,6 +3217,59 @@ static int proc_pid_ksm_stat(struct seq_file *m, struct pid_namespace *ns,
 }
 #endif /* CONFIG_KSM */
 
+#ifdef CONFIG_MEMORIZER
+static int proc_memorizer_enabled_show(struct seq_file *m, void *v)
+{
+	struct inode *inode = m->private;
+	struct task_struct *task = get_proc_task(inode);
+
+	if (!task)
+		return -ESRCH;
+
+	seq_printf(m, "%d\n", task->memorizer_enabled);
+
+	put_task_struct(task);
+	return 0;
+}
+
+static ssize_t proc_memorizer_enabled_write(struct file *file,
+					    const char __user *buf,
+					    size_t count,
+					    loff_t *ppos)
+{
+	struct task_struct *task;
+	bool val;
+	int ret;
+
+	ret = kstrtobool_from_user(buf, count, &val);
+	if (ret < 0)
+		return ret;
+
+	task = get_proc_task(file_inode(file));
+	if (!task)
+		return -ESRCH;
+
+	task->memorizer_enabled = val;
+
+	put_task_struct(task);
+
+	return count;
+}
+
+static int proc_memorizer_enabled_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_memorizer_enabled_show, inode);
+}
+
+static const struct file_operations proc_memorizer_enabled_operations = {
+	.open		= proc_memorizer_enabled_open,
+	.read		= seq_read,
+	.write		= proc_memorizer_enabled_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+#endif
+
 #ifdef CONFIG_STACKLEAK_METRICS
 static int proc_stack_depth(struct seq_file *m, struct pid_namespace *ns,
 				struct pid *pid, struct task_struct *task)
@@ -3351,6 +3404,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 #ifdef CONFIG_KSM
 	ONE("ksm_merging_pages",  S_IRUSR, proc_pid_ksm_merging_pages),
 	ONE("ksm_stat",  S_IRUSR, proc_pid_ksm_stat),
+#endif
+#ifdef CONFIG_MEMORIZER
+	REG("memorizer_enabled",  S_IRUSR|S_IWUSR, proc_memorizer_enabled_operations),
 #endif
 };
 

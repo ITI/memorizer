@@ -146,24 +146,30 @@ Using the Grub syntax, here is a working example of a Memorizer kernel command l
 
 Memorizer Kernel Config Variables
 =================================
-Memorizer kernel config variable definitions can be found in ``/lib/Kconfig.debug``. 
+Memorizer kernel config variable definitions can be found in ``/lib/Kconfig.debug`` and ``/lib/Kconfig``. 
 These values are set at build-time.
 
 Config Variables
 ~~~~~~~~~~~~~~~~
-
 ``MEMORIZER``
-  - Boolean, enables/disables the Memorizer tool. Memorizer traces the memory allocations of kernel objects to track patterns across an object's lifetime
+  - Boolean, enables/disables the Memorizer tool. Memorizer traces the memory allocations of kernel objects to track patterns across an object's lifetime.
 
 ``MEMORIZER_STATS``
-  - Boolean, enables/disables the statistics summary. The statistics summary includes the number of accesses and shadow objects allocated for Memorizer which will slow down the performance of the system.
+  - Boolean, enables/disables the Memorizer statistics summary. The statistics summary includes the number of accesses and shadow objects allocated for Memorizer which will slow down the performance of the system.
 
 ``MEMORIZER_TRACKPIDS``
-  - Boolean, enables/disables the segregation of memory access counts by process id (PID).
+  - Boolean, enables/disables the segregation of memory access counts by process id (PID) within Memorizer data.
 
 ``MEMORIZER_DEBUGFS_RAM``
   - Boolean, enables/disables the exposure of Memorizer's buffer via a debugfs file.
 
+``INLINE_LIBS``
+  - Boolean, forces gcc to use inline calls for some library functions. This must be enabled to run Memorizer.
+
+Dependencies
+~~~~~~~~~~~~
+``KASAN``
+  - Boolean, enables/disables Kernel Address Sanitizer (KASAN). This is an error detector designed to find out-of-bounds and use-after-free bugs in dynamic memory. This must be enabled to run Memorizer.
 
 Memorizer ``debugfs`` files
 ===========================

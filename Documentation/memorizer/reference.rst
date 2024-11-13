@@ -142,6 +142,33 @@ Using the Grub syntax, here is a working example of a Memorizer kernel command l
 
   GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no maxcpus=1 split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
 
+Memorizer Kernel Config Variables
+=================================
+Memorizer kernel config variable definitions can be found in ``/lib/Kconfig.debug`` and ``/lib/Kconfig``. 
+These values are set at build-time.
+
+Config Variables
+~~~~~~~~~~~~~~~~
+``MEMORIZER``
+  Boolean, enables/disables the Memorizer tool. Memorizer traces the memory allocations of kernel objects to track patterns across an object's lifetime.
+
+``MEMORIZER_STATS``
+  Boolean, enables/disables the Memorizer statistics summary. The statistics summary includes the number of accesses and shadow objects allocated for Memorizer which will slow down the performance of the system.
+
+``MEMORIZER_TRACKPIDS``
+  Boolean, enables/disables the segregation of memory access counts by process id (PID) within Memorizer data.
+
+``MEMORIZER_DEBUGFS_RAM``
+  Boolean, enables/disables the exposure of Memorizer's buffer via a debugfs file.
+
+``INLINE_LIBS``
+  Boolean, forces gcc to use inline calls for some library functions. This must be enabled to run Memorizer.
+
+Dependencies
+~~~~~~~~~~~~
+``KASAN``
+  Boolean, enables/disables Kernel Address Sanitizer (KASAN). This is an error detector designed to find out-of-bounds and use-after-free bugs in dynamic memory. This must be enabled to run Memorizer.
+
 .. _`debugfs-files`:
 
 Memorizer ``debugfs`` files

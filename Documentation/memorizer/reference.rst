@@ -373,8 +373,15 @@ any number of shorter lines per long line. There may be any number of long lines
 in a kmap file.
 
 ``alloc_ip``
-  The instruction pointer of the ``call`` instruction which resulted
+  The return instruction pointer of the ``call`` instruction which resulted
   in the allocation of the object.
+
+  Alterntively, this might contain a small integer value, which generally
+  identifies a synthetic record. The possible values include:
+
+  .. csv-table:: alloc_ip non-pointer values
+    :file: alloc-type.csv
+    :header-rows: 1
 
 ``pid``
   The process ID of the process that allocated the object.

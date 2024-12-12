@@ -347,10 +347,11 @@ File Formats
 
 blah.
 
+.. _`debugfs-kmap-stream`:
 .. _`debugfs-kmap`:
 
-``kmap``
-~~~~~~~~
+``kmap`` and ``kmap_stream``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. note::
 

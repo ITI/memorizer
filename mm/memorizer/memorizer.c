@@ -554,36 +554,36 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 			enum AllocType AT = kasan_obj_type((void *)va_ptr,size);
 			kobj =  general_kobjs[AT];
 			switch(AT){
-				case MEM_STACK_PAGE:
-					kobj = __create_kobj(MEM_STACK_PAGE, va_ptr,
-							size, MEM_UFO_GLOBAL);
-					track_access(MEM_STACK_PAGE,size);
-					break;
-                case MEM_HEAP:
+			case MEM_STACK_PAGE:
+				kobj = __create_kobj(MEM_STACK_PAGE, va_ptr,
+						size, MEM_STACK_PAGE);
+				track_access(MEM_STACK_PAGE,size);
+				break;
+			case MEM_HEAP:
 #if 1
-                    // Debugging feature to print a KASAN report for missed heap accesses.
-                        // Only prints up to 5 reports.
-                    if (reports_shown < 5){
-                        kasan_report((const void*) va_ptr, size, 1, (unsigned long)&kasan_report);
-                        reports_shown++;
-                    }
+				// Debugging feature to print a KASAN report for missed heap accesses.
+				// Only prints up to 5 reports.
+				if (reports_shown < 5){
+					kasan_report((const void*) va_ptr, size, 1, (unsigned long)&kasan_report);
+					reports_shown++;
+				}
 #endif
-                    kobj = add_heap_UFO(va_ptr);
+				kobj = add_heap_UFO(va_ptr);
 
-                    track_access(MEM_UFO_HEAP,size);
-                    break;
-                case MEM_GLOBAL:
-                    kobj = __create_kobj(MEM_UFO_GLOBAL, va_ptr,
-                                 size, MEM_UFO_GLOBAL);
-                    track_access(MEM_UFO_GLOBAL,size);
-                    break;
-                case MEM_NONE:
-                    kobj = __create_kobj(MEM_UFO_NONE, va_ptr,
-                                 size, MEM_UFO_NONE);
-                    track_access(MEM_UFO_NONE,size);
-                    break;
-                default:
-                    track_untracked_access(AT,size);
+				track_access(MEM_UFO_HEAP,size);
+				break;
+			case MEM_GLOBAL:
+				kobj = __create_kobj(MEM_UFO_GLOBAL, va_ptr,
+					size, MEM_UFO_GLOBAL);
+				track_access(MEM_UFO_GLOBAL,size);
+				break;
+			case MEM_NONE:
+				kobj = __create_kobj(MEM_UFO_NONE, va_ptr,
+					 size, MEM_UFO_NONE);
+				track_access(MEM_UFO_NONE,size);
+				break;
+			default:
+				track_untracked_access(AT,size);
 			}
 		}
 	} else {
@@ -1202,12 +1202,14 @@ void memorizer_memblock_free(phys_addr_t base, phys_addr_t size)
 {
 }
 
+#if 0
 void memorizer_alloc_bootmem(unsigned long call_site, void * v, uint64_t size)
 {
 	track_alloc(MEM_BOOTMEM);
 	__memorizer_kmalloc(call_site, v, size, size, 0, MEM_BOOTMEM);
 	return;
 }
+#endif
 
 const char * l1str = "lt_l1_tbl";
 const char * l2str = "lt_l2_tbl";
@@ -1414,12 +1416,6 @@ void memorizer_stack_page_alloc(struct task_struct *task)
 		/* change alloc type to stack page alloc */
 		stack_kobj->alloc_type = MEM_STACK_PAGE;
 	}
-}
-
-void memorizer_stack_alloc(unsigned long call_site, const void *ptr, size_t
-		size)
-{
-	__memorizer_kmalloc(call_site, ptr, size, size, 0, MEM_STACK);
 }
 
 void memorizer_register_global(const void *ptr, size_t size)

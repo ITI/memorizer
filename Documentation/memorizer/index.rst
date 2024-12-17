@@ -15,7 +15,7 @@ run the memorizer kernel, along with collecting and sending kmap data.
 
 
 .. toctree::
-    :maxdepth: 1
+    :maxdepth: 2
 
     quick_start
     using_memorizer

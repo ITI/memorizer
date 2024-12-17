@@ -366,22 +366,43 @@ Memorizer outputs data as text. The format of the ``kmap`` file is as follows::
     ...
   ...
 
-The longer line represents the allocation and destruction of a kernel object.
-The shorter, indented, line represents the memory accesses of that same object.
-Each shorter line refers to the immediately preceding long line. There may be
-any number of shorter lines per long line. There may be any number of long lines
-in a kmap file.
+The longer line represents the allocation and destruction of a kernel
+object.  The shorter, indented, line represents the memory accesses of
+that same object.  Each shorter line refers to the immediately preceding
+long line. There may be any number of shorter lines per long line. There
+may be any number of long lines in a kmap file.
 
 ``alloc_ip``
   The return instruction pointer of the ``call`` instruction which resulted
   in the allocation of the object.
 
-  For some allocations, it is either not useful or not possible to describe
-  the actual ``call`` instruction. For example, a statically-declared object
-  does not have the same valloc-use-vfree life cycle as a dynamiclly-allocated
-  object. In those case an small integer is used. See :ref:``alloc_type`` for
-  a description of these values.
+  For some allocations, it is either not useful or not possible
+  to describe the actual ``call`` instruction. For example, a
+  statically-declared object does not have the same valloc-use-vfree
+  life cycle as a dynamically-allocated object. In those case synthetic
+  values are used, each with a special meaning.
+
+  ``MEMORIZER_PREALLOCATED(0xfeedbeef)``
+    This flag is used when Slub allocates new objects for a cache.
+    Memorizer preallocates objects here so any accesses from constructors
+    are captured correctly. This value is subsequently overwritten with
+    the actual instruction pointer of the ``call`` instruction whch
+    resulted in the allocation of the object.
+
+  ``0``
+    Memorizer maintains a set of general-purpose object descriptors,
+    each with ``alloc_ip`` set to zero and with ``alloc_type`` set to
+    a valid :ref:alloc_type value. These are used when a memory access
+    occurs and the memory address is not described by an existing
+    object descriptor.
     
+  Other ``alloc_type`` values.
+    Some memory accesses which cannot be associated with existing
+    object descriptors result in the creation of new descriptors
+    with ``alloc_ip`` set equal to :ref:alloc_type. These
+    types include UFO_MEMBLOCK(0x14), STACK_PAGE(0x3), UFO_HEAP(0x5),
+    UFO_GLOBAL(0x18), and UFO_NONE(0x19), 
+
 ``pid``
   The process ID of the process that allocated the object.
 
@@ -401,7 +422,7 @@ in a kmap file.
   `memorizer_index_type`_ for a description.
 
 ``free_ip``
-  The instruction pointer of the `call` instruction which destroyed the object.
+  The instruction pointer of the ``call`` instruction which destroyed the object.
 
   There are a few special cases:
 
@@ -413,86 +434,109 @@ in a kmap file.
     as a previously allocated, not freed, object, then Memorizer probably
     did not observe the intervening free.
 
-    In this case, ``free_ip`` of the previous object is ``0xdeadbeef`` and
-    the ``free_index`` of the previous object is set equal to the
-    ``alloc_ip`` of the subsequent object.
-    ``new_alloc_type`` of the previous
-    allocation is set to the ``alloc_type`` of the subsequent allocation.
+    If this is the result of nested allocations, then ``free_ip`` of
+    the previous allocation will have ``0xfedbeef``.
 
-  - If a subsequently allocated object has exactly the same virtual address
-    as the immediately preceding allocation, this represents a
-    nested allocation. In this case, ``free_ip`` is set to ``0xfedbeef``.
-    ``new_alloc_type`` of the previous
-    allocation is set to the ``alloc_type`` of the subsequent allocation.
-    ``free_index`` of the previous allocation is set to ``alloc_index``
-    of the subsequent allocation.
+    If this occurs for some other, unknown, reason, then ``free_ip`` of
+    the previous allocation will have ``0xdeadbeef``.
 
-.. ``_alloc_type``:
+    In either case, the ``free_index`` of the previous alloctaion is
+    set equal to the ``alloc_index`` of the subsequent allocation.
+
 ``alloc_type``
   Memorizer tracks various sorts of object allocation. This field
   gives an indication of which type this is.
 
   This field has several possible values. Consult the source code
-  for more information on each of these::
+  for more information on each of these:
 
-  STACK (MEM_STACK, 0)
+  STACK (MEM_STACK, 0x0)
     Unused.
-  STACK_FRAME (MEM_STACK_FRAME, 1)
-    Used in the generation of call frame graphs (CFGs).This value should not appear in kmap. 
-  STACK_ARGS (MEM_STACK_ARGS, 2)
+
+  STACK_FRAME (MEM_STACK_FRAME, 0x1)
+    Used in the generation of call frame graphs (CFGs).This value should
+    not appear in kmap.
+
+  STACK_ARGS (MEM_STACK_ARGS, 0x2)
     Same.
-  STACK_PAGE (MEM_STACK_PAGE, 3)
+
+  STACK_PAGE (MEM_STACK_PAGE, 0x3)
     Used to describe a kernel object allocated in a stack frame
-  GEN_HEAP (MEM_HEAP, 4)
+
+  GEN_HEAP (MEM_HEAP, 0x4)
     Unused.
-  UFO_HEAP (MEM_UFO_HEAP, 5)
+
+  UFO_HEAP (MEM_UFO_HEAP, 0x5)
     Unused.
-  GLOBAL (MEM_GLOBAL, 6)
+
+  GLOBAL (MEM_GLOBAL, 0x6)
     The object is globally declared.
-  KMALLOC (MEM_KMALLOC, 7)
-    The subject allocation was from either the ``kmalloc`` or ``kmalloc_node`` family of allocators.
-  KMALLOC_ND (MEM_KMALLOC_ND, 8)
-    The subject allocation was from either the ``kmalloc`` or ``kmalloc_node`` family of allocators.
-  KMEM_CACHE (MEM_KMEM_CACHE, 9)
+
+  KMALLOC (MEM_KMALLOC, 0x7)
+    The subject allocation was from either the ``kmalloc`` or
+    ``kmalloc_node`` family of allocators.
+
+  KMALLOC_ND (MEM_KMALLOC_ND, 0x8)
+    The subject allocation was from either the ``kmalloc`` or
+    ``kmalloc_node`` family of allocators.
+
+  KMEM_CACHE (MEM_KMEM_CACHE, 0x9)
     The subject allocation was from the kmem_cache_alloc family of allocators.
-  KMEM_CACHE_ND (MEM_KMEM_CACHE_ND, 10)
+
+  KMEM_CACHE_ND (MEM_KMEM_CACHE_ND, 0xA)
     The subject allocation was from the kmem_cache_alloc family of allocators.
-  KMEM_CACHE_BULK (MEM_KMEM_CACHE_BULK, 11)
+
+  KMEM_CACHE_BULK (MEM_KMEM_CACHE_BULK, 0xB)
     The subject allocation was from the kmem_cache_alloc family of allocators.
-  VMALLOC (MEM_VMALLOC, 12)
+
+  VMALLOC (MEM_VMALLOC, 0xC)
     The subject allocation was from ``vmalloc``.
-  ALLOC_PAGES (MEM_ALLOC_PAGES, 13)
+
+  ALLOC_PAGES (MEM_ALLOC_PAGES, 0xD)
     The subject allocation was from ``__alloc_pages``., et al.
-  ALLOC_PAGES_EXACT (MEM_ALLOC_PAGES_EXACT, 14)
+
+  ALLOC_PAGES_EXACT (MEM_ALLOC_PAGES_EXACT, 0xE)
     The subject allocation was from ``alloc_pages_exact``.
-  ALLOC_PAGES_GETFREEPAGES (MEM_ALLOC_PAGES_GETFREEPAGES, 15)
+
+  ALLOC_PAGES_GETFREEPAGES (MEM_ALLOC_PAGES_GETFREEPAGES, 0xF)
     The subject alloction was from ``__get_free_page``.
-  ALLOC_PAGES_FOLIO (MEM_ALLOC_PAGES_FOLIO, 16)
+
+  ALLOC_PAGES_FOLIO (MEM_ALLOC_PAGES_FOLIO, 0x10)
     The subject allocation was from ``__folio_alloc``.
-  INDUCED_ALLOC (MEM_INDUCED_ALLOC, 17)
+
+  INDUCED_ALLOC (MEM_INDUCED_ALLOC, 0x11)
     This object was allocated during (and, presumably as a result of)
     Memorizer itself. In order to avoid either deadlock or infinite
-    recursion, we ark this object generically.
-  BOOTMEM (MEM_BOOTMEM, 18)
+    recursion, we mark this object as INDUCED.
+
+  BOOTMEM (MEM_BOOTMEM, 0x12)
     Unused.
-  MEMBLOCK (MEM_MEMBLOCK, 19)
+
+  MEMBLOCK (MEM_MEMBLOCK, 0x13)
     This object is inside a region returned by ``memblock_insert_region``.
-  UFO_MEMBLOCK (MEM_UFO_MEMBLOCK, 20)
+
+  UFO_MEMBLOCK (MEM_UFO_MEMBLOCK, 0x14)
     This object is inside a ``memblock_insert_region``,
     but is (incorrectly) not in the Memorizer tracking system.
-  MEMORIZER (MEM_MEMORIZER, 21)
+
+  MEMORIZER (MEM_MEMORIZER, 0x15)
     This object is inside Memorizer's private memory pool.
-  USER (MEM_MZ_USER, 22)
+
+  USER (MEM_MZ_USER, 0x16)
    This object exists in user space.
-  BUG (MEM_BUG, 23)
+
+  BUG (MEM_BUG, 0x17)
     This object exists within the first page or is an address
     from which the software can infer no meaning.
-  UFO_GLOBAL (MEM_UFO_GLOBAL, 24)
+
+  UFO_GLOBAL (MEM_UFO_GLOBAL, 0x18)
     The object is globally declared, 
     but is (incorrectly) not in the Memorizer tracking system.
-  UFO_NONE (MEM_UFO_NONE, 25)
+
+  UFO_NONE (MEM_UFO_NONE, 0x19)
     Memorizer can infer no information about the object.
-  NONE (MEM_NONE, 26)
+
+  NONE (MEM_NONE, 0x1A)
     Memorizer can infer no information about the object.
 
 ``command``

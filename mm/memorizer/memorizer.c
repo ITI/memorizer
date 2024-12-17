@@ -556,7 +556,7 @@ static inline int find_and_update_kobj_access(uintptr_t src_va_ptr,
 			switch(AT){
 			case MEM_STACK_PAGE:
 				kobj = __create_kobj(MEM_STACK_PAGE, va_ptr,
-						size, MEM_UFO_GLOBAL);
+						size, MEM_STACK_PAGE);
 				track_access(MEM_STACK_PAGE,size);
 				break;
 			case MEM_HEAP:
@@ -1202,12 +1202,14 @@ void memorizer_memblock_free(phys_addr_t base, phys_addr_t size)
 {
 }
 
+#if 0
 void memorizer_alloc_bootmem(unsigned long call_site, void * v, uint64_t size)
 {
 	track_alloc(MEM_BOOTMEM);
 	__memorizer_kmalloc(call_site, v, size, size, 0, MEM_BOOTMEM);
 	return;
 }
+#endif
 
 const char * l1str = "lt_l1_tbl";
 const char * l2str = "lt_l2_tbl";

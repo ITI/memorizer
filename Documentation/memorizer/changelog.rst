@@ -2,6 +2,10 @@
 Summary of memorizer-specific kernel versions
 =============================================
 
+- v6.6.51-memorizer-28
+
+  - Documentation updates
+
 - v6.6.51-memorizer-27
 
   - HTML documentation deployment on github.

@@ -153,21 +153,29 @@ Config Variables
   Boolean, enables/disables the Memorizer tool. Memorizer traces the memory allocations of kernel objects to track patterns across an object's lifetime.
 
 ``MEMORIZER_STATS``
-  Boolean, enables/disables the Memorizer statistics summary. The statistics summary includes the number of accesses and shadow objects allocated for Memorizer which will slow down the performance of the system.
+  Boolean, enables/disables the Memorizer statistics summary. The
+  statistics summary includes the number of accesses and shadow objects
+  allocated for Memorizer which will slow down the performance of
+  the system.
 
 ``MEMORIZER_TRACKPIDS``
-  Boolean, enables/disables the segregation of memory access counts by process id (PID) within Memorizer data.
+  Boolean, enables/disables the segregation of memory access counts by
+  process id (PID) within Memorizer data.
 
 ``MEMORIZER_DEBUGFS_RAM``
-  Boolean, enables/disables the exposure of Memorizer's buffer via a debugfs file.
+  Boolean, enables/disables the exposure of Memorizer's buffer via a
+  debugfs file.
 
 ``INLINE_LIBS``
-  Boolean, forces gcc to use inline calls for some library functions. This must be enabled to run Memorizer.
+  Boolean, forces gcc to use inline calls for some library functions. This
+  must be enabled to run Memorizer.
 
 Dependencies
 ~~~~~~~~~~~~
 ``KASAN``
-  Boolean, enables/disables Kernel Address Sanitizer (KASAN). This is an error detector designed to find out-of-bounds and use-after-free bugs in dynamic memory. This must be enabled to run Memorizer.
+  Boolean, enables/disables Kernel Address Sanitizer (KASAN). This is
+  an error detector designed to find out-of-bounds and use-after-free
+  bugs in dynamic memory. This must be enabled to run Memorizer.
 
 .. _`debugfs-files`:
 
@@ -333,22 +341,26 @@ Status Files
 
 ``stats``
   Reading this file generates human-readable statistical data
-  about the current state of Memorizer. For more information,
-  see :ref:`debugfs-stat`.
+  about the current state of Memorizer. The format is intended
+  to be self-evident and is subject to change from release to release.
+
+  External scripts should not rely upon the format of this file.
 
 
 File Formats
 ============
 
-.. _`debugfs-stat`:
-
 ``stat``
 ~~~~~~~~
 
-blah.
+Reading this file generates human-readable statistical data
+about the current state of Memorizer. The format is intended
+to be self-evident and is subject to change from release to release.
 
-.. _`debugfs-kmap-stream`:
-.. _`debugfs-kmap`:
+External scripts should not rely upon the format of this file.
+
+.. _debugfs-kmap-stream:
+.. _debugfs-kmap:
 
 ``kmap`` and ``kmap_stream``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -372,21 +384,46 @@ that same object.  Each shorter line refers to the immediately preceding
 long line. There may be any number of shorter lines per long line. There
 may be any number of long lines in a kmap file.
 
+The following fields are printed as unsigned hexadecimal values:
+
+* ``alloc_ip``
+* ``obj_va_ptr``
+* ``free_ip``
+
+The following fields are printed as unsigned decimal values:
+
+* ``size``
+* ``alloc_index``
+* ``free_index``
+
+The following fields are printed as (possibly blank) character strings:
+
+* ``alloc_type``
+* ``command``
+* ``slabname``
+* ``new_alloc_type``
+
+* The following field is printed as a signed decimal value:
+
+* ``pid``
+
+
+
 ``alloc_ip``
   The return instruction pointer of the ``call`` instruction which resulted
   in the allocation of the object.
 
   For some allocations, it is either not useful or not possible
   to describe the actual ``call`` instruction. For example, a
-  statically-declared object does not have the same valloc-use-vfree
-  life cycle as a dynamically-allocated object. In those case synthetic
+  statically-declared object does not have the same vmalloc-use-vfree
+  life cycle as a dynamically-allocated object. In those cases synthetic
   values are used, each with a special meaning.
 
   ``MEMORIZER_PREALLOCATED(0xfeedbeef)``
     This flag is used when Slub allocates new objects for a cache.
     Memorizer preallocates objects here so any accesses from constructors
     are captured correctly. This value is subsequently overwritten with
-    the actual instruction pointer of the ``call`` instruction whch
+    the actual instruction pointer of the ``call`` instruction which
     resulted in the allocation of the object.
 
   ``0``
@@ -396,12 +433,17 @@ may be any number of long lines in a kmap file.
     occurs and the memory address is not described by an existing
     object descriptor.
     
-  Other ``alloc_type`` values.
+  Other ``alloc_type`` values
     Some memory accesses which cannot be associated with existing
     object descriptors result in the creation of new descriptors
     with ``alloc_ip`` set equal to :ref:alloc_type. These
-    types include UFO_MEMBLOCK(0x14), STACK_PAGE(0x3), UFO_HEAP(0x5),
+    types include UFO_MEMBLOCK(0x14), STACK_PAGE(0x3),
     UFO_GLOBAL(0x18), and UFO_NONE(0x19), 
+
+    .. note::
+      ``alloc_ip`` is printed as a hexadecimal value without a ``0x``
+      prefix. The printed value ``14``, for example is ``0x14`` or
+      decimal 20.
 
 ``pid``
   The process ID of the process that allocated the object.
@@ -431,16 +473,16 @@ may be any number of long lines in a kmap file.
     the free, then ``free_ip`` is also zero.
 
   - If a subsequently allocated object exists in the same virtual addresses
-    as a previously allocated, not freed, object, then Memorizer probably
-    did not observe the intervening free.
+    as a previously allocated, not freed, object, then either Memorizer
+    did not observe the intervening free, or there was no interveneing free.
 
-    If this is the result of nested allocations, then ``free_ip`` of
-    the previous allocation will have ``0xfedbeef``.
+    * If this is the result of nested allocations, then ``free_ip`` of
+      the previous allocation will have ``0xfedbeef``.
 
-    If this occurs for some other, unknown, reason, then ``free_ip`` of
-    the previous allocation will have ``0xdeadbeef``.
+    * If this occurs for some other, unknown, reason, then ``free_ip`` of
+      the previous allocation will have ``0xdeadbeef``.
 
-    In either case, the ``free_index`` of the previous alloctaion is
+    In either case, the ``free_index`` of the previous allocation is
     set equal to the ``alloc_index`` of the subsequent allocation.
 
 ``alloc_type``
@@ -458,10 +500,11 @@ may be any number of long lines in a kmap file.
     not appear in kmap.
 
   STACK_ARGS (MEM_STACK_ARGS, 0x2)
-    Same.
+    Used in the generation of call frame graphs (CFGs).This value should
+    not appear in kmap.
 
   STACK_PAGE (MEM_STACK_PAGE, 0x3)
-    Used to describe a kernel object allocated in a stack frame
+    Used to describe a kernel object allocated in a stack frame.
 
   GEN_HEAP (MEM_HEAP, 0x4)
     Unused.
@@ -499,7 +542,7 @@ may be any number of long lines in a kmap file.
     The subject allocation was from ``alloc_pages_exact``.
 
   ALLOC_PAGES_GETFREEPAGES (MEM_ALLOC_PAGES_GETFREEPAGES, 0xF)
-    The subject alloction was from ``__get_free_page``.
+    The subject allocation was from ``__get_free_page``.
 
   ALLOC_PAGES_FOLIO (MEM_ALLOC_PAGES_FOLIO, 0x10)
     The subject allocation was from ``__folio_alloc``.
@@ -552,7 +595,7 @@ may be any number of long lines in a kmap file.
 
 ``new_alloc_type``
   Every allocator must, itself, be a client of a more generic
-  allocator.  For example, ``kmalloc`` might gets its memory from
+  allocator.  For example, ``kmalloc`` might get its memory from
   ``__alloc_pages``. When that happens, the allocation kmap
   entry for the more generic allocation will include the
   ``alloc_type`` of the more specific allocation in this

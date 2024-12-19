@@ -136,6 +136,8 @@
 #include <linux/mempool.h>
 #include <linux/delay.h>
 #include <asm/fixmap.h>
+#include <linux/cpu.h>
+#include <linux/cpumask.h>
 
 #include "kobj_metadata.h"
 #include "event_structs.h"
@@ -1532,6 +1534,32 @@ static ssize_t memorizer_enabled_read(struct file *filp, char __user *usr_buf, s
 	return simple_read_from_buffer(usr_buf, size, ppos, buf, count);
 }
 
+static int switch_to_unip(void)
+{
+	int rc;
+	int cpu;
+	for_each_online_cpu(cpu) {
+		rc = remove_cpu(cpu);
+		if(rc < 0 && rc != -EPERM)
+			return rc;
+	}
+	BUG_ON(num_online_cpus() != 1);
+	return 0;
+}
+
+static int switch_to_multip(void)
+{
+	int rc;
+	int cpu;
+	for_each_present_cpu(cpu) {
+		rc = add_cpu(cpu);
+		if(rc < 0)
+			return rc;
+	}
+	BUG_ON(num_online_cpus() != num_present_cpus());
+	return 0;
+}
+
 static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf, size_t count, loff_t *ppos)
 {
 	int ret;
@@ -1552,17 +1580,32 @@ static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf
 		}
 	}
 
-	pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
-	memorizer_enabled = value;
+	if (value) {
+		pr_info("memorizer_enabled: switching to uniprocessor mode\n");
+		switch_to_unip();
+
+		pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
+		memorizer_enabled = value;
+	}
+	else if (value == 0) {
+		pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
+		memorizer_enabled = value;
+
+		pr_info("memorizer_enabled: switching to multiprocessor mode\n");
+		switch_to_multip();
+	}
+
 
 	if (value == 0 || value == 1)
 		goto out;
 
 	if (value == 2 || value == 3) {
 		memorizer_enabled_pid = task_pid_nr(current);
+		/* TODO set affinity mask to '1' */
 		current->memorizer_enabled = 1;
 	} else {
 		memorizer_enabled_pid = value;
+		/* TODO set affinity mask to '1' */
 		task->memorizer_enabled = 1;
 		put_task_struct(task);
 	}

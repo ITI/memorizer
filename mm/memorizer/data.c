@@ -391,6 +391,8 @@ static int kmap_open(struct inode *inode, struct file *file)
 		return -EBUSY;
 	}
 
+	pr_info("reading from kmap");
+	set_cpu0_affinity(current);
 	return seq_open(file, &kmap_seq_ops);
 
 	/* __memorizer_exit to be called in kmap_release()  */
@@ -415,12 +417,12 @@ static int stream_open_(struct inode *inode,
 static int kmap_stream_open(struct inode *inode, struct file *file)
 {
 	pr_info("Starting kmap streaming\n");
+	set_cpu0_affinity(current);
 	return stream_open_(inode, file, &memorizer_object_freed_list, &kmap_stream_seq_ops);
 }
 
 static int kmap_stream_release(struct inode *inode, struct file *file)
 {
-	pr_info("Ending kmap streaming\n");
 	return seq_release(inode, file);
 }
 
@@ -430,6 +432,7 @@ static int kmap_release(struct inode *inode, struct file *file)
 
 	/* __memorizer_enter called in kmap_open() */
 	__memorizer_exit();
+	pr_info("closing kmap, allocations, or accesses\n");
 	return ret;
 }
 
@@ -577,6 +580,8 @@ static int allocs_open(struct inode *inode, struct file *file)
 		 */
 		return -EBUSY;
 	}
+	pr_info("Reading allocs\n");
+	set_cpu0_affinity(current);
 	return seq_open(file, &allocs_seq_ops);
 
 	/* __memorizer_exit to be called in kmap_release()  */
@@ -602,6 +607,8 @@ static int accesses_open(struct inode *inode, struct file *file)
 		 */
 		return -EBUSY;
 	}
+	pr_info("Reading accesses\n");
+	set_cpu0_affinity(current);
 	return seq_open(file, &accesses_seq_ops);
 
 	/* __memorizer_exit to be called in kmap_release()  */

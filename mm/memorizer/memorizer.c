@@ -1538,6 +1538,7 @@ static int switch_to_unip(void)
 {
 	int rc;
 	int cpu;
+	pr_info("switching to uniprocessor mode\n");
 	for_each_online_cpu(cpu) {
 		rc = remove_cpu(cpu);
 		if(rc < 0 && rc != -EPERM)
@@ -1551,6 +1552,7 @@ static int switch_to_multip(void)
 {
 	int rc;
 	int cpu;
+	pr_info("switching to multiprocessor mode\n");
 	for_each_present_cpu(cpu) {
 		rc = add_cpu(cpu);
 		if(rc < 0)
@@ -1560,21 +1562,26 @@ static int switch_to_multip(void)
 	return 0;
 }
 
-static int set_cpu0_affinity(struct task_struct *task)
+int set_cpu0_affinity(struct task_struct *task)
 {
 	cpumask_t mask;
 	int cpu0 = 0;
+	int ret;
 
 	// Create a CPU mask with only target_cpu enabled
 	cpumask_clear(&mask);
 	cpumask_set_cpu(cpu0, &mask);
 
-	return set_cpus_allowed_ptr(task, &mask);
+	get_task_struct(task);
+	pr_info("Limiting process %d to CPU0\n", task_tgid_nr(current));
+	ret = set_cpus_allowed_ptr(task, &mask);
+	put_task_struct(task);
+
+	return ret;
 }
 
 static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf, size_t count, loff_t *ppos)
 {
-	/* TODO robadams@illinois.edu set affinity of any task that has kmap et al open. */
 	int ret;
 	int value;
 	struct task_struct *task;
@@ -1586,21 +1593,15 @@ static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf
 	if (value < 0)
 		return -EINVAL;
 
-
+	pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
 	switch(value) {
 	case 0:
-		pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
 		memorizer_enabled = value;
-
-		pr_info("memorizer_enabled: switching to multiprocessor mode\n");
 		switch_to_multip();
 		break;
 
 	case 1:
-		pr_info("memorizer_enabled: switching to uniprocessor mode\n");
 		switch_to_unip();
-
-		pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
 		memorizer_enabled = value;
 		break;
 
@@ -1610,12 +1611,8 @@ static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf
 		set_cpu0_affinity(task);
 		memorizer_enabled_pid = task_pid_nr(task);
 		put_task_struct(task);
-		pr_info("memorizer_enabled_pid: %d\n", memorizer_enabled_pid);
 
-		pr_info("memorizer_enabled: switching to uniprocessor mode\n");
 		switch_to_unip();
-
-		pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
 		memorizer_enabled = value;
 		break;
 
@@ -1630,16 +1627,13 @@ static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf
 			task = get_task_struct(current);
 		}
 
-		memorizer_enabled_pid = task_pid_nr(task);
-		set_cpu0_affinity(task);
 		task->memorizer_enabled = 1;
+		set_cpu0_affinity(task);
+		memorizer_enabled_pid = task_pid_nr(task);
 
 		put_task_struct(task);
 
-		pr_info("memorizer_enabled_pid: %d\n", memorizer_enabled_pid);
-		pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
 		memorizer_enabled = value;
-		pr_info("memorizer_enabled: switching to multiprocessor mode\n");
 		switch_to_multip();
 		break;
 	}

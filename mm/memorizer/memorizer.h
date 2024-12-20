@@ -36,6 +36,7 @@
 
 #include <linux/gfp.h>
 #include <linux/delay.h>
+#include <linux/sched.h>
 
 /* mask to apply to memorizer allocations TODO: verify the list of bits */
 #define gfp_memorizer_mask(gfp)	((GFP_ATOMIC | __GFP_NOTRACK | __GFP_NORETRY | GFP_NOWAIT))
@@ -239,5 +240,10 @@ static __always_inline void __memorizer_exit(void)
 {
     this_cpu_write(inmem, 0);
 }
+
+/**
+ * set_cpu0_affinity - Force @task to run on CPU0.
+ */
+int set_cpu0_affinity(struct task_struct *task);
 
 #endif /* __MEMORIZER_H_ */

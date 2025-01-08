@@ -1548,7 +1548,7 @@ static int switch_to_unip(void)
 	return 0;
 }
 
-static int switch_to_multip(void)
+int switch_to_multip(void)
 {
 	int rc;
 	int cpu;
@@ -1573,7 +1573,7 @@ int set_cpu0_affinity(struct task_struct *task)
 	cpumask_set_cpu(cpu0, &mask);
 
 	get_task_struct(task);
-	pr_info("Limiting process %d to CPU0\n", task_tgid_nr(current));
+	pr_info("Limiting process %d to CPU0\n", task_tgid_nr(task));
 	ret = set_cpus_allowed_ptr(task, &mask);
 	put_task_struct(task);
 

@@ -375,27 +375,21 @@ static const struct seq_operations accesses_seq_ops = {
 	.show  = accesses_seq_show,
 };
 
+static void mzdisable(void)
+{
+	pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, 0);
+	memorizer_enabled = 0;
+	switch_to_multip();
+	// maybe set_cpu0_affinity? instead?
+}
+
 static int kmap_open(struct inode *inode, struct file *file)
 {
-	/* TODO robadams@illinois.edu
-	 * We need to temporarily stop memorizer so that
-	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and needs to
-	 * be replaced.]
-	 */
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
 
 	pr_info("reading from kmap");
-	set_cpu0_affinity(current);
-	return seq_open(file, &kmap_seq_ops);
+	mzdisable();
 
-	/* __memorizer_exit to be called in kmap_release()  */
+	return seq_open(file, &kmap_seq_ops);
 }
 
 static int stream_open_(struct inode *inode,
@@ -430,8 +424,6 @@ static int kmap_release(struct inode *inode, struct file *file)
 {
 	int ret = seq_release(inode, file);
 
-	/* __memorizer_enter called in kmap_open() */
-	__memorizer_exit();
 	pr_info("closing kmap, allocations, or accesses\n");
 	return ret;
 }
@@ -566,26 +558,14 @@ static const struct file_operations kmap_fops = {
 	.read		= seq_read,
 	.release	= kmap_release,
 };
+
 static int allocs_open(struct inode *inode, struct file *file)
 {
-	/* We need to temporarily stop memorizer so that
-	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and need to
-	 * be replaced.]
-	 */
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
 	pr_info("Reading allocs\n");
-	set_cpu0_affinity(current);
+	mzdisable();
 	return seq_open(file, &allocs_seq_ops);
-
-	/* __memorizer_exit to be called in kmap_release()  */
 }
+
 static const struct file_operations allocs_fops = {
 	.owner		= THIS_MODULE,
 	.open		= allocs_open,
@@ -595,23 +575,9 @@ static const struct file_operations allocs_fops = {
 
 static int accesses_open(struct inode *inode, struct file *file)
 {
-	/* We need to temporarily stop memorizer so that
-	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and need to
-	 * be replaced.]
-	 */
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
 	pr_info("Reading accesses\n");
-	set_cpu0_affinity(current);
+	mzdisable();
 	return seq_open(file, &accesses_seq_ops);
-
-	/* __memorizer_exit to be called in kmap_release()  */
 }
 
 static const struct file_operations accesses_fops = {

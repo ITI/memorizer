@@ -292,6 +292,11 @@ These files are all read-only. Any writes to these files will return an error.
     false, returns only information on freed objects. 
     For more information on the data format, see :ref:`debugfs-kmap`
 
+    .. note::
+
+    Whenever ``kmap`` is opened, Memorizer disables itself.
+    
+
 ``kmap_stream``
   - `READ` - Returns current Memorizer data in a way convenient for
     network streaming. It only returns data on freed objects, regardless

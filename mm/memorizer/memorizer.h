@@ -246,4 +246,6 @@ static __always_inline void __memorizer_exit(void)
  */
 int set_cpu0_affinity(struct task_struct *task);
 
+int switch_to_multip(void);
+
 #endif /* __MEMORIZER_H_ */

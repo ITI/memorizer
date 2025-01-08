@@ -193,11 +193,15 @@ is displayed so that the user may control the boot process::
 
     GRUB_TIMEOUT=5 
     GRUB_TIMEOUT_STYLE=countdown
-    GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no maxcpus=1 split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
+    GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
 
-Memorizer can be run in SMP—and the ``maxcpus`` option can be excluded—by using ``taskset`` to bond Memorizer to a specified CPU. See :ref:`limiting_cpus`.
+Previous versions of Memorizer required ``maxcpus=1`` in the
+``GRUB_CMDLIN_LINUX`` value. This is no longer the case.  Memorizer
+can be run in an SMP-enabled kernel, and the ``maxcpus`` option can
+be excluded.  See :ref:`limiting_cpus`.
 
-Give ``memalloc_size`` as much memory as you can spare, but at least 4 gigabytes. The remaining memory should be enough to run your experiment.
+Give ``memalloc_size`` as much memory as you can spare, but at least 4 gigabytes.
+Choose a size such that the remaining memory is enough to run your experiment.
 
 See :ref:`memorizer-grub-cmdline` for more information about individual kernel parameters.
 

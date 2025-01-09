@@ -198,7 +198,7 @@ is displayed so that the user may control the boot process::
 Previous versions of Memorizer required ``maxcpus=1`` in the
 ``GRUB_CMDLIN_LINUX`` value. This is no longer the case.  Memorizer
 can be run in an SMP-enabled kernel, and the ``maxcpus`` option can
-be excluded.  See :ref:`limiting_cpus`.
+be excluded.  See :ref:`limiting_cpus` for more information.
 
 Give ``memalloc_size`` as much memory as you can spare, but at least 4 gigabytes.
 Choose a size such that the remaining memory is enough to run your experiment.

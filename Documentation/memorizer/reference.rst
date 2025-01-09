@@ -294,7 +294,7 @@ These files are all read-only. Any writes to these files will return an error.
 
     .. note::
 
-    Whenever ``kmap`` is opened, Memorizer disables itself.
+      Whenever ``kmap`` is opened, Memorizer disables itself.
     
 
 ``kmap_stream``
@@ -618,6 +618,8 @@ This format was chosen to simplify the parsing of Memorizer data::
 
   allocs = pd.read_csv("./allocations")
   accesses = pd.read_csv("./accesses")
+
+.. _`limiting_cpus`:
 
 Limiting CPUs
 =============

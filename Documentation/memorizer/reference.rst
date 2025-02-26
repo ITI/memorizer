@@ -116,7 +116,7 @@ Configuring Console Output (``console=tty0`` and ``console=ttyS0``)
 
 Using the Grub syntax, here is a working example of a Memorizer kernel command line::
 
-  GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no maxcpus=1 split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
+  GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
 
 
 Memorizer Kernel Config Variables
@@ -658,7 +658,7 @@ Mode ``3`` (e.g. ``echo 3 > memorizer_enabled``)
   is running in multiprocessor mode.
 
 Mode ``pid`` (e.g. ``echo $! > memorizer_enabled``).
-  Memorizer set the cpu affinity mask for the indicated process
+  Memorizer sets the cpu affinity mask for the indicated process
   and all its subsequently-created descendants to ``1``.
 
 Any process that captures Memorizer data will also be pinned

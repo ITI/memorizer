@@ -429,9 +429,14 @@ static int kmap_release(struct inode *inode, struct file *file)
 }
 
 
+static struct memorizer_kobj*
+lh_to_kobj(struct list_head *p)
+{
+	return list_entry(p, struct memorizer_kobj, object_list);
+}
 
 /*
- * Specialized seq_read for kmap. Ignore the file offset, always
+ * Specialized seq_read for kmap_stream. Ignore the file offset, always
  * return the next item.
  */
 static ssize_t 
@@ -471,11 +476,15 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 			return err;
 		p = pop_or_null_mementer(lh);
 	} while(!p);
+	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 	INIT_LIST_HEAD(p);
+	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 
 	/* Format the data, resizing the buffer as required */
 	while(1) {
+	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 		err = m->op->show(m, p);
+	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 		if(err < 0) {
 			if(!__memorizer_enter_wait(1)) {
 				list_add(p, lh);
@@ -499,6 +508,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		}
 		break;
 	}
+	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 	memorizer_discard_kobj(list_entry(p, struct memorizer_kobj, object_list));
 
 #if 0

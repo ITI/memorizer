@@ -182,10 +182,11 @@ announce_job:
   tags: ["docker"]
   stage: announce
   image: illinoisrobert/kernel-build
-  needs: ["release_job"]
+  needs: ["release_job", "variables_job"]
+  variables:
+    GIT_STRATEGY: none
   rules:
     - if: $CI_COMMIT_TAG
   script:
     # slack-announce returns true even if the announcement didn't work.
-    - slack-announce "$SLACK_CHANNEL_ID" "$SLACK_AUTH_TOKEN" "There is a new memorizer release $CI_COMMIT_TAG. You can download it from $CI_PROJECT_URL/-/releases/$CI_COMMIT_TAG."
-
+    - 'slack-announce "$SLACK_CHANNEL_ID" "$SLACK_AUTH_TOKEN" "There is a new memorizer release ${CI_COMMIT_TAG}.\n- Release : ${CI_PROJECT_URL}/-/releases/${CI_COMMIT_TAG}\n- Tag : $CI_PROJECT_URL/-/tags/$CI_COMMIT_TAG\n- PDF Documentation : $PACKAGE_REGISTRY_URL/memorizer-$CI_COMMIT_TAG.pdf\n- Patch : $PACKAGE_REGISTRY_URL/$CI_COMMIT_TAG.patch"'

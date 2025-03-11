@@ -41,6 +41,8 @@ KCOV_INSTRUMENT_sev.o					:= n
 MEMORIZER_INSTRUMENT					:= n
 ifdef CONFIG_MEMORIZER
 KASAN_SANITIZE_signal.o                                 := n
+KASAN_SANITIZE_signal_64.o                              := n
+KASAN_SANITIZE_signal_32.o                              := n
 KASAN_SANITIZE_sys_ia32.o                               := n
 endif
 

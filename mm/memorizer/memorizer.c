@@ -874,18 +874,24 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
  *
  * This must be called with @inmem locked.
  */
-void __memorizer_discard_kobj(struct memorizer_kobj *kobj)
+static void __memorizer_discard_kobj(struct memorizer_kobj *kobj)
 {
 	struct access_from_counts *afc;
 	struct hlist_node *tmp;
 	int bkt;
+	unsigned long flags;
 
 	BUG_ON(kobj->state != KOBJ_STATE_FREED);
 	BUG_ON(kobj->object_list.next == LIST_POISON1);
 	BUG_ON(kobj->object_list.prev == LIST_POISON2);
 
+	
+	write_lock_irqsave(&object_list_spinlock, flags);
+
 	/* Remove from (likely) memorizer_object_freed_list */
 	list_del(&kobj->object_list);
+
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 
 	/* Remove all entries from the hashtable and add them to the reuse list */
 	hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
@@ -894,12 +900,15 @@ void __memorizer_discard_kobj(struct memorizer_kobj *kobj)
 	}
 	hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
 
+	write_lock_irqsave(&object_list_spinlock, flags);
 	/* Add kernel object to the cache list */
 	kobj->state = KOBJ_STATE_REUSE;
 	list_add_tail(&kobj->object_list, &memorizer_object_reuse_list);
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 
 	/* stats */
 	track_kobj_free();
+
 }
 
 void memorizer_discard_kobj(struct memorizer_kobj * kobj)
@@ -928,12 +937,15 @@ static int clear_dead_objects(bool only_printed_items)
 	struct list_head *tmp;
 	struct list_head *p;
 	int err;
+	unsigned long flags;
 
 	/* Move all of the dead items from freed list to our local copy */
 	err = __memorizer_enter_wait(1);
 	if(err)
 		return err;
+	write_lock_irqsave(&object_list_spinlock, flags);
 	list_replace_init(&memorizer_object_freed_list, &object_list);
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 	__memorizer_exit();
 
 	wake_up_interruptible(&object_list_wq);
@@ -956,7 +968,9 @@ static int clear_dead_objects(bool only_printed_items)
 	err = __memorizer_enter_wait(1);
 	if(err)
 		return err;
+	write_lock_irqsave(&object_list_spinlock, flags);
 	list_splice(&object_list, &memorizer_object_freed_list);
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 	__memorizer_exit();
 
 	wake_up_interruptible(&object_list_wq);
@@ -986,6 +1000,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	struct hlist_node *tmp;
 	int bkt;
 
+	write_lock_irqsave(&object_list_spinlock, flags);
 	/* find and remove the kobj from the lookup table and return the kobj */
 	kobj = lt_remove_kobj(kobj_ptr);
 
@@ -1011,27 +1026,34 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 			}
 		}
 
+	
+		/* Remove the object from (likely) allocated list */
+		list_del(&kobj->object_list);
+		write_unlock_irqrestore(&object_list_spinlock, flags);
+
 		/* Update the free_index for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_index = get_index();
 		kobj->free_ip = call_site;
+		write_unlock_irqrestore(&kobj->rwlock, flags);
 
 		/* Remove all entries from the hashtable and add them to the reuse list */
+		/* TODO -- should this wait for discard? */
 		hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
 			hash_del(&afc->hnode);
 			list_add(&afc->list, &memorizer_afc_reuse_list);
 		}
 		hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
 
-		/* Move the object from (likely) allocated list to freed list */
-		list_del(&kobj->object_list);
+		write_lock_irqsave(&object_list_spinlock, flags);
 		kobj->state = KOBJ_STATE_FREED;
 		list_add(&kobj->object_list, &memorizer_object_freed_list);
+		write_unlock_irqrestore(&object_list_spinlock, flags);
 		BUG_ON(kobj->state != KOBJ_STATE_FREED);
-		write_unlock_irqrestore(&kobj->rwlock, flags);
 
 		track_free();
 	} else {
+		write_unlock_irqrestore(&object_list_spinlock, flags);
 		track_untracked_obj_free();
 	}
 }
@@ -1682,9 +1704,9 @@ void __init memorizer_init(void)
 		if (!general_kobjs[i])
 			panic("Memorizer could not allocate catch-all kobjs");
 		init_kobj(general_kobjs[i], 0, 0, 0, i);
-		write_lock(&object_list_spinlock);
+		write_lock_irqsave(&object_list_spinlock, flags);
 		list_add_tail(&general_kobjs[i]->object_list, &memorizer_object_allocated_list);
-		write_unlock(&object_list_spinlock);
+		write_unlock_irqrestore(&object_list_spinlock, flags);
 	}
 
 	/* Allocate memory for the global metadata table.

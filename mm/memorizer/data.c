@@ -126,6 +126,7 @@ static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	struct list_head *lh = v;
 	struct list_head *next;
+	unsigned long flags;
 
 	++*pos;
 
@@ -134,13 +135,15 @@ static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 		return seq->private;
 	}
 
+	write_lock_irqsave(&object_list_spinlock, flags);
 	next = lh->next;
 	if (list_is_head(next, &memorizer_object_allocated_list)) {
 		next = memorizer_object_freed_list.next;
 	}
 	if (list_is_head(next, &memorizer_object_freed_list)) {
-		return NULL;
+		next = NULL;
 	}
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 
 	return next;
 }
@@ -447,6 +450,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 	struct list_head *p;
 	size_t count;
 	int err;
+	unsigned long flags;
 
 	if(!size)
 		return 0;
@@ -475,14 +479,18 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		if(err < 0) {
 			return err;
 		}
-		p = pop_or_null_mementer(lh);
+		write_lock_irqsave(&object_list_spinlock, flags);
+		// p = pop_or_null_mementer(lh);
+		p = pop_or_null(lh);
 		if(IS_ERR(p)) {
+			write_unlock_irqrestore(&object_list_spinlock, flags);
 			return PTR_ERR(p);
+		} else if(p) {
+			BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
+			INIT_LIST_HEAD(p);
 		}
+		write_unlock_irqrestore(&object_list_spinlock, flags);
 	} while(!p);
-	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
-	INIT_LIST_HEAD(p);
-	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 
 	/* Format the data, resizing the buffer as required */
 	while(1) {

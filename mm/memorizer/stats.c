@@ -166,7 +166,7 @@ track_stack_access(void)
 void __always_inline
 track_disabled_access(void)
 {
-    inca(&num_accesses_while_disabled);
+    // inca(&num_accesses_while_disabled);
 }
 
 void __always_inline

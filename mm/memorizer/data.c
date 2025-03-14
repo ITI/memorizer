@@ -471,10 +471,14 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		
 	/* wait for data to be available */
 	do {
-		long err = wait_event_interruptible_timeout(object_list_wq, !list_empty(lh), HZ);
-		if(err < 0)
+		err = wait_event_interruptible_timeout(object_list_wq, !list_empty(lh), HZ);
+		if(err < 0) {
 			return err;
+		}
 		p = pop_or_null_mementer(lh);
+		if(IS_ERR(p)) {
+			return PTR_ERR(p);
+		}
 	} while(!p);
 	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 	INIT_LIST_HEAD(p);

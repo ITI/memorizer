@@ -87,6 +87,7 @@ void * memalloc(unsigned long size)
 		return 0;
 	}
 	pool_next_avail_byte += size;
+	pool_next_avail_byte = round_up(pool_next_avail_byte, sizeof(unsigned long));
 	write_unlock_irqrestore(&mem_rwlock, flags);
 	return va;
 }

@@ -184,12 +184,6 @@ extern int memorizer_stats_late_init(struct dentry *dentryMemDir);
  * Must be called from process context, @inmem must not be acquired.
  */
 void memorizer_discard_kobj(struct memorizer_kobj * kobj);
-/**
- * __memorizer_discard_obj - free the memory previously used by a kernel object
- *
- * Must be called with @inmem acquired.
- */
-void __memorizer_discard_kobj(struct memorizer_kobj * kobj);
 
 /**
  * __memorizer_enter() - set recursion flag for entry into memorizer

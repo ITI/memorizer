@@ -29,9 +29,11 @@ endif
 
 MEMORIZER_INSTRUMENT_strncpy_from_user.o := n
 MEMORIZER_INSTRUMENT_iov_iter.o := n
+MEMOIZER_INSTRUMENT_ubsan.o := n
 ifdef CONFIG_MEMORIZER
 KASAN_SANITIZE_strncpy_from_user.o := n
 KASAN_SANITIZE_iov_iter.o := n
+KASAN_SANITIZE_ubsan.o := n
 endif
 
 lib-y := ctype.o string.o vsprintf.o cmdline.o \

@@ -289,7 +289,7 @@ static void handle_object_size_mismatch(struct type_mismatch_data_common *data,
 	ubsan_epilogue();
 }
 
-static void ubsan_type_mismatch_common(struct type_mismatch_data_common *data,
+static void notrace ubsan_type_mismatch_common(struct type_mismatch_data_common *data,
 				unsigned long ptr)
 {
 	unsigned long flags = user_access_save();
@@ -304,7 +304,7 @@ static void ubsan_type_mismatch_common(struct type_mismatch_data_common *data,
 	user_access_restore(flags);
 }
 
-void __ubsan_handle_type_mismatch(struct type_mismatch_data *data,
+void notrace __ubsan_handle_type_mismatch(struct type_mismatch_data *data,
 				void *ptr)
 {
 	struct type_mismatch_data_common common_data = {
@@ -318,7 +318,7 @@ void __ubsan_handle_type_mismatch(struct type_mismatch_data *data,
 }
 EXPORT_SYMBOL(__ubsan_handle_type_mismatch);
 
-void __ubsan_handle_type_mismatch_v1(void *_data, void *ptr)
+void notrace __ubsan_handle_type_mismatch_v1(void *_data, void *ptr)
 {
 	struct type_mismatch_data_v1 *data = _data;
 	struct type_mismatch_data_common common_data = {
@@ -349,7 +349,7 @@ void __ubsan_handle_out_of_bounds(void *_data, void *index)
 }
 EXPORT_SYMBOL(__ubsan_handle_out_of_bounds);
 
-void __ubsan_handle_shift_out_of_bounds(void *_data, void *lhs, void *rhs)
+void notrace __ubsan_handle_shift_out_of_bounds(void *_data, void *lhs, void *rhs)
 {
 	struct shift_out_of_bounds_data *data = _data;
 	struct type_descriptor *rhs_type = data->rhs_type;
@@ -401,7 +401,7 @@ void __ubsan_handle_builtin_unreachable(void *_data)
 }
 EXPORT_SYMBOL(__ubsan_handle_builtin_unreachable);
 
-void __ubsan_handle_load_invalid_value(void *_data, void *val)
+void notrace __ubsan_handle_load_invalid_value(void *_data, void *val)
 {
 	struct invalid_value_data *data = _data;
 	char val_str[VALUE_LENGTH];

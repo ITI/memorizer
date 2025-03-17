@@ -38,6 +38,15 @@
 #include <linux/delay.h>
 #include <linux/sched.h>
 
+
+#define MZ_ATOMIC(_lp) for(unsigned long _b=1, _f=0; ({	\
+	if(_b)						\
+		write_lock_irqsave(_lp, _f);		\
+	else 						\
+		write_unlock_irqrestore(_lp, _f);	\
+	_b;						\
+	}); _b = 0)
+
 /* mask to apply to memorizer allocations TODO: verify the list of bits */
 #define gfp_memorizer_mask(gfp)	((GFP_ATOMIC | __GFP_NOTRACK | __GFP_NORETRY | GFP_NOWAIT))
 

@@ -39,8 +39,6 @@
 #include <linux/sched.h>
 #include <linux/hashtable.h>
 
-// Define the hash table size (adjust as necessary)
-#define ACCESS_COUNTS_HASH_BITS 10
 /**
  * struct memorizer_kobj - metadata for kernel objects
  * @rb_node:		the red-black tree relations
@@ -78,7 +76,8 @@ struct memorizer_kobj {
 	bool printed;
 	char *slabname;
 	struct list_head object_list;
-	DECLARE_HASHTABLE(access_counts, ACCESS_COUNTS_HASH_BITS); // Use a hashtable
+	DECLARE_HASHTABLE(access_counts, CONFIG_MEMORIZER_HASH_BITS); // Use a hashtable
+
 	struct memorizer_kobj *args_kobj;
 	unsigned short state;
 };

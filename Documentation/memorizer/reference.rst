@@ -143,6 +143,18 @@ Config Variables
   Boolean, enables/disables the exposure of Memorizer's buffer via a
   debugfs file.
 
+``MEMORIZER_HASH_BITS``
+  Integer, describes the width of the per-alloc hash table
+  that holds all ``accesses`` information. The memory consumed
+  per allocation is ``8 * 2 ** HASH_BITS``. Smaller numbers
+  make memory accesses slower but save ``memalloc`` space;
+  larger numbers make memory accesses faster but consume
+  more ``memalloc`` space. This may be set to 0, effectively
+  turning the hash table into a linked list.
+
+  This hash table is only consulted if ``log_accesses_enabled`` is set.
+  Otherwise, set ``MEMORIZER_HASH_BITS`` to zero.
+
 ``INLINE_LIBS``
   Boolean, forces gcc to use inline calls for some library functions. This
   must be enabled to run Memorizer.

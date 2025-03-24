@@ -994,6 +994,17 @@ config MEMORIZER_DEBUGFS_RAM
 	bool "Memorizer: Expose memorizer's buffer via a debugfs file"
 	depends on MEMORIZER
 
+config MEMORIZER_HASH_BITS
+	int "Memorizer: Number of bits for access hash table."
+	depends on MEMORIZER
+	default 5
+	help
+	  This value trades off speed of recording memory accesses
+	  versus memory efficiency of recording memory allocations.
+	  A value of 10 increases the per-allocation memalloc
+	  size by 8192 bytes.
+	  
+
 endmenu # "Memory Debugging"
 
 config DEBUG_SHIRQ

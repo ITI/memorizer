@@ -57,7 +57,7 @@
  * Removes the first item from a non-empty list. Returns
  * NULL for an empty list. Caller must own any required locks.
  */
-#define pop_or_null(head__) ({ \
+#define __pop_or_null(head__) ({ \
 	struct list_head *pos__ = READ_ONCE((head__)->next); \
 	if(pos__ != head__) { \
 		list_del_init(pos__); \
@@ -65,6 +65,12 @@
 		pos__ = NULL; \
 	} \
 	pos__; \
+})
+
+#define pop_or_null(head__) ({ \
+	struct list_head *pos; \
+	MZ_ATOMIC(&object_list_spinlock){ pos = __pop_or_null(head__); } \
+	pos; \
 })
 
 /**

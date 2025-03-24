@@ -480,8 +480,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 			return err;
 		}
 		write_lock_irqsave(&object_list_spinlock, flags);
-		// p = pop_or_null_mementer(lh);
-		p = pop_or_null(lh);
+		p = __pop_or_null(lh);
 		if(IS_ERR(p)) {
 			write_unlock_irqrestore(&object_list_spinlock, flags);
 			return PTR_ERR(p);

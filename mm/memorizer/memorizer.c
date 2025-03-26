@@ -1000,6 +1000,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 				kobj,
 				(void*)kobj->va_ptr,
 				(void*)kobj_ptr);
+#if 0
 		} else {
 			if(kobj->va_ptr != kobj_ptr) {
 				pr_warn("kobj(%p)->va_ptr(%p) != kobj_ptr(%p)",
@@ -1007,6 +1008,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 					(void*)kobj->va_ptr,
 					(void*)kobj_ptr);
 			}
+#endif
 		}
 
 		/* Update the free_index for the object */

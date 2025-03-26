@@ -354,12 +354,14 @@ struct memorizer_kobj *lt_remove_kobj(uintptr_t addr)
 		if(verbose_warnings_enabled.value) {
 			WARN(kobj->va_ptr != addr, "kobj(%p)->va_ptr(%p) != addr(%p); kobj->state(%d)\n",
 				kobj, (void*)kobj->va_ptr, (void*)addr, kobj->state);
+#if 0
 		} else {
 			// TODO robadams@illinois.edu - figure out why this happens and delete this warning
 			if(kobj->va_ptr != addr) {
 				pr_warn("kobj(%p)->va_ptr(%p) != addr(%p); kobj->state(%d)\n",
 					kobj, (void*)kobj->va_ptr, (void*)addr, kobj->state);
 			}
+#endif
 		}
 		
 		if (kobj->state != KOBJ_STATE_ALLOCATED) {

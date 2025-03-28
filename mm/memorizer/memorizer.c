@@ -136,6 +136,8 @@
 #include <linux/mempool.h>
 #include <linux/delay.h>
 #include <asm/fixmap.h>
+#include <linux/cpu.h>
+#include <linux/cpumask.h>
 
 #include "kobj_metadata.h"
 #include "event_structs.h"
@@ -872,18 +874,24 @@ static void init_kobj(struct memorizer_kobj * kobj, uintptr_t call_site,
  *
  * This must be called with @inmem locked.
  */
-void __memorizer_discard_kobj(struct memorizer_kobj *kobj)
+static void __memorizer_discard_kobj(struct memorizer_kobj *kobj)
 {
 	struct access_from_counts *afc;
 	struct hlist_node *tmp;
 	int bkt;
+	unsigned long flags;
 
 	BUG_ON(kobj->state != KOBJ_STATE_FREED);
 	BUG_ON(kobj->object_list.next == LIST_POISON1);
 	BUG_ON(kobj->object_list.prev == LIST_POISON2);
 
+	
+	write_lock_irqsave(&object_list_spinlock, flags);
+
 	/* Remove from (likely) memorizer_object_freed_list */
 	list_del(&kobj->object_list);
+
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 
 	/* Remove all entries from the hashtable and add them to the reuse list */
 	hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
@@ -892,12 +900,15 @@ void __memorizer_discard_kobj(struct memorizer_kobj *kobj)
 	}
 	hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
 
+	write_lock_irqsave(&object_list_spinlock, flags);
 	/* Add kernel object to the cache list */
 	kobj->state = KOBJ_STATE_REUSE;
 	list_add_tail(&kobj->object_list, &memorizer_object_reuse_list);
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 
 	/* stats */
 	track_kobj_free();
+
 }
 
 void memorizer_discard_kobj(struct memorizer_kobj * kobj)
@@ -926,12 +937,15 @@ static int clear_dead_objects(bool only_printed_items)
 	struct list_head *tmp;
 	struct list_head *p;
 	int err;
+	unsigned long flags;
 
 	/* Move all of the dead items from freed list to our local copy */
 	err = __memorizer_enter_wait(1);
 	if(err)
 		return err;
+	write_lock_irqsave(&object_list_spinlock, flags);
 	list_replace_init(&memorizer_object_freed_list, &object_list);
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 	__memorizer_exit();
 
 	wake_up_interruptible(&object_list_wq);
@@ -954,7 +968,9 @@ static int clear_dead_objects(bool only_printed_items)
 	err = __memorizer_enter_wait(1);
 	if(err)
 		return err;
+	write_lock_irqsave(&object_list_spinlock, flags);
 	list_splice(&object_list, &memorizer_object_freed_list);
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 	__memorizer_exit();
 
 	wake_up_interruptible(&object_list_wq);
@@ -984,6 +1000,7 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 	struct hlist_node *tmp;
 	int bkt;
 
+	write_lock_irqsave(&object_list_spinlock, flags);
 	/* find and remove the kobj from the lookup table and return the kobj */
 	kobj = lt_remove_kobj(kobj_ptr);
 
@@ -1011,26 +1028,34 @@ void static __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 #endif
 		}
 
+	
+		/* Remove the object from (likely) allocated list */
+		list_del(&kobj->object_list);
+		write_unlock_irqrestore(&object_list_spinlock, flags);
+
 		/* Update the free_index for the object */
 		write_lock_irqsave(&kobj->rwlock, flags);
 		kobj->free_index = get_index();
 		kobj->free_ip = call_site;
+		write_unlock_irqrestore(&kobj->rwlock, flags);
 
 		/* Remove all entries from the hashtable and add them to the reuse list */
+		/* TODO -- should this wait for discard? */
 		hash_for_each_safe(kobj->access_counts, bkt, tmp, afc, hnode) {
 			hash_del(&afc->hnode);
 			list_add(&afc->list, &memorizer_afc_reuse_list);
 		}
 		hash_init(kobj->access_counts); // Reinitialize the hashtable to empty
 
-		/* Move the object from (likely) allocated list to freed list */
-		list_del(&kobj->object_list);
+		write_lock_irqsave(&object_list_spinlock, flags);
 		kobj->state = KOBJ_STATE_FREED;
 		list_add(&kobj->object_list, &memorizer_object_freed_list);
-		write_unlock_irqrestore(&kobj->rwlock, flags);
+		write_unlock_irqrestore(&object_list_spinlock, flags);
+		BUG_ON(kobj->state != KOBJ_STATE_FREED);
 
 		track_free();
 	} else {
+		write_unlock_irqrestore(&object_list_spinlock, flags);
 		track_untracked_obj_free();
 	}
 }
@@ -1534,10 +1559,57 @@ static ssize_t memorizer_enabled_read(struct file *filp, char __user *usr_buf, s
 	return simple_read_from_buffer(usr_buf, size, ppos, buf, count);
 }
 
+static int switch_to_unip(void)
+{
+	int rc;
+	int cpu;
+	pr_info("switching to uniprocessor mode\n");
+	for_each_online_cpu(cpu) {
+		rc = remove_cpu(cpu);
+		if(rc < 0 && rc != -EPERM)
+			return rc;
+	}
+	BUG_ON(num_online_cpus() != 1);
+	return 0;
+}
+
+int switch_to_multip(void)
+{
+	int rc;
+	int cpu;
+	pr_info("switching to multiprocessor mode\n");
+	for_each_present_cpu(cpu) {
+		rc = add_cpu(cpu);
+		if(rc < 0)
+			return rc;
+	}
+	BUG_ON(num_online_cpus() != num_present_cpus());
+	return 0;
+}
+
+int set_cpu0_affinity(struct task_struct *task)
+{
+	cpumask_t mask;
+	int cpu0 = 0;
+	int ret;
+
+	// Create a CPU mask with only target_cpu enabled
+	cpumask_clear(&mask);
+	cpumask_set_cpu(cpu0, &mask);
+
+	get_task_struct(task);
+	pr_info("Limiting process %d to CPU0\n", task_tgid_nr(task));
+	ret = set_cpus_allowed_ptr(task, &mask);
+	put_task_struct(task);
+
+	return ret;
+}
+
 static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf, size_t count, loff_t *ppos)
 {
 	int ret;
 	int value;
+	struct task_struct *task;
 
 	ret = kstrtoint_from_user(buf, count, 10, &value);
 	if (ret)
@@ -1546,31 +1618,51 @@ static ssize_t memorizer_enabled_write(struct file *filp, const char __user *buf
 	if (value < 0)
 		return -EINVAL;
 
-	struct task_struct *task;
-	if (value > 3) {
-		task = find_get_task_by_vpid(value);
-		if (!task) {
-			return -EINVAL;
-		}
-	}
-
 	pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, value);
-	memorizer_enabled = value;
+	switch(value) {
+	case 0:
+		memorizer_enabled = value;
+		switch_to_multip();
+		break;
 
-	if (value == 0 || value == 1)
-		goto out;
+	case 1:
+		switch_to_unip();
+		memorizer_enabled = value;
+		break;
 
-	if (value == 2 || value == 3) {
-		memorizer_enabled_pid = task_pid_nr(current);
-		current->memorizer_enabled = 1;
-	} else {
-		memorizer_enabled_pid = value;
+	case 2:
+		task = get_task_struct(current);
 		task->memorizer_enabled = 1;
+		set_cpu0_affinity(task);
+		memorizer_enabled_pid = task_pid_nr(task);
 		put_task_struct(task);
+
+		switch_to_unip();
+		memorizer_enabled = value;
+		break;
+
+	case 3:
+	default:
+		if (value > 3) {
+			task = find_get_task_by_vpid(value);
+			if (!task) {
+				return -EINVAL;
+			}
+		} else {
+			task = get_task_struct(current);
+		}
+
+		task->memorizer_enabled = 1;
+		set_cpu0_affinity(task);
+		memorizer_enabled_pid = task_pid_nr(task);
+
+		put_task_struct(task);
+
+		memorizer_enabled = value;
+		switch_to_multip();
+		break;
 	}
 
-	pr_info("memorizer_enabled_pid: %d\n", memorizer_enabled_pid);
-out:
 	return count;
 }
 
@@ -1614,9 +1706,9 @@ void __init memorizer_init(void)
 		if (!general_kobjs[i])
 			panic("Memorizer could not allocate catch-all kobjs");
 		init_kobj(general_kobjs[i], 0, 0, 0, i);
-		write_lock(&object_list_spinlock);
+		write_lock_irqsave(&object_list_spinlock, flags);
 		list_add_tail(&general_kobjs[i]->object_list, &memorizer_object_allocated_list);
-		write_unlock(&object_list_spinlock);
+		write_unlock_irqrestore(&object_list_spinlock, flags);
 	}
 
 	/* Allocate memory for the global metadata table.

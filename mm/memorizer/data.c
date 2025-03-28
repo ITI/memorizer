@@ -126,6 +126,7 @@ static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 {
 	struct list_head *lh = v;
 	struct list_head *next;
+	unsigned long flags;
 
 	++*pos;
 
@@ -134,13 +135,15 @@ static void *kmap_seq_next(struct seq_file *seq, void *v, loff_t *pos)
 		return seq->private;
 	}
 
+	write_lock_irqsave(&object_list_spinlock, flags);
 	next = lh->next;
 	if (list_is_head(next, &memorizer_object_allocated_list)) {
 		next = memorizer_object_freed_list.next;
 	}
 	if (list_is_head(next, &memorizer_object_freed_list)) {
-		return NULL;
+		next = NULL;
 	}
+	write_unlock_irqrestore(&object_list_spinlock, flags);
 
 	return next;
 }
@@ -375,25 +378,21 @@ static const struct seq_operations accesses_seq_ops = {
 	.show  = accesses_seq_show,
 };
 
+static void mzdisable(void)
+{
+	pr_info("memorizer_enabled: %d -> %d\n", memorizer_enabled, 0);
+	memorizer_enabled = 0;
+	switch_to_multip();
+	// maybe set_cpu0_affinity? instead?
+}
+
 static int kmap_open(struct inode *inode, struct file *file)
 {
-	/* TODO robadams@illinois.edu
-	 * We need to temporarily stop memorizer so that
-	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and needs to
-	 * be replaced.]
-	 */
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
+
+	pr_info("reading from kmap");
+	mzdisable();
 
 	return seq_open(file, &kmap_seq_ops);
-
-	/* __memorizer_exit to be called in kmap_release()  */
 }
 
 static int stream_open_(struct inode *inode,
@@ -415,12 +414,12 @@ static int stream_open_(struct inode *inode,
 static int kmap_stream_open(struct inode *inode, struct file *file)
 {
 	pr_info("Starting kmap streaming\n");
+	set_cpu0_affinity(current);
 	return stream_open_(inode, file, &memorizer_object_freed_list, &kmap_stream_seq_ops);
 }
 
 static int kmap_stream_release(struct inode *inode, struct file *file)
 {
-	pr_info("Ending kmap streaming\n");
 	return seq_release(inode, file);
 }
 
@@ -428,15 +427,19 @@ static int kmap_release(struct inode *inode, struct file *file)
 {
 	int ret = seq_release(inode, file);
 
-	/* __memorizer_enter called in kmap_open() */
-	__memorizer_exit();
+	pr_info("closing kmap, allocations, or accesses\n");
 	return ret;
 }
 
 
+static struct memorizer_kobj*
+lh_to_kobj(struct list_head *p)
+{
+	return list_entry(p, struct memorizer_kobj, object_list);
+}
 
 /*
- * Specialized seq_read for kmap. Ignore the file offset, always
+ * Specialized seq_read for kmap_stream. Ignore the file offset, always
  * return the next item.
  */
 static ssize_t 
@@ -447,6 +450,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 	struct list_head *p;
 	size_t count;
 	int err;
+	unsigned long flags;
 
 	if(!size)
 		return 0;
@@ -471,16 +475,27 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		
 	/* wait for data to be available */
 	do {
-		long err = wait_event_interruptible_timeout(object_list_wq, !list_empty(lh), HZ);
-		if(err < 0)
+		err = wait_event_interruptible_timeout(object_list_wq, !list_empty(lh), HZ);
+		if(err < 0) {
 			return err;
-		p = pop_or_null_mementer(lh);
+		}
+		write_lock_irqsave(&object_list_spinlock, flags);
+		p = __pop_or_null(lh);
+		if(IS_ERR(p)) {
+			write_unlock_irqrestore(&object_list_spinlock, flags);
+			return PTR_ERR(p);
+		} else if(p) {
+			BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
+			INIT_LIST_HEAD(p);
+		}
+		write_unlock_irqrestore(&object_list_spinlock, flags);
 	} while(!p);
-	INIT_LIST_HEAD(p);
 
 	/* Format the data, resizing the buffer as required */
 	while(1) {
+	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 		err = m->op->show(m, p);
+	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 		if(err < 0) {
 			if(!__memorizer_enter_wait(1)) {
 				list_add(p, lh);
@@ -504,6 +519,7 @@ stream_seq_read(struct file *file, char __user *buf, size_t size, loff_t *ppos)
 		}
 		break;
 	}
+	BUG_ON(lh_to_kobj(p)->state != KOBJ_STATE_FREED);
 	memorizer_discard_kobj(list_entry(p, struct memorizer_kobj, object_list));
 
 #if 0
@@ -563,24 +579,14 @@ static const struct file_operations kmap_fops = {
 	.read		= seq_read,
 	.release	= kmap_release,
 };
+
 static int allocs_open(struct inode *inode, struct file *file)
 {
-	/* We need to temporarily stop memorizer so that
-	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and need to
-	 * be replaced.]
-	 */
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
+	pr_info("Reading allocs\n");
+	mzdisable();
 	return seq_open(file, &allocs_seq_ops);
-
-	/* __memorizer_exit to be called in kmap_release()  */
 }
+
 static const struct file_operations allocs_fops = {
 	.owner		= THIS_MODULE,
 	.open		= allocs_open,
@@ -590,21 +596,9 @@ static const struct file_operations allocs_fops = {
 
 static int accesses_open(struct inode *inode, struct file *file)
 {
-	/* We need to temporarily stop memorizer so that
-	 * the seq_file iterator remains valid between
-	 * syscalls. [Yes, I know. This is ugly and need to
-	 * be replaced.]
-	 */
-	if(__memorizer_enter()) {
-		/*
-		 * Probably should wait_event() here, but mem_access
-		 * can't reliably call wake_up().
-		 */
-		return -EBUSY;
-	}
+	pr_info("Reading accesses\n");
+	mzdisable();
 	return seq_open(file, &accesses_seq_ops);
-
-	/* __memorizer_exit to be called in kmap_release()  */
 }
 
 static const struct file_operations accesses_fops = {

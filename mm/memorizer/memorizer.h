@@ -36,6 +36,16 @@
 
 #include <linux/gfp.h>
 #include <linux/delay.h>
+#include <linux/sched.h>
+
+
+#define MZ_ATOMIC(_lp) for(unsigned long _b=1, _f=0; ({	\
+	if(_b)						\
+		write_lock_irqsave(_lp, _f);		\
+	else 						\
+		write_unlock_irqrestore(_lp, _f);	\
+	_b;						\
+	}); _b = 0)
 
 /* mask to apply to memorizer allocations TODO: verify the list of bits */
 #define gfp_memorizer_mask(gfp)	((GFP_ATOMIC | __GFP_NOTRACK | __GFP_NORETRY | GFP_NOWAIT))
@@ -47,7 +57,7 @@
  * Removes the first item from a non-empty list. Returns
  * NULL for an empty list. Caller must own any required locks.
  */
-#define pop_or_null(head__) ({ \
+#define __pop_or_null(head__) ({ \
 	struct list_head *pos__ = READ_ONCE((head__)->next); \
 	if(pos__ != head__) { \
 		list_del_init(pos__); \
@@ -55,6 +65,12 @@
 		pos__ = NULL; \
 	} \
 	pos__; \
+})
+
+#define pop_or_null(head__) ({ \
+	struct list_head *pos; \
+	MZ_ATOMIC(&object_list_spinlock){ pos = __pop_or_null(head__); } \
+	pos; \
 })
 
 /**
@@ -183,12 +199,6 @@ extern int memorizer_stats_late_init(struct dentry *dentryMemDir);
  * Must be called from process context, @inmem must not be acquired.
  */
 void memorizer_discard_kobj(struct memorizer_kobj * kobj);
-/**
- * __memorizer_discard_obj - free the memory previously used by a kernel object
- *
- * Must be called with @inmem acquired.
- */
-void __memorizer_discard_kobj(struct memorizer_kobj * kobj);
 
 /**
  * __memorizer_enter() - set recursion flag for entry into memorizer
@@ -239,5 +249,12 @@ static __always_inline void __memorizer_exit(void)
 {
     this_cpu_write(inmem, 0);
 }
+
+/**
+ * set_cpu0_affinity - Force @task to run on CPU0.
+ */
+int set_cpu0_affinity(struct task_struct *task);
+
+int switch_to_multip(void);
 
 #endif /* __MEMORIZER_H_ */

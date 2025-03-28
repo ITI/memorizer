@@ -407,7 +407,6 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
 					       uintptr_t prev_addr,
 					       struct memorizer_kobj *new_kobj)
 {
-	unsigned long flags;
 	struct memorizer_kobj *obj = lt_get_kobj(addr);
 
 	/*
@@ -440,13 +439,15 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
 	 * not to dereference it.
 	 */
 	if ((!new_kobj) || (!is_tracked_obj((uintptr_t)new_kobj))) {
-		write_lock_irqsave(&obj->rwlock, flags);
-		list_del(&obj->object_list);
-		obj->free_index = get_index();
-		obj->free_ip = MEM_INDUCED | 0xdeadbeef00000000;
-		obj->state = KOBJ_STATE_FREED;
-		list_add(&obj->object_list, &memorizer_object_freed_list);
-		write_unlock_irqrestore(&obj->rwlock, flags);
+		MZ_ATOMIC(&obj->rwlock) {
+			list_del(&obj->object_list);
+			obj->free_index = get_index();
+			obj->free_ip = MEM_INDUCED | 0xdeadbeef00000000;
+			MZ_ATOMIC(&object_list_spinlock) {
+				obj->state = KOBJ_STATE_FREED;
+				list_add(&obj->object_list, &memorizer_object_freed_list);
+			}
+		}
 		return;
 	}
 
@@ -463,27 +464,28 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
 	}
 	*/
 
-	write_lock_irqsave(&obj->rwlock, flags);
-	list_del(&obj->object_list);
-	obj->free_index = new_kobj->alloc_index;
-	obj->state = KOBJ_STATE_FREED;
+	MZ_ATOMIC(&obj->rwlock) {
+		MZ_ATOMIC(&object_list_spinlock) {
+			list_del(&obj->object_list);
+		}
+		obj->free_index = new_kobj->alloc_index;
 
-	/* 
-	 * DANGER! Magic numbers ahead.
-	 */
-	if (addr == prev_addr) {
-		/* This is a nested allocation */
-		obj->free_ip = new_kobj->alloc_type | 0xfeed00000000;
-	} else {
-		/* The reason for this duplicate alloc is unknown */
-		obj->free_ip = new_kobj->alloc_type | 0xdeadbeef00000000;
+		/* 
+		 * DANGER! Magic numbers ahead.
+		 */
+		if (addr == prev_addr) {
+			/* This is a nested allocation */
+			obj->free_ip = new_kobj->alloc_type | 0xfeed00000000;
+		} else {
+			/* The reason for this duplicate alloc is unknown */
+			obj->free_ip = new_kobj->alloc_type | 0xdeadbeef00000000;
+		}
+
+		MZ_ATOMIC(&object_list_spinlock) {
+			obj->state = KOBJ_STATE_FREED;
+			list_add(&obj->object_list, &memorizer_object_freed_list);
+		}
 	}
-	// TEMP robadams@illinois.edu
-	// write_unlock_irqrestore(&obj->rwlock, flags);
-
-	// write_lock_irqsave(&obj->rwlock, flags);
-	list_add(&obj->object_list, &memorizer_object_freed_list);
-	write_unlock_irqrestore(&obj->rwlock, flags);
 }
 
 /**

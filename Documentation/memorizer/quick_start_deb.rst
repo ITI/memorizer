@@ -39,11 +39,9 @@ parameters are read from `/etc/default/grub` See
 
     GRUB_TIMEOUT=5 
     GRUB_TIMEOUT_STYLE=countdown
-    GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no maxcpus=1 split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
+    GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
 
-  Memorizer can be run in SMP—and the ``maxcpus`` option can be excluded—by using ``taskset`` to bond Memorizer to a specified CPU. See :ref:`limiting_cpus`.
-  
-  See :ref:`memorizer-grub-cmdline` for more information about individual kernel parameters.
+See :ref:`memorizer-grub-cmdline` for more information about individual kernel parameters.
 
 
 Reboot

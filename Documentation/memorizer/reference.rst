@@ -75,30 +75,6 @@ Memorizer-specific
 Memorizer-required
 ~~~~~~~~~~~~~~~~~~
 
-.. _`limiting_cpus`:
-
-Limiting Number of CPUs (``maxcpus=1``)
-  Restricts the kernel to use only one CPU, currently necessary
-  since Memorizer is incompatible with multiple
-  processors, ensuring stable system operation.
-
-  Note: Memorizer can be run on SMP systems—and the ``maxcpus``
-  field can be excluded from grub boot options—by using ``taskset``
-  to bond Memorizer to a specified CPU. This must be done in
-  combination with either mode `3`:
-
-  * ``taskset -c <CPU_NUMBER> sh -c "echo 3 > /sys/kernel/debug/memorizer/memorizer_enabled; <PROGRAM_TO_RUN>"``
-  
-  or mode `pid`:
-
-  * ``PID=<PID_NUMBER>; taskset -c <CPU_NUMBER> -p $PID; echo $PID > /sys/kernel/debug/memorizer/memorizer_enabled;``
-  
-  Any subsequent or related Memorizer processes must also be pinned to this 
-  same CPU via ``taskset``. This includes both kmap streaming (the process 
-  with ``/sys/kernel/debug/memorizer/kmap_stream`` open), and kmap reading 
-  even after ``memorizer_enabled`` is set to ``0`` 
-  (i.e. ``taskset -c <CPU_NUMBER> cp /sys/kernel/debug/memorizer/kmap /tmp/kmap``)
-
 
 Disabling Split Lock Detection (``split_lock_detect=off``)
   Disables the split lock detection feature, enhancing system
@@ -140,7 +116,8 @@ Configuring Console Output (``console=tty0`` and ``console=ttyS0``)
 
 Using the Grub syntax, here is a working example of a Memorizer kernel command line::
 
-  GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no maxcpus=1 split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
+  GRUB_CMDLINE_LINUX="memorizer_enabled_boot=no split_lock_detect=off no_hash_pointers nokaslr audit=0 loglevel=8 memalloc_size=4”
+
 
 Memorizer Kernel Config Variables
 =================================
@@ -314,6 +291,11 @@ These files are all read-only. Any writes to these files will return an error.
   - `READ` - Returns current Memorizer data. If ``log_live_enabled`` is
     false, returns only information on freed objects. 
     For more information on the data format, see :ref:`debugfs-kmap`
+
+    .. note::
+
+      Whenever ``kmap`` is opened, Memorizer disables itself.
+    
 
 ``kmap_stream``
   - `READ` - Returns current Memorizer data in a way convenient for
@@ -636,3 +618,49 @@ This format was chosen to simplify the parsing of Memorizer data::
 
   allocs = pd.read_csv("./allocations")
   accesses = pd.read_csv("./accesses")
+
+.. _`limiting_cpus`:
+
+Limiting CPUs
+=============
+
+Previous versions of Memorizer required the Linux kernel to run
+in single-processor mode, typically by specifying ``maxcpus=1``
+on the kernel command line. This is no longer the case.
+Memorizer can run in an SMP-enabled kernel. Memorizer itself,
+along with the process that you are testing and any process
+that is reading from the KMAP files all run on a single
+cpu, but the remainder of the system runs in multi-processor
+mode.
+
+Whenever there is a state transition, Memorizer automatically
+adjusts either the number of CPUs online, or the CPU affinity
+mask of certain processes. Specifically each of the ``memorizer_enabled``
+values does the following on entering that state.
+
+Mode ``0`` (e.g. ``cd /sys/kernel/debug/memorizer && echo 0 > memorizer_enabled``)
+  Upon disabling Memorizer (that is, entering mode ``0``), Memorizer
+  brings all available CPUs online.
+
+Mode ``1`` (e.g. ``echo 1 > memorizer_enabled``)
+  Upon entering mode ``1``, Memorizer takes all available CPUs offline,
+  with the exception of CPU0.
+
+Mode ``2`` (e.g. ``echo 2 > memorizer_enabled``)
+  Mode ``2`` behaves identically to mode ``1`` in this regard.
+
+Mode ``3`` (e.g. ``echo 3 > memorizer_enabled``)
+  Upon entering mode ``3``, Memorizer sets the cpu affinity mask
+  for the currently-running process and all of its subsquently-created
+  descendants to ``1``. This restricts those processes (the only ones
+  for which Memorizer is active) to CPU0. In effect, those processes
+  are running in uniprocessor mode while the remainder of the system
+  is running in multiprocessor mode.
+
+Mode ``pid`` (e.g. ``echo $! > memorizer_enabled``).
+  Memorizer sets the cpu affinity mask for the indicated process
+  and all its subsequently-created descendants to ``1``.
+
+Any process that captures Memorizer data will also be pinned
+to CPU0. That includes any process that opens ``kmap``,
+``kmap_stream``, ``allocs`` and ``accesses``.

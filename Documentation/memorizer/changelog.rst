@@ -2,6 +2,19 @@
 Summary of memorizer-specific kernel versions
 =============================================
 
+- v6.6.51-memorizer-29
+
+  - Implement hybrid smp for memorizer. All
+    programs related to memorizer run on
+    CPU0; all programs not related to memorizer
+    run with ordinary SMP.
+  - Reading ``kmap`` file forces mode 0.
+  - CI/CD - add more info to slack announcement
+  - fix UACCESS compile warnings
+  - Fix segfault when killing programs that are
+    reading ``kmap_stream``
+  - Make afc hash size configurable
+
 - v6.6.51-memorizer-28
 
   - Documentation updates
@@ -13,7 +26,7 @@ Summary of memorizer-specific kernel versions
   - Update github workflow
   - taskset "SMP" instructions
   - Add test using baremetal.config
-  - Reorganize some of the documentation.
+  - Reorganize some of the documentation
   - Add /proc/<pid>/memorizer_enabled
 
 - v6.6.51-memorizer-26

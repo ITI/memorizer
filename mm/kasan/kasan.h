@@ -158,6 +158,10 @@ static inline bool kasan_requires_meta(void)
 #define KASAN_SLAB_FREE_META	0xFA  /* freed slab object with free meta */
 #define KASAN_GLOBAL_REDZONE	0xF9  /* redzone for global variable */
 
+/* Memorizer-added exports from KASAN */
+bool in_kernel_space(void * p);
+u8 detect_access_kind(void * p);
+
 /* Stack redzone shadow values. Compiler ABI, do not change. */
 #define KASAN_STACK_LEFT	0xF1
 #define KASAN_STACK_MID		0xF2

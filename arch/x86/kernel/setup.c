@@ -26,6 +26,7 @@
 #include <linux/tboot.h>
 #include <linux/usb/xhci-dbgp.h>
 #include <linux/vmalloc.h>
+#include <linux/memorizer.h>
 
 #include <uapi/linux/mount.h>
 
@@ -1202,6 +1203,8 @@ void __init setup_arch(char **cmdline_p)
 
 	if (!early_xdbc_setup_hardware())
 		early_xdbc_register_console();
+
+	memorizer_init();
 
 	x86_init.paging.pagetable_init();
 

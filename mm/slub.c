@@ -2587,8 +2587,15 @@ bool slab_free_freelist_hook(struct kmem_cache *s, void **head, void **tail,
 	return *head != NULL;
 }
 
+static gfp_t last_flags = 0;
 static void *setup_object(struct kmem_cache *s, void *object)
 {
+
+	/* This function is called when Slub allocates new objects for a cache.
+	 * Memorizer preallocates objects here so any accesses from constructors
+	 * are captured correctly. */
+	memorizer_kmem_cache_alloc(MEMORIZER_PREALLOCED, object, s, last_flags);
+
 	setup_object_debug(s, object);
 	object = kasan_init_slab_obj(s, object);
 	if (unlikely(s->ctor)) {
@@ -3222,6 +3229,9 @@ static struct slab *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 	 * so we fall-back to the minimum order allocation.
 	 */
 	alloc_gfp = (flags | __GFP_NOWARN | __GFP_NORETRY) & ~__GFP_NOFAIL;
+
+	last_flags = alloc_gfp;
+
 	if ((alloc_gfp & __GFP_DIRECT_RECLAIM) && oo_order(oo) > oo_order(s->min))
 		alloc_gfp = (alloc_gfp | __GFP_NOMEMALLOC) & ~__GFP_RECLAIM;
 
@@ -3259,6 +3269,7 @@ static struct slab *allocate_slab(struct kmem_cache *s, gfp_t flags, int node)
 	setup_slab_debug(s, slab, start);
 
 	shuffle = shuffle_freelist(s, slab);
+	shuffle = false;
 
 	if (!shuffle) {
 		start = fixup_red_left(s, start);
@@ -5263,6 +5274,7 @@ do_alloc:
 static __fastpath_inline void *slab_alloc_node(struct kmem_cache *s, struct list_lru *lru,
 		gfp_t gfpflags, int node, unsigned long addr, size_t orig_size)
 {
+	// TODO robadams@illinois.edu memorizer path?
 	void *object;
 	bool init = false;
 
@@ -5343,8 +5355,13 @@ EXPORT_SYMBOL(kmem_cache_charge);
 void *kmem_cache_alloc_node_noprof(struct kmem_cache *s, gfp_t gfpflags, int node)
 {
 	void *ret = slab_alloc_node(s, NULL, gfpflags, node, _RET_IP_, s->object_size);
+	int update;
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags, node);
+
+	update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+		memorizer_kmem_cache_alloc_node(_RET_IP_, ret, s, gfpflags, node);
 
 	return ret;
 }
@@ -7338,6 +7355,8 @@ static void __kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
 		do_slab_free(df.s, df.slab, df.freelist, df.tail, df.cnt,
 			     _RET_IP_);
 	} while (likely(size));
+	/* TODO robadams@illinois.edu test this. */
+	memorizer_kmem_cache_free_bulk(_RET_IP_, size, p);
 }
 
 /* Note that interrupts must be enabled when calling this function. */

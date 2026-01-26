@@ -1001,6 +1001,9 @@ struct task_struct {
 #ifdef CONFIG_RT_MUTEXES
 	unsigned			sched_rt_mutex:1;
 #endif
+#ifdef CONFIG_MEMORIZER
+	unsigned			memorizer_enabled:1;
+#endif
 
 	/* Bit to tell TOMOYO we're in execve(): */
 	unsigned			in_execve:1;

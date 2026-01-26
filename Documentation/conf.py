@@ -455,7 +455,7 @@ htmlhelp_basename = "TheLinuxKerneldoc"
 
 latex_elements = {
     # The paper size ('letterpaper' or 'a4paper').
-    "papersize": "a4paper",
+    "papersize": "letterpaper",
     "passoptionstopackages": dedent(r"""
         \PassOptionsToPackage{svgnames}{xcolor}
     """),
@@ -493,6 +493,9 @@ latex_elements = {
         % Load kerneldoc specific LaTeX settings
         \input{kerneldoc-preamble.sty}
     """)
+
+    # https://stackoverflow.com/a/5741112
+    'extraclassoptions': 'openany,oneside'
 }
 
 # This will be filled up by config-inited event

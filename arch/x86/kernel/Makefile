@@ -44,6 +44,14 @@ KCOV_INSTRUMENT_unwind_orc.o				:= n
 KCOV_INSTRUMENT_unwind_frame.o				:= n
 KCOV_INSTRUMENT_unwind_guess.o				:= n
 
+MEMORIZER_INSTRUMENT					:= n
+ifdef CONFIG_MEMORIZER
+KASAN_SANITIZE_signal.o                                 := n
+KASAN_SANITIZE_signal_64.o                              := n
+KASAN_SANITIZE_signal_32.o                              := n
+KASAN_SANITIZE_sys_ia32.o                               := n
+endif
+
 CFLAGS_head32.o := -fno-stack-protector
 CFLAGS_head64.o := -fno-stack-protector
 CFLAGS_irq.o := -I $(src)/../include/asm/trace

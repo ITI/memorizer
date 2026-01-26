@@ -1343,6 +1343,8 @@ __always_inline bool free_pages_prepare(struct page *page,
 		count_vm_events(UNEVICTABLE_PGCLEARED, nr_pages);
 	}
 
+	memorizer_free_pages(_RET_IP_, page, order);
+
 	if (unlikely(PageHWPoison(page)) && !order) {
 		/* Do not let hwpoison pages hit pcplists/buddy */
 		reset_page_owner(page, order);
@@ -1441,6 +1443,7 @@ __always_inline bool free_pages_prepare(struct page *page,
 	arch_free_page(page, order);
 
 	debug_pagealloc_unmap_pages(page, 1 << order);
+
 
 	return true;
 }
@@ -5199,6 +5202,8 @@ out:
 
 	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);
 	kmsan_alloc_page(page, order, alloc_gfp);
+
+	memorizer_alloc_pages(_RET_IP_, page, order, alloc_gfp);
 
 	return page;
 }

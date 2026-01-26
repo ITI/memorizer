@@ -91,6 +91,7 @@
 #include <linux/compiler.h>
 #include <linux/sysctl.h>
 #include <linux/kcov.h>
+#include <linux/memorizer.h>
 #include <linux/livepatch.h>
 #include <linux/thread_info.h>
 #include <linux/kstack_erase.h>
@@ -890,6 +891,8 @@ static struct task_struct *dup_task_struct(struct task_struct *orig, int node)
 	err = scs_prepare(tsk, node);
 	if (err)
 		goto free_stack;
+
+    memorizer_stack_page_alloc(tsk);
 
 #ifdef CONFIG_SECCOMP
 	/*

@@ -282,6 +282,11 @@ bool __kasan_slab_free(struct kmem_cache *cache, void *object, bool init,
 	if (still_accessible)
 		return false;
 
+
+#ifdef FILTER_KASAN
+	return false;
+#endif
+
 	poison_slab_object(cache, object, init);
 
 	if (no_quarantine)
@@ -392,7 +397,6 @@ static inline void poison_kmalloc_redzone(struct kmem_cache *cache,
 				KASAN_GRANULE_SIZE);
 	kasan_poison((void *)redzone_start, redzone_end - redzone_start,
 			   KASAN_SLAB_REDZONE, false);
-
 	/*
 	 * Save alloc info (if possible) for kmalloc() allocations.
 	 * This also rewrites the alloc info when called from kasan_krealloc().
@@ -413,6 +417,11 @@ void * __must_check __kasan_kmalloc(struct kmem_cache *cache, const void *object
 
 	if (is_kfence_address(object))
 		return (void *)object;
+
+
+#ifdef FILTER_KASAN
+	return (void *)object;
+#endif
 
 	/* The object has already been unpoisoned by kasan_slab_alloc(). */
 	poison_kmalloc_redzone(cache, object, size, flags);

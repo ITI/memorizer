@@ -1,0 +1,49 @@
+--- include/linux/string.h
++++ include/linux/string.h
+@@ -63,11 +63,46 @@ static inline void *vmemdup_array_user(const void __user *src, size_t n, size_t
+ extern char * strcpy(char *,const char *);
+ #endif
+ #ifndef __HAVE_ARCH_STRNCPY
++#ifdef CONFIG_INLINE_LIBS
++__attribute__((always_inline)) char * strncpy(char *,const char *, __kernel_size_t);
++extern inline char *strncpy(char *dest, const char *src, size_t count)
++{
++	char *tmp = dest;
++
++	while (count) {
++		if ((*tmp = *src) != 0)
++			src++;
++		tmp++;
++		count--;
++	}
++	return dest;
++}
++#else
+ extern char * strncpy(char *,const char *, __kernel_size_t);
+ #endif
++#endif
+ #ifndef __HAVE_ARCH_STRLCPY
++#ifdef CONFIG_INLINE_LIBS
++__attribute__((always_inline)) size_t strlcpy(char *, const char *, size_t);
++extern inline size_t strlcpy(char *dest, const char *src, size_t size)
++{
++	size_t ret = strlen(src);
++
++	if (size) {
++		size_t len = (ret >= size) ? size - 1 : ret;
++		//memcpy(dest, src, len);
++		int i;
++		for (i = 0; i < len; i++){
++		  dest[i] = src[i];
++		}
++		dest[len] = '\0';
++	}
++	return ret;
++}
++#else
+ size_t strlcpy(char *, const char *, size_t);
+ #endif
++#endif
+ #ifndef __HAVE_ARCH_STRSCPY
+ ssize_t strscpy(char *, const char *, size_t);
+ #endif

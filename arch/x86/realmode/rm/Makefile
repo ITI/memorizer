@@ -7,6 +7,8 @@
 #
 #
 
+MEMORIZER_INSTRUMENT	:= n
+
 always-y := realmode.bin realmode.relocs
 
 wakeup-objs	:= wakeup_asm.o wakemain.o video-mode.o

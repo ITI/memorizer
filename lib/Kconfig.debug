@@ -1040,6 +1040,44 @@ source "lib/Kconfig.kasan"
 source "lib/Kconfig.kfence"
 source "lib/Kconfig.kmsan"
 
+config MEMORIZER
+	bool "Memorizer: kernel object lifetime access tracing"
+	depends on KASAN
+        help
+          Enables memory allocation and tracing tool that combines compiler
+          instrumentation on all loads/stores with embedded hooks for
+          allocations to track lifetime access patterns for kernel memory
+          objects.
+
+config MEMORIZER_STATS
+	bool "Memorizer stats: Enable the statistic summary for Memorizer"
+	depends on MEMORIZER
+		help
+		  Enables the statistic summary including the number of accesses and
+		  number of shadow object allocated for Memorizer which will slow down the
+		  performance.
+
+config MEMORIZER_TRACKPIDS
+	bool "Memorizer: segregate access counts by process"
+	depends on MEMORIZER
+	help
+	  Enables the tracing of memory accesses seperately by pid.
+
+config MEMORIZER_DEBUGFS_RAM
+	bool "Memorizer: Expose memorizer's buffer via a debugfs file"
+	depends on MEMORIZER
+
+config MEMORIZER_HASH_BITS
+	int "Memorizer: Number of bits for access hash table."
+	depends on MEMORIZER
+	default 5
+	help
+	  This value trades off speed of recording memory accesses
+	  versus memory efficiency of recording memory allocations.
+	  A value of 10 increases the per-allocation memalloc
+	  size by 8192 bytes.
+	  
+
 endmenu # "Memory Debugging"
 
 config DEBUG_SHIRQ

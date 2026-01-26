@@ -76,6 +76,10 @@ CFLAGS_REMOVE_vsgx.o = -pg
 CFLAGS_REMOVE_vgetrandom.o = -pg
 
 #
+# 
+MEMORIZER_INSTRUMENT		:= n
+
+#
 # X32 processes use x32 vDSO to access 64bit kernel data.
 #
 # Build x32 vDSO image:

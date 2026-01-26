@@ -64,6 +64,8 @@ KBUILD_CFLAGS_KERNEL := $(filter-out -fdata-sections, $(KBUILD_CFLAGS_KERNEL))
 
 KBUILD_AFLAGS			:= $(KBUILD_CFLAGS) -D__ASSEMBLY__
 
+MEMORIZER_INSTRUMENT		:= n
+
 lib-y				:= efi-stub-helper.o gop.o secureboot.o tpm.o \
 				   file.o mem.o random.o randomalloc.o pci.o \
 				   skip_spaces.o lib-cmdline.o lib-ctype.o \

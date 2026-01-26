@@ -2,7 +2,7 @@
 VERSION = 6
 PATCHLEVEL = 18
 SUBLEVEL = 6
-EXTRAVERSION =
++EXTRAVERSION = -memorizer-29
 NAME = Baby Opossum Posse
 
 # *DOCUMENTATION*
@@ -1088,6 +1088,7 @@ include-$(CONFIG_KASAN)		+= scripts/Makefile.kasan
 include-$(CONFIG_KCSAN)		+= scripts/Makefile.kcsan
 include-$(CONFIG_KMSAN)		+= scripts/Makefile.kmsan
 include-$(CONFIG_UBSAN)		+= scripts/Makefile.ubsan
+include-$(CONFIG_MEMORIZER)	+= scripts/Makefile.memorizer
 include-$(CONFIG_KCOV)		+= scripts/Makefile.kcov
 include-$(CONFIG_RANDSTRUCT)	+= scripts/Makefile.randstruct
 include-$(CONFIG_KSTACK_ERASE)	+= scripts/Makefile.kstack_erase
@@ -1100,6 +1101,10 @@ include $(addprefix $(srctree)/, $(include-y))
 # scripts/Makefile.gcc-plugins is intentionally included last.
 # Do not add $(call cc-option,...) below this line. When you build the kernel
 # from the clean source tree, the GCC plugins do not exist at this point.
+
+# For Memorizer, in order for log_frames_enabled to allow for correct tracking 
+# of frame pointers, we must not omit frame pointers as an optimization option
+KBUILD_CFLAGS += -fno-omit-frame-pointer
 
 # Add user supplied CPPFLAGS, AFLAGS, CFLAGS and RUSTFLAGS as the last assignments
 KBUILD_CPPFLAGS += $(KCPPFLAGS)

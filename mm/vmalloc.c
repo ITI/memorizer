@@ -3410,6 +3410,8 @@ void vfree(const void *addr)
 		return;
 	}
 
+	memorizer_vmalloc_free(_RET_IP_,  addr);
+
 	BUG_ON(in_nmi());
 	kmemleak_free(addr);
 	might_sleep();
@@ -3898,6 +3900,8 @@ again:
 	if (!ret)
 		goto fail;
 
+
+
 	/*
 	 * Mark the pages as accessible, now that they are mapped.
 	 * The condition for setting KASAN_VMALLOC_INIT should complement the
@@ -3922,6 +3926,9 @@ again:
 
 	if (!(vm_flags & VM_DEFER_KMEMLEAK))
 		kmemleak_vmalloc(area, PAGE_ALIGN(size), gfp_mask);
+
+	// Memorizer hooking here
+	memorizer_vmalloc_alloc((unsigned long) caller, area->addr, size, gfp_mask);
 
 	return area->addr;
 

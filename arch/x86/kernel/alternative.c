@@ -2402,7 +2402,9 @@ void __init alternative_instructions(void)
 	/*
 	 * Seal all functions that do not have their address taken.
 	 */
+#ifdef CONFIG_X86_KERNEL_IBT
 	apply_seal_endbr(__ibt_endbr_seal, __ibt_endbr_seal_end);
+#endif
 
 	ibt_restore(ibt);
 

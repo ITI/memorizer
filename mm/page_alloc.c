@@ -5371,12 +5371,15 @@ void *alloc_pages_exact_noprof(size_t size, gfp_t gfp_mask)
 {
 	unsigned int order = get_order(size);
 	unsigned long addr;
+	void *ret;
 
 	if (WARN_ON_ONCE(gfp_mask & (__GFP_COMP | __GFP_HIGHMEM)))
 		gfp_mask &= ~(__GFP_COMP | __GFP_HIGHMEM);
 
 	addr = get_free_pages_noprof(gfp_mask, order);
-	return make_alloc_exact(addr, order, size);
+	ret = make_alloc_exact(addr, order, size);
+	memorizer_alloc_pages_exact(_RET_IP_, ret, size, gfp_mask);
+	return ret;
 }
 EXPORT_SYMBOL(alloc_pages_exact_noprof);
 

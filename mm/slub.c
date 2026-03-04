@@ -2460,7 +2460,7 @@ struct rcu_delayed_free {
  */
 static __always_inline
 bool slab_free_hook(struct kmem_cache *s, void *x, bool init,
-		    bool after_rcu_delay)
+		    bool after_rcu_delay, unsigned long addr)
 {
 	/* Are the object contents still accessible? */
 	bool still_accessible = (s->flags & SLAB_TYPESAFE_BY_RCU) && !after_rcu_delay;
@@ -2539,13 +2539,14 @@ bool slab_free_hook(struct kmem_cache *s, void *x, bool init,
 		set_orig_size(s, x, orig_size);
 
 	}
+	memorizer_slab_free(addr, x);
 	/* KASAN might put x into memory quarantine, delaying its reuse. */
 	return !kasan_slab_free(s, x, init, still_accessible, false);
 }
 
 static __fastpath_inline
 bool slab_free_freelist_hook(struct kmem_cache *s, void **head, void **tail,
-			     int *cnt)
+			     int *cnt, unsigned long addr)
 {
 
 	void *object;
@@ -2554,7 +2555,7 @@ bool slab_free_freelist_hook(struct kmem_cache *s, void **head, void **tail,
 	bool init;
 
 	if (is_kfence_address(next)) {
-		slab_free_hook(s, next, false, false);
+		slab_free_hook(s, next, false, false, addr);
 		return false;
 	}
 
@@ -2569,7 +2570,7 @@ bool slab_free_freelist_hook(struct kmem_cache *s, void **head, void **tail,
 		next = get_freepointer(s, object);
 
 		/* If object's reuse doesn't have to be delayed */
-		if (likely(slab_free_hook(s, object, init, false))) {
+		if (likely(slab_free_hook(s, object, init, false, addr))) {
 			/* Move object to the new freelist */
 			set_freepointer(s, object, *head);
 			*head = object;
@@ -2741,7 +2742,8 @@ static void sheaf_flush_unused(struct kmem_cache *s, struct slab_sheaf *sheaf)
 }
 
 static void __rcu_free_sheaf_prepare(struct kmem_cache *s,
-				     struct slab_sheaf *sheaf)
+				     struct slab_sheaf *sheaf,
+				     unsigned long addr)
 {
 	bool init = slab_want_init_on_free(s);
 	void **p = &sheaf->objects[0];
@@ -2753,7 +2755,7 @@ static void __rcu_free_sheaf_prepare(struct kmem_cache *s,
 		memcg_slab_free_hook(s, slab, p + i, 1);
 		alloc_tagging_slab_free_hook(s, slab, p + i, 1);
 
-		if (unlikely(!slab_free_hook(s, p[i], init, true))) {
+		if (unlikely(!slab_free_hook(s, p[i], init, true, addr))) {
 			p[i] = p[--sheaf->size];
 			continue;
 		}
@@ -2770,7 +2772,7 @@ static void rcu_free_sheaf_nobarn(struct rcu_head *head)
 	sheaf = container_of(head, struct slab_sheaf, rcu_head);
 	s = sheaf->cache;
 
-	__rcu_free_sheaf_prepare(s, sheaf);
+	__rcu_free_sheaf_prepare(s, sheaf, _RET_IP_);
 
 	sheaf_flush_unused(s, sheaf);
 
@@ -4953,7 +4955,7 @@ struct kmem_cache *slab_pre_alloc_hook(struct kmem_cache *s, gfp_t flags)
 static __fastpath_inline
 bool slab_post_alloc_hook(struct kmem_cache *s, struct list_lru *lru,
 			  gfp_t flags, size_t size, void **p, bool init,
-			  unsigned int orig_size)
+			  unsigned int orig_size, unsigned long retip)
 {
 	unsigned int zero_size = s->object_size;
 	bool kasan_init = init;
@@ -5000,6 +5002,7 @@ bool slab_post_alloc_hook(struct kmem_cache *s, struct list_lru *lru,
 						 s->flags, init_flags);
 		kmsan_slab_alloc(s, p[i], init_flags);
 		alloc_tagging_slab_alloc_hook(s, p[i], flags);
+		memorizer_kmem_cache_alloc_bulk(retip, p[i], s, flags);
 	}
 
 	return memcg_slab_post_alloc_hook(s, lru, flags, size, p);
@@ -5302,7 +5305,7 @@ out:
 	 * In case this fails due to memcg_slab_post_alloc_hook(),
 	 * object is set to NULL
 	 */
-	slab_post_alloc_hook(s, lru, gfpflags, 1, &object, init, orig_size);
+	slab_post_alloc_hook(s, lru, gfpflags, 1, &object, init, orig_size, _RET_IP_);
 
 	return object;
 }
@@ -5323,8 +5326,13 @@ void *kmem_cache_alloc_lru_noprof(struct kmem_cache *s, struct list_lru *lru,
 {
 	void *ret = slab_alloc_node(s, lru, gfpflags, NUMA_NO_NODE, _RET_IP_,
 				    s->object_size);
+	int update;
 
 	trace_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags, NUMA_NO_NODE);
+
+	update = memorizer_kmem_cache_set_alloc(_RET_IP_, ret);
+	if (!update)
+		memorizer_kmem_cache_alloc(_RET_IP_, ret, s, gfpflags);
 
 	return ret;
 }
@@ -5582,7 +5590,7 @@ kmem_cache_alloc_from_sheaf_noprof(struct kmem_cache *s, gfp_t gfp,
 	init = slab_want_init_on_alloc(gfp, s);
 
 	/* add __GFP_NOFAIL to force successful memcg charging */
-	slab_post_alloc_hook(s, NULL, gfp | __GFP_NOFAIL, 1, &ret, init, s->object_size);
+	slab_post_alloc_hook(s, NULL, gfp | __GFP_NOFAIL, 1, &ret, init, s->object_size, _RET_IP_);
 out:
 	trace_kmem_cache_alloc(_RET_IP_, ret, s, gfp, NUMA_NO_NODE);
 
@@ -5598,7 +5606,7 @@ unsigned int kmem_cache_sheaf_size(struct slab_sheaf *sheaf)
  * directly to the page allocator. We use __GFP_COMP, because we will need to
  * know the allocation order to free the pages properly in kfree.
  */
-static void *___kmalloc_large_node(size_t size, gfp_t flags, int node)
+static void *___kmalloc_large_node(size_t size, gfp_t flags, int node, unsigned long retip)
 {
 	struct folio *folio;
 	void *ptr = NULL;
@@ -5626,12 +5634,15 @@ static void *___kmalloc_large_node(size_t size, gfp_t flags, int node)
 	kmemleak_alloc(ptr, size, 1, flags);
 	kmsan_kmalloc_large(ptr, size, flags);
 
+	memorizer_kmalloc_node(retip, ptr, size,
+		PAGE_SIZE << order, flags, node);
+
 	return ptr;
 }
 
 void *__kmalloc_large_noprof(size_t size, gfp_t flags)
 {
-	void *ret = ___kmalloc_large_node(size, flags, NUMA_NO_NODE);
+	void *ret = ___kmalloc_large_node(size, flags, NUMA_NO_NODE, _RET_IP_);
 
 	trace_kmalloc(_RET_IP_, ret, size, PAGE_SIZE << get_order(size),
 		      flags, NUMA_NO_NODE);
@@ -5641,7 +5652,7 @@ EXPORT_SYMBOL(__kmalloc_large_noprof);
 
 void *__kmalloc_large_node_noprof(size_t size, gfp_t flags, int node)
 {
-	void *ret = ___kmalloc_large_node(size, flags, node);
+	void *ret = ___kmalloc_large_node(size, flags, node, _RET_IP_);
 
 	trace_kmalloc(_RET_IP_, ret, size, PAGE_SIZE << get_order(size),
 		      flags, node);
@@ -5768,7 +5779,7 @@ retry:
 
 	maybe_wipe_obj_freeptr(s, ret);
 	slab_post_alloc_hook(s, NULL, alloc_gfp, 1, &ret,
-			     slab_want_init_on_alloc(alloc_gfp, s), size);
+			     slab_want_init_on_alloc(alloc_gfp, s), size, _RET_IP_);
 
 	ret = kasan_kmalloc(s, ret, size, alloc_gfp);
 	return ret;
@@ -6208,7 +6219,7 @@ static void rcu_free_sheaf(struct rcu_head *head)
 	 * allocations when reused. It only happens due to debugging, which is a
 	 * performance hit anyway.
 	 */
-	__rcu_free_sheaf_prepare(s, sheaf);
+	__rcu_free_sheaf_prepare(s, sheaf, _RET_IP_);
 
 	n = get_node(s, sheaf->node);
 	if (!n)
@@ -6338,7 +6349,7 @@ fail:
  * Unlike free_to_pcs() this includes the calls to all necessary hooks
  * and the fallback to freeing to slab pages.
  */
-static void free_to_pcs_bulk(struct kmem_cache *s, size_t size, void **p)
+static void free_to_pcs_bulk(struct kmem_cache *s, size_t size, void **p, unsigned long addr)
 {
 	struct slub_percpu_sheaves *pcs;
 	struct slab_sheaf *main, *empty;
@@ -6356,7 +6367,7 @@ next_remote_batch:
 		memcg_slab_free_hook(s, slab, p + i, 1);
 		alloc_tagging_slab_free_hook(s, slab, p + i, 1);
 
-		if (unlikely(!slab_free_hook(s, p[i], init, false))) {
+		if (unlikely(!slab_free_hook(s, p[i], init, false, addr))) {
 			p[i] = p[--size];
 			continue;
 		}
@@ -6663,7 +6674,7 @@ void slab_free(struct kmem_cache *s, struct slab *slab, void *object,
 	memcg_slab_free_hook(s, slab, &object, 1);
 	alloc_tagging_slab_free_hook(s, slab, &object, 1);
 
-	if (unlikely(!slab_free_hook(s, object, slab_want_init_on_free(s), false)))
+	if (unlikely(!slab_free_hook(s, object, slab_want_init_on_free(s), false, addr)))
 		return;
 
 	if (s->cpu_sheaves && likely(!IS_ENABLED(CONFIG_NUMA) ||
@@ -6678,9 +6689,9 @@ void slab_free(struct kmem_cache *s, struct slab *slab, void *object,
 #ifdef CONFIG_MEMCG
 /* Do not inline the rare memcg charging failed path into the allocation path */
 static noinline
-void memcg_alloc_abort_single(struct kmem_cache *s, void *object)
+void memcg_alloc_abort_single(struct kmem_cache *s, void *object, unsigned long addr)
 {
-	if (likely(slab_free_hook(s, object, slab_want_init_on_free(s), false)))
+	if (likely(slab_free_hook(s, object, slab_want_init_on_free(s), false, addr)))
 		do_slab_free(s, virt_to_slab(object), object, object, 1, _RET_IP_);
 }
 #endif
@@ -6695,7 +6706,7 @@ void slab_free_bulk(struct kmem_cache *s, struct slab *slab, void *head,
 	 * With KASAN enabled slab_free_freelist_hook modifies the freelist
 	 * to remove objects, whose reuse must be delayed.
 	 */
-	if (likely(slab_free_freelist_hook(s, &head, &tail, &cnt)))
+	if (likely(slab_free_freelist_hook(s, &head, &tail, &cnt, addr)))
 		do_slab_free(s, slab, head, tail, cnt, addr);
 }
 
@@ -6721,7 +6732,7 @@ static void slab_free_after_rcu_debug(struct rcu_head *rcu_head)
 		return;
 
 	/* resume freeing */
-	if (slab_free_hook(s, object, slab_want_init_on_free(s), true))
+	if (slab_free_hook(s, object, slab_want_init_on_free(s), true, _THIS_IP_))
 		do_slab_free(s, slab, object, object, 1, _THIS_IP_);
 }
 #endif /* CONFIG_SLUB_RCU_DEBUG */
@@ -7370,7 +7381,7 @@ void kmem_cache_free_bulk(struct kmem_cache *s, size_t size, void **p)
 	 * once we go that way, we have to do everything differently
 	 */
 	if (s && s->cpu_sheaves) {
-		free_to_pcs_bulk(s, size, p);
+		free_to_pcs_bulk(s, size, p, _RET_IP_);
 		return;
 	}
 
@@ -7521,7 +7532,7 @@ int kmem_cache_alloc_bulk_noprof(struct kmem_cache *s, gfp_t flags, size_t size,
 	 * Done outside of the IRQ disabled fastpath loop.
 	 */
 	if (unlikely(!slab_post_alloc_hook(s, NULL, flags, size, p,
-		    slab_want_init_on_alloc(flags, s), s->object_size))) {
+		    slab_want_init_on_alloc(flags, s), s->object_size, _RET_IP_))) {
 		return 0;
 	}
 

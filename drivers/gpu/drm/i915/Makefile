@@ -15,6 +15,17 @@ subdir-ccflags-y += -DI915
 
 subdir-ccflags-y += -I$(src)
 
+MEMORIZER_INSTRUMENT_i915_gem_execbuffer.o := n
+MEMORIZER_INSTRUMENT_i915_query.o := n 
+MEMORIZER_INSTRUMENT_i915_hwmon.o := n 
+ifdef CONFIG_MEMORIZER
+KASAN_SANITIZE_i915_gem_execbuffer.o := n
+KASAN_SANITIZE_i915_query.o := n
+KASAN_SANITIZE_i915_hwmon.o := n
+endif
+
+MEMORIZER_INSTRUMENT := n
+
 # Please keep these build lists sorted!
 
 # core driver code

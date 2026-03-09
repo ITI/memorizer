@@ -82,9 +82,10 @@ documentation_job:
       - o/Documentation/output/memorizer/_static/*
 
 test_job:
-  tags: ["shell"]
+  tags: ["docker"]
   needs: ["compile_job"]
   stage: test
+  image: illinoisrobert/kernel-build
   script:
     - ls -l o/arch/x86/boot/bzImage
     - '[ -f arch/x86/boot/bzImage ] || cp o/arch/x86/boot/bzImage arch/x86/boot/.'
@@ -98,7 +99,8 @@ test_job:
       - ./scripts/memorizer/testVM/kmap
 
 test_baremetal_job:
-  tags: ["shell"]
+  tags: ["docker"]
+  image: illinoisrobert/kernel-build
   needs: ["compile_baremetal_job"]
   stage: test
   script:

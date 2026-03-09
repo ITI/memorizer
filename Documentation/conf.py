@@ -492,7 +492,7 @@ latex_elements = {
     "preamble": dedent(r"""
         % Load kerneldoc specific LaTeX settings
         \input{kerneldoc-preamble.sty}
-    """)
+    """),
 
     # https://stackoverflow.com/a/5741112
     'extraclassoptions': 'openany,oneside'

@@ -23,6 +23,7 @@ variables_job:
 compile_job:
   tags: ["docker"]
   stage: compile
+  needs: ["variables_job"]
   image: illinoisrobert/kernel-build
   script:
     # Some people like tarballs; some like debs. We'll build both
@@ -40,6 +41,7 @@ compile_job:
 
 compile_baremetal_job:
   tags: ["docker"]
+  needs: ["variables_job"]
   stage: compile
   image: illinoisrobert/kernel-build
   script:
@@ -52,6 +54,7 @@ compile_baremetal_job:
 
 patch_job:
   tags: ["docker"]
+  needs: ["variables_job"]
   stage: patch
   needs: ["variables_job"]
   image: illinoisrobert/kernel-build
@@ -82,8 +85,8 @@ documentation_job:
       - o/Documentation/output/memorizer/_static/*
 
 test_job:
-  tags: ["docker"]
-  needs: ["compile_job"]
+  tags: ["docker", "mz-img-hack"]
+  needs: ["compile_job", "variables_job"]
   stage: test
   image: illinoisrobert/kernel-build
   script:
@@ -91,7 +94,7 @@ test_job:
     - '[ -f arch/x86/boot/bzImage ] || cp o/arch/x86/boot/bzImage arch/x86/boot/.'
     - ls -l arch/x86/boot/bzImage
     - cd scripts/memorizer/testVM
-    - cp -r ~/mz-img-hack/* .
+    - cp -r ~gitlab-runner/mz-img-hack/* .
     - python3 ./qemu_test.py
   artifacts:
     expire_in: 1 week
@@ -99,14 +102,14 @@ test_job:
       - ./scripts/memorizer/testVM/kmap
 
 test_baremetal_job:
-  tags: ["docker"]
+  tags: ["docker", "mz-img-hack"]
   image: illinoisrobert/kernel-build
-  needs: ["compile_baremetal_job"]
+  needs: ["compile_baremetal_job", "variables_job"]
   stage: test
   script:
     - ls -l arch/x86/boot/bzImage
     - cd scripts/memorizer/testVM
-    - cp -r ~/mz-img-hack/* .
+    - cp -r ~gitlab-runner/mz-img-hack/* .
     - python3 ./qemu_test.py
   artifacts:
     expire_in: 1 week

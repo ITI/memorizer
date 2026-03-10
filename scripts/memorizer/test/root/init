@@ -27,12 +27,12 @@ echo nameserver 10.0.2.3 >> /etc/resolv.conf
 sleep 3
 
 # Enable the next line if you want to run the tests
-# /run-test.sh 2>&1 | tee /output/results
+/run-test.sh 2>&1 | tee /output/results
 
 # Enable the next lines if you want an interactive shell
- while true
- do
- 	echo starting a shell
- 	setsid cttyhack sh 
- done
+# while true
+# do
+# 	echo starting a shell
+# 	setsid cttyhack sh 
+# done
 poweroff -f

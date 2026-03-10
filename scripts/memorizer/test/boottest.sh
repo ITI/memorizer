@@ -4,7 +4,7 @@
 set -ex
 cd $(dirname $0)
 root=../../..
-O=o
+#O=o
 function mk {
 	make -C $root O=$O -j $(( $(nproc) / 3 + 1)) "$@"
 }

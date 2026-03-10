@@ -94,7 +94,7 @@ test_job:
     - '[ -f arch/x86/boot/bzImage ] || cp o/arch/x86/boot/bzImage arch/x86/boot/.'
     - ls -l arch/x86/boot/bzImage
     - cd scripts/memorizer/testVM
-    - cp -r ~gitlab-runner/mz-img-hack/* .
+    - cp -r /home/gitlab-runner/mz-img-hack/* .
     - python3 ./qemu_test.py
   artifacts:
     expire_in: 1 week
@@ -109,7 +109,7 @@ test_baremetal_job:
   script:
     - ls -l arch/x86/boot/bzImage
     - cd scripts/memorizer/testVM
-    - cp -r ~gitlab-runner/mz-img-hack/* .
+    - cp -r /home/gitlab-runner/mz-img-hack/* .
     - python3 ./qemu_test.py
   artifacts:
     expire_in: 1 week

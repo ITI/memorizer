@@ -114,6 +114,10 @@ test_baremetal_job:
     - ls -l arch/x86/boot/bzImage
     - cd scripts/memorizer/testVM
     - cp -r /home/gitlab-runner/mz-img-hack/* .
+    - export PYENV_ROOT="$HOME/.pyenv"
+    - export PATH="$PYENV_ROOT/bin:$PATH"
+    - eval "$(pyenv init -)"
+    - pyenv shell 3.12
     - python3 ./qemu_test.py
   artifacts:
     expire_in: 1 week

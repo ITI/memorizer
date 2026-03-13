@@ -269,6 +269,7 @@ static int io_compat_msg_copy_hdr(struct io_kiocb *req,
 	return 0;
 }
 
+noinstr
 static int io_copy_msghdr_from_user(struct user_msghdr *msg,
 				    struct user_msghdr __user *umsg)
 {

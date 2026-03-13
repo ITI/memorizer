@@ -546,6 +546,7 @@ config OBJTOOL
 config OBJTOOL_WERROR
 	bool "Upgrade objtool warnings to errors"
 	depends on OBJTOOL && !COMPILE_TEST
+	depends on !MEMORIZER
 	help
 	  Fail the build on objtool warnings.
 

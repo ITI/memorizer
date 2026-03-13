@@ -22,3 +22,9 @@ obj-$(CONFIG_NET_RX_BUSY_POLL)	+= napi.o
 obj-$(CONFIG_NET) += net.o cmd_net.o
 obj-$(CONFIG_PROC_FS) += fdinfo.o
 obj-$(CONFIG_IO_URING_MOCK_FILE) += mock_file.o
+
+
+MEMORIZER_INSTRUMENT_waitid.o := n
+ifdef CONFIG_MEMORIZER
+KASAN_SANITIZE_waitid.o := n
+endif

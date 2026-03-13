@@ -5,6 +5,10 @@ ccflags-$(CONFIG_KVM_WERROR) += -Werror
 
 include $(srctree)/virt/kvm/Makefile.kvm
 
+# CFLAGS_REMOVE_x86.o = -pg -fprofile-arcs -ftest-coverage
+MEMORIZER_INSTRUMENT_x86.o := n
+KASAN_SANITIZE_x86.o := n
+
 kvm-y			+= x86.o emulate.o irq.o lapic.o cpuid.o pmu.o mtrr.o \
 			   debugfs.o mmu/mmu.o mmu/page_track.o mmu/spte.o
 

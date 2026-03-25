@@ -1048,7 +1048,6 @@ static void __memorizer_free_kobj(uintptr_t call_site, uintptr_t kobj_ptr)
 		kobj->state = KOBJ_STATE_FREED;
 		list_add(&kobj->object_list, &memorizer_object_freed_list);
 		write_unlock_irqrestore(&object_list_spinlock, flags);
-		BUG_ON(kobj->state != KOBJ_STATE_FREED);
 
 		track_free();
 	} else {

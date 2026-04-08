@@ -425,8 +425,10 @@ static void noinline handle_overlapping_insert(uintptr_t addr,
 	if (obj->state != KOBJ_STATE_ALLOCATED) {
 		pr_err("kobj(%p)->state(%x) != KOBJ_STATE_ALLOCATED\n", obj,
 		       obj->state);
+		print_hex_dump_bytes(KERN_DEBUG, DUMP_PREFIX_OFFSET, obj, sizeof(*obj));
 		BUG();
 	}
+	
 
 	// klt_for_each_addr(obj->va_ptr, obj->va_ptr+obj->size, l1_i, l1e) {
 	// 	if(*l1e == obj)  // paranoia

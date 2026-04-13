@@ -1,8 +1,8 @@
 .. _`quick-start`:
 
-=====================
-Memorizer Quick Start
-=====================
+=======================
+Memorizer 2 Quick Start
+=======================
 
 Memorizer is a Linux kernel feature for analyzing memory objects inside
 the kernel. As a Linux kernel feature, building Memorizer is simply

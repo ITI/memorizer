@@ -2,6 +2,11 @@
 Summary of memorizer-specific kernel versions
 =============================================
 
+- v6.18.6-memorizer2-1
+
+  - Rebrand memorizer as memorizer2
+  - Apply 6.6.51-memorizer-29 patch to Linux 6.18.6
+
 - v6.6.51-memorizer-29
 
   - Implement hybrid smp for memorizer. All

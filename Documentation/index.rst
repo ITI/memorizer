@@ -60,7 +60,7 @@ Various other manuals with useful information for all kernel developers.
    Fault injection <fault-injection/index>
    Livepatching <livepatch/index>
    Rust <rust/index>
-   Memorizer <memorizer/index>
+   Memorizer 2 <memorizer/index>
 
 
 User-oriented documentation

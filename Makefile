@@ -2,7 +2,7 @@
 VERSION = 6
 PATCHLEVEL = 18
 SUBLEVEL = 6
-EXTRAVERSION = -memorizer-1-rc3
+EXTRAVERSION = -memorizer2-1-rc5
 NAME = Baby Opossum Posse
 
 # *DOCUMENTATION*

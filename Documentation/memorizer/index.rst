@@ -1,10 +1,10 @@
 .. SPDX-License-Identifier: GPL-2.0
 
-=========
-Memorizer
-=========
+===========
+Memorizer 2
+===========
 
-Memorizer is a tool to track all the allocs, accesses and frees for
+Memorizer 2 is a tool to track all the allocs, accesses and frees for
 every object inside the kernel and output them as a kmap, to be used
 for further analysis.
 
